@@ -7,11 +7,11 @@
 	objects = {
 
 /* Begin PBXFileReference section */
-		BE5516432ECBD0D40053F411 /* LegacyTreasureChest.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LegacyTreasureChest.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		BE3A74672ECE64C000DFEE10 /* LegacyTreasureChest.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LegacyTreasureChest.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		BE5516452ECBD0D40053F411 /* LegacyTreasureChest */ = {
+		BE3A74692ECE64C000DFEE10 /* LegacyTreasureChest */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = LegacyTreasureChest;
 			sourceTree = "<group>";
@@ -19,7 +19,7 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		BE5516402ECBD0D40053F411 /* Frameworks */ = {
+		BE3A74642ECE64C000DFEE10 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -29,18 +29,18 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		BE55163A2ECBD0D40053F411 = {
+		BE3A745E2ECE64C000DFEE10 = {
 			isa = PBXGroup;
 			children = (
-				BE5516452ECBD0D40053F411 /* LegacyTreasureChest */,
-				BE5516442ECBD0D40053F411 /* Products */,
+				BE3A74692ECE64C000DFEE10 /* LegacyTreasureChest */,
+				BE3A74682ECE64C000DFEE10 /* Products */,
 			);
 			sourceTree = "<group>";
 		};
-		BE5516442ECBD0D40053F411 /* Products */ = {
+		BE3A74682ECE64C000DFEE10 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				BE5516432ECBD0D40053F411 /* LegacyTreasureChest.app */,
+				BE3A74672ECE64C000DFEE10 /* LegacyTreasureChest.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -48,64 +48,64 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		BE5516422ECBD0D40053F411 /* LegacyTreasureChest */ = {
+		BE3A74662ECE64C000DFEE10 /* LegacyTreasureChest */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = BE55164E2ECBD0D50053F411 /* Build configuration list for PBXNativeTarget "LegacyTreasureChest" */;
+			buildConfigurationList = BE3A74722ECE64C100DFEE10 /* Build configuration list for PBXNativeTarget "LegacyTreasureChest" */;
 			buildPhases = (
-				BE55163F2ECBD0D40053F411 /* Sources */,
-				BE5516402ECBD0D40053F411 /* Frameworks */,
-				BE5516412ECBD0D40053F411 /* Resources */,
+				BE3A74632ECE64C000DFEE10 /* Sources */,
+				BE3A74642ECE64C000DFEE10 /* Frameworks */,
+				BE3A74652ECE64C000DFEE10 /* Resources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				BE5516452ECBD0D40053F411 /* LegacyTreasureChest */,
+				BE3A74692ECE64C000DFEE10 /* LegacyTreasureChest */,
 			);
 			name = LegacyTreasureChest;
 			packageProductDependencies = (
 			);
 			productName = LegacyTreasureChest;
-			productReference = BE5516432ECBD0D40053F411 /* LegacyTreasureChest.app */;
+			productReference = BE3A74672ECE64C000DFEE10 /* LegacyTreasureChest.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		BE55163B2ECBD0D40053F411 /* Project object */ = {
+		BE3A745F2ECE64C000DFEE10 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2610;
 				LastUpgradeCheck = 2610;
 				TargetAttributes = {
-					BE5516422ECBD0D40053F411 = {
+					BE3A74662ECE64C000DFEE10 = {
 						CreatedOnToolsVersion = 26.1.1;
 					};
 				};
 			};
-			buildConfigurationList = BE55163E2ECBD0D40053F411 /* Build configuration list for PBXProject "LegacyTreasureChest" */;
+			buildConfigurationList = BE3A74622ECE64C000DFEE10 /* Build configuration list for PBXProject "LegacyTreasureChest" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
 				Base,
 			);
-			mainGroup = BE55163A2ECBD0D40053F411;
+			mainGroup = BE3A745E2ECE64C000DFEE10;
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
-			productRefGroup = BE5516442ECBD0D40053F411 /* Products */;
+			productRefGroup = BE3A74682ECE64C000DFEE10 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				BE5516422ECBD0D40053F411 /* LegacyTreasureChest */,
+				BE3A74662ECE64C000DFEE10 /* LegacyTreasureChest */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		BE5516412ECBD0D40053F411 /* Resources */ = {
+		BE3A74652ECE64C000DFEE10 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -115,7 +115,7 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		BE55163F2ECBD0D40053F411 /* Sources */ = {
+		BE3A74632ECE64C000DFEE10 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -125,7 +125,7 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
-		BE55164C2ECBD0D50053F411 /* Debug */ = {
+		BE3A74702ECE64C100DFEE10 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -189,7 +189,7 @@
 			};
 			name = Debug;
 		};
-		BE55164D2ECBD0D50053F411 /* Release */ = {
+		BE3A74712ECE64C100DFEE10 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -246,7 +246,7 @@
 			};
 			name = Release;
 		};
-		BE55164F2ECBD0D50053F411 /* Debug */ = {
+		BE3A74732ECE64C100DFEE10 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -278,7 +278,7 @@
 			};
 			name = Debug;
 		};
-		BE5516502ECBD0D50053F411 /* Release */ = {
+		BE3A74742ECE64C100DFEE10 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -313,25 +313,25 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		BE55163E2ECBD0D40053F411 /* Build configuration list for PBXProject "LegacyTreasureChest" */ = {
+		BE3A74622ECE64C000DFEE10 /* Build configuration list for PBXProject "LegacyTreasureChest" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				BE55164C2ECBD0D50053F411 /* Debug */,
-				BE55164D2ECBD0D50053F411 /* Release */,
+				BE3A74702ECE64C100DFEE10 /* Debug */,
+				BE3A74712ECE64C100DFEE10 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		BE55164E2ECBD0D50053F411 /* Build configuration list for PBXNativeTarget "LegacyTreasureChest" */ = {
+		BE3A74722ECE64C100DFEE10 /* Build configuration list for PBXNativeTarget "LegacyTreasureChest" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				BE55164F2ECBD0D50053F411 /* Debug */,
-				BE5516502ECBD0D50053F411 /* Release */,
+				BE3A74732ECE64C100DFEE10 /* Debug */,
+				BE3A74742ECE64C100DFEE10 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
 	};
-	rootObject = BE55163B2ECBD0D40053F411 /* Project object */;
+	rootObject = BE3A745F2ECE64C000DFEE10 /* Project object */;
 }
