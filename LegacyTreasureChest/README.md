@@ -1,4 +1,49 @@
 # Legacy Treasure Chest
+# 📌 Milestone Update — Audio Stories Module Implemented (Nov 2025)
+
+The **Audio Stories** module for Legacy Treasure Chest is now fully implemented and integrated into the Item Detail flow. This brings audio recording, playback, and management capabilities to each item in the catalog.
+
+### ✔️ Completed in this milestone
+
+- **Audio Recording**
+  - Microphone permission request via `NSMicrophoneUsageDescription`
+  - AVAudioRecorder-based recording with proper session configuration
+  - Accurate duration capture before stopping the recorder
+  - Audio files stored under `Media/Audio` using MediaStorage
+
+- **Playback & Audio Management**
+  - Inline play/pause with `AVAudioPlayer`
+  - Single-playback enforcement (starting one stops another)
+  - Stable handling of playback completion and session transitions
+  - Clear user feedback and safe fallbacks
+
+- **SwiftData Integration**
+  - New `AudioRecording` model linked to each `LTCItem`
+  - SwiftData persistence for file path, duration, timestamps
+  - Automatic updatedAt propagation to parent item
+
+- **UI/UX Implementation**
+  - Fully themed with `Theme.swift` (colors, typography, spacing)
+  - Integrated into ItemDetailView with correct section header styling
+  - Empty-state messaging + “Record Story” CTA
+  - List of audio stories with titles, timestamps, and durations
+  - Playback icons and deletion controls consistent with Photos/Documents
+
+- **Deletion Workflow**
+  - SwiftData removal of `AudioRecording` objects
+  - File cleanup via MediaStorage with soft-fail safety
+  - Stopping playback when deleting the active recording
+
+### 🔒 Architecture & Safety
+All audio interactions follow the existing architectural patterns:
+- Media files stored on disk, metadata stored in SwiftData
+- AVAudioSession properly activated/deactivated
+- Structured recording and playback lifecycle to avoid race conditions
+- No global singletons — AudioManager is isolated per view instance
+
+This completes full media support (Photos, Documents, Audio) for each item.
+Next milestone: **Beneficiaries module implementation**.
+
 ## 📌 Update — Documents Module v1 Complete (2025-11-25)
 
 This milestone completes the first working version of the **Documents Module** and brings the app to a solid baseline:

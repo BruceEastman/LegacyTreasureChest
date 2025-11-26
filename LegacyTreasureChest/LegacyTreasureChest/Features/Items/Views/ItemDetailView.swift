@@ -17,6 +17,7 @@ import QuickLook
 
 struct ItemDetailView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
 
     // SwiftData model binding – edits persist automatically.
     @Bindable var item: LTCItem
@@ -33,12 +34,22 @@ struct ItemDetailView: View {
         let document: Document
     }
 
+    // Wrapper for editing an ItemBeneficiary in a sheet.
+    private struct BeneficiaryEditItem: Identifiable {
+        let id = UUID()
+        let link: ItemBeneficiary
+    }
+
     @State private var photoPreviewItem: PhotoPreviewItem?
     @State private var documentPreviewItem: DocumentPreviewItem?
 
     // Photo share state
     @State private var isPhotoSharePresented: Bool = false
     @State private var photoShareURL: URL?
+
+    // Beneficiaries sheet
+    @State private var isBeneficiaryPickerPresented: Bool = false
+    @State private var editingLinkItem: BeneficiaryEditItem?
 
     // Base category options
     private let defaultCategories: [String] = [
@@ -113,7 +124,19 @@ struct ItemDetailView: View {
             }
 
             ItemAudioSection(item: item)
-            ItemBeneficiariesSection(item: item)
+
+            ItemBeneficiariesSection(
+                item: item,
+                onAddTapped: {
+                    isBeneficiaryPickerPresented = true
+                },
+                onEditLink: { link in
+                    editingLinkItem = BeneficiaryEditItem(link: link)
+                },
+                onRemoveLink: { link in
+                    removeItemBeneficiary(link)
+                }
+            )
 
             Section {
                 EmptyView()
@@ -136,6 +159,14 @@ struct ItemDetailView: View {
         // Separate sheet for document preview (with share support).
         .sheet(item: $documentPreviewItem) { preview in
             documentPreviewSheet(for: preview.document)
+        }
+        // Beneficiary picker / creator sheet.
+        .sheet(isPresented: $isBeneficiaryPickerPresented) {
+            BeneficiaryPickerSheet(item: item, user: item.user)
+        }
+        // Beneficiary link editor sheet.
+        .sheet(item: $editingLinkItem) { editItem in
+            ItemBeneficiaryEditSheet(link: editItem.link)
         }
     }
 
@@ -192,6 +223,17 @@ struct ItemDetailView: View {
             url: absoluteURL,
             onDone: { documentPreviewItem = nil }
         )
+    }
+
+    // MARK: - Helpers – Beneficiaries
+
+    private func removeItemBeneficiary(_ link: ItemBeneficiary) {
+        // Remove from the item's collection
+        if let index = item.itemBeneficiaries.firstIndex(where: { $0 === link }) {
+            item.itemBeneficiaries.remove(at: index)
+        }
+        // Also delete the link object from the context
+        modelContext.delete(link)
     }
 }
 
