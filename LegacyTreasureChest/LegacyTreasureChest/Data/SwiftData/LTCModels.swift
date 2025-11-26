@@ -157,6 +157,7 @@ public final class Document {
     @Attribute(.unique) public var documentId: UUID
     public var filePath: String          // Relative path to document file
     public var documentType: String
+    public var originalFilename: String? // Human-friendly name as chosen by user
     public var createdAt: Date
     
     @Relationship(inverse: \LTCItem.documents) public var item: LTCItem?
@@ -165,11 +166,13 @@ public final class Document {
         documentId: UUID = UUID(),
         filePath: String,
         documentType: String,
+        originalFilename: String? = nil,
         createdAt: Date = .now
     ) {
         self.documentId = documentId
         self.filePath = filePath
         self.documentType = documentType
+        self.originalFilename = originalFilename
         self.createdAt = createdAt
     }
 }

@@ -7,12 +7,13 @@
 //  are reflected immediately when navigating back.
 //  Includes sections for Photos, Documents,
 //  Audio stories, and Beneficiaries.
-//  NOTE: This view owns the photo preview sheet.
+//  NOTE: This view owns the photo and document preview sheets.
 //
 
 import SwiftUI
 import SwiftData
 import UIKit
+import QuickLook
 
 struct ItemDetailView: View {
     @Environment(\.dismiss) private var dismiss
@@ -26,7 +27,18 @@ struct ItemDetailView: View {
         let filePath: String
     }
 
+    // Preview sheet state for documents
+    private struct DocumentPreviewItem: Identifiable {
+        let id = UUID()
+        let document: Document
+    }
+
     @State private var photoPreviewItem: PhotoPreviewItem?
+    @State private var documentPreviewItem: DocumentPreviewItem?
+
+    // Photo share state
+    @State private var isPhotoSharePresented: Bool = false
+    @State private var photoShareURL: URL?
 
     // Base category options
     private let defaultCategories: [String] = [
@@ -56,23 +68,38 @@ struct ItemDetailView: View {
 
     var body: some View {
         Form {
-            Section(header: Text("Basic Info")) {
+            Section {
                 TextField("Name", text: $item.name)
                     .textInputAutocapitalization(.words)
+                    .font(Theme.bodyFont)
 
                 TextField("Description", text: $item.itemDescription, axis: .vertical)
                     .lineLimit(3, reservesSpace: true)
+                    .font(Theme.bodyFont)
+            } header: {
+                Text("Basic Info")
+                    .ltcSectionHeaderStyle()
             }
 
-            Section(header: Text("Details")) {
+            Section {
                 Picker("Category", selection: $item.category) {
                     ForEach(categoryOptions, id: \.self) { category in
-                        Text(category).tag(category)
+                        Text(category)
+                            .font(Theme.bodyFont)
+                            .tag(category)
                     }
                 }
 
-                TextField("Estimated Value", value: $item.value, format: .currency(code: currencyCode))
-                    .keyboardType(.decimalPad)
+                TextField(
+                    "Estimated Value",
+                    value: $item.value,
+                    format: .currency(code: currencyCode)
+                )
+                .keyboardType(.decimalPad)
+                .font(Theme.bodyFont)
+            } header: {
+                Text("Details")
+                    .ltcSectionHeaderStyle()
             }
 
             // Photos section reports taps back to this parent view.
@@ -80,26 +107,44 @@ struct ItemDetailView: View {
                 photoPreviewItem = PhotoPreviewItem(filePath: image.filePath)
             }
 
-            ItemDocumentsSection(item: item)
+            // Documents section also reports taps back to this parent view.
+            ItemDocumentsSection(item: item) { document in
+                documentPreviewItem = DocumentPreviewItem(document: document)
+            }
+
             ItemAudioSection(item: item)
             ItemBeneficiariesSection(item: item)
 
-            Section(footer: Text("In future versions, you’ll be able to fully manage photos, documents, audio stories, and beneficiaries for this item.")) {
+            Section {
                 EmptyView()
+            } footer: {
+                Text("In future versions, you’ll be able to fully manage photos, documents, audio stories, and beneficiaries for this item.")
+                    .font(Theme.secondaryFont)
+                    .foregroundStyle(Theme.textSecondary)
+                    .padding(.top, Theme.spacing.small)
             }
         }
+        .scrollContentBackground(.hidden)              // hide default gray background
+        .background(Theme.background)                  // use branded background
         .navigationTitle("Item Details")
         .navigationBarTitleDisplayMode(.inline)
+        .tint(Theme.accent)                            // branded accent for controls
         // Single sheet at the parent level hosts the zoomable photo preview.
         .sheet(item: $photoPreviewItem) { preview in
             photoPreviewSheet(for: preview.filePath)
         }
+        // Separate sheet for document preview (with share support).
+        .sheet(item: $documentPreviewItem) { preview in
+            documentPreviewSheet(for: preview.document)
+        }
     }
 
-    // MARK: - Photo Preview Sheet
+    // MARK: - Photo Preview Sheet (with Share)
 
     private func photoPreviewSheet(for filePath: String) -> some View {
-        NavigationStack {
+        let url = MediaStorage.absoluteURL(from: filePath)
+
+        return NavigationStack {
             ZStack {
                 Color.black
                     .ignoresSafeArea()
@@ -111,6 +156,9 @@ struct ItemDetailView: View {
                         .foregroundStyle(.white)
                 }
             }
+            .onAppear {
+                photoShareURL = url
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Done") {
@@ -118,14 +166,126 @@ struct ItemDetailView: View {
                     }
                     .foregroundStyle(.white)
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        isPhotoSharePresented = true
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                            .foregroundStyle(.white)
+                    }
+                }
+            }
+            .sheet(isPresented: $isPhotoSharePresented) {
+                if let url = photoShareURL {
+                    ActivityView(activityItems: [url])
+                }
             }
         }
+    }
+
+    // MARK: - Document Preview Sheet (with Share)
+
+    private func documentPreviewSheet(for document: Document) -> some View {
+        let absoluteURL = MediaStorage.absoluteURL(from: document.filePath)
+        return DocumentPreviewScreen(
+            document: document,
+            url: absoluteURL,
+            onDone: { documentPreviewItem = nil }
+        )
+    }
+}
+
+// MARK: - Document Preview Screen
+
+/// Full-screen document preview with:
+/// - Image viewer for "IMAGE" documents (in Documents section)
+/// - QuickLook for PDFs/others
+/// - "Done" and "Share" controls
+/// - Extra overlay Share button for image docs to ensure visibility
+private struct DocumentPreviewScreen: View {
+    let document: Document
+    let url: URL
+    let onDone: () -> Void
+
+    @State private var isSharePresented: Bool = false
+
+    private var isImageDoc: Bool {
+        document.documentType.uppercased() == "IMAGE"
+    }
+
+    private var displayName: String {
+        if let original = document.originalFilename, !original.isEmpty {
+            return original
+        }
+        let path = document.filePath as NSString
+        let last = path.lastPathComponent
+        return last.isEmpty ? "Document" : last
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack(alignment: .topTrailing) {
+                Group {
+                    if isImageDoc, let image = loadImage() {
+                        ZStack {
+                            Color.black.ignoresSafeArea()
+                            ZoomableImageView(image: image)
+                        }
+                    } else {
+                        QuickLookPreview(url: url)
+                            .ignoresSafeArea()
+                    }
+                }
+
+                // Explicit overlay Share button for image docs
+                if isImageDoc {
+                    Button {
+                        isSharePresented = true
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                            .imageScale(.large)
+                            .padding(12)
+                            .background(.ultraThinMaterial)
+                            .clipShape(Circle())
+                            .padding(.top, 12)
+                            .padding(.trailing, 12)
+                    }
+                }
+            }
+            .navigationTitle(displayName)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Done") {
+                        onDone()
+                    }
+                }
+                // Keep toolbar Share for non-image docs (PDFs, etc.)
+                ToolbarItem(placement: .topBarTrailing) {
+                    if !isImageDoc {
+                        Button {
+                            isSharePresented = true
+                        } label: {
+                            Image(systemName: "square.and.arrow.up")
+                        }
+                    }
+                }
+            }
+            .sheet(isPresented: $isSharePresented) {
+                ActivityView(activityItems: [url])
+            }
+        }
+    }
+
+    private func loadImage() -> UIImage? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return UIImage(data: data)
     }
 }
 
 // MARK: - Zoomable Image View
 
-/// A standalone zoom + pan image view used in the photo preview sheet.
+/// A standalone zoom + pan image view used in the photo and document preview sheets.
 /// All gesture state is local to this view to avoid interfering with navigation/sheets.
 private struct ZoomableImageView: View {
     let image: UIImage
@@ -187,6 +347,58 @@ private struct ZoomableImageView: View {
             .onEnded { _ in
                 lastOffset = offset
             }
+    }
+}
+
+// MARK: - QuickLook wrapper for PDFs and other docs
+
+private struct QuickLookPreview: UIViewControllerRepresentable {
+    let url: URL
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(url: url)
+    }
+
+    func makeUIViewController(context: Context) -> QLPreviewController {
+        let controller = QLPreviewController()
+        controller.dataSource = context.coordinator
+        return controller
+    }
+
+    func updateUIViewController(_ controller: QLPreviewController, context: Context) {
+        // No-op; single static URL.
+    }
+
+    final class Coordinator: NSObject, QLPreviewControllerDataSource {
+        let url: URL
+
+        init(url: URL) {
+            self.url = url
+        }
+
+        func numberOfPreviewItems(in controller: QLPreviewController) -> Int {
+            1
+        }
+
+        func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem {
+            url as NSURL
+        }
+    }
+}
+
+// MARK: - Activity View (Share Sheet)
+
+/// Simple wrapper around UIActivityViewController to present
+/// the system share sheet from SwiftUI.
+private struct ActivityView: UIViewControllerRepresentable {
+    let activityItems: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {
+        // No update needed.
     }
 }
 

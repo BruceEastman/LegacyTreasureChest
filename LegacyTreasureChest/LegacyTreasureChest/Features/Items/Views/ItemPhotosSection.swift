@@ -36,7 +36,7 @@ struct ItemPhotosSection: View {
     ]
 
     var body: some View {
-        Section(header: Text("Photos")) {
+        Section {
             if item.images.isEmpty {
                 emptyStateView
             } else {
@@ -47,11 +47,14 @@ struct ItemPhotosSection: View {
                 HStack(spacing: 8) {
                     ProgressView()
                     Text("Adding photos…")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
                 }
                 .padding(.top, 4)
             }
+        } header: {
+            Text("Photos")
+                .ltcSectionHeaderStyle()
         }
         .alert(
             "Photo Error",
@@ -85,11 +88,11 @@ struct ItemPhotosSection: View {
         VStack(alignment: .center, spacing: 12) {
             Image(systemName: "photo.on.rectangle")
                 .font(.system(size: 40))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.textSecondary)
 
             Text("Add photos of this item")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(Theme.secondaryFont)
+                .foregroundStyle(Theme.textSecondary)
                 .multilineTextAlignment(.center)
 
             PhotosPicker(
@@ -101,6 +104,7 @@ struct ItemPhotosSection: View {
                 HStack {
                     Image(systemName: "plus")
                     Text("Add Photo")
+                        .font(Theme.bodyFont)
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -131,8 +135,9 @@ struct ItemPhotosSection: View {
                 HStack {
                     Image(systemName: "plus")
                     Text("Add More Photos")
+                        .font(Theme.secondaryFont)
                 }
-                .font(.subheadline)
+                .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
             .disabled(isProcessing)
@@ -152,18 +157,18 @@ struct ItemPhotosSection: View {
             } else {
                 ZStack {
                     Rectangle()
-                        .fill(.secondary.opacity(0.15))
+                        .fill(Theme.textSecondary.opacity(0.15))
                     Image(systemName: "photo.slash")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                         .font(.system(size: 18))
                 }
             }
         }
-        .frame(width: 100, height: 100)        // 🔥 fixed square for grid
+        .frame(width: 100, height: 100)        // fixed square for grid
         .clipped()
         .overlay(
             RoundedRectangle(cornerRadius: 10)
-                .stroke(Color.secondary.opacity(0.2), lineWidth: 0.5)
+                .stroke(Theme.textSecondary.opacity(0.2), lineWidth: 0.5)
         )
         .cornerRadius(10)
         .shadow(color: Color.black.opacity(0.12), radius: 3, x: 0, y: 2)
@@ -183,7 +188,7 @@ struct ItemPhotosSection: View {
                     .foregroundColor(.white)
                     .padding(6)
                     .background(
-                        Circle().fill(Color.red.opacity(0.9))
+                        Circle().fill(Theme.destructive.opacity(0.9))
                     )
             }
             .padding(4)

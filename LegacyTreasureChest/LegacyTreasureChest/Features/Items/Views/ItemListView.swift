@@ -35,6 +35,7 @@ struct ItemsListView: View {
             // MARK: - Search Bar
             HStack {
                 TextField("Search items…", text: $searchText)
+                    .font(Theme.bodyFont)
                     .textFieldStyle(.roundedBorder)
                     .padding(.horizontal)
             }
@@ -47,7 +48,9 @@ struct ItemsListView: View {
                 if filtered.isEmpty {
                     Section {
                         Text("No items yet.")
-                            .foregroundStyle(.secondary)
+                            .font(Theme.secondaryFont)
+                            .foregroundStyle(Theme.textSecondary)
+                            .padding(.vertical, Theme.spacing.medium)
                     }
                 } else {
                     ForEach(filtered) { item in
@@ -55,26 +58,30 @@ struct ItemsListView: View {
                             ItemDetailView(item: item)
                         } label: {
                             VStack(alignment: .leading, spacing: 4) {
+                                // Item name – primary
                                 Text(item.name)
-                                    .font(.headline)
+                                    .font(Theme.sectionHeaderFont)
+                                    .foregroundStyle(Theme.text)
 
+                                // Description – secondary
                                 if !item.itemDescription.isEmpty {
                                     Text(item.itemDescription)
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
+                                        .font(Theme.secondaryFont)
+                                        .foregroundStyle(Theme.textSecondary)
                                         .lineLimit(2)
                                 }
 
                                 // Show value if it's greater than zero
                                 if item.value > 0 {
                                     Text(item.value, format: .currency(code: currencyCode))
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
+                                        .font(Theme.secondaryFont)
+                                        .foregroundStyle(Theme.textSecondary)
                                 }
 
+                                // Created date as subtle metadata
                                 Text(item.createdAt, style: .date)
                                     .font(.caption)
-                                    .foregroundStyle(.tertiary)
+                                    .foregroundStyle(Theme.textSecondary)
                             }
                             .padding(.vertical, 4)
                         }
@@ -82,8 +89,11 @@ struct ItemsListView: View {
                     .onDelete(perform: deleteItems)
                 }
             }
+            .scrollContentBackground(.hidden)   // Hide default list background
         }
+        .background(Theme.background.ignoresSafeArea())
         .navigationTitle("Your Items")
+        .tint(Theme.accent)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 NavigationLink {

@@ -7,45 +7,30 @@
 //  - Persists document files via MediaStorage.
 //  - Stores metadata in SwiftData Document model.
 //  - Shows a list of attached documents with delete support.
-//  - v1: real viewing support:
-//      • Images: in-app zoomable viewer
-//      • PDFs/others: QuickLook preview
+//  - Taps are reported back to the parent view for preview.
+//  - Includes a simple file size guard on import (50 MB).
 //
 
 import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
-import UIKit
-import QuickLook
-
-// Lightweight wrapper so we can use `.sheet(item:)`
-// without modifying the SwiftData model type.
-private struct DocumentPreviewItem: Identifiable {
-    let id = UUID()
-    let document: Document
-}
 
 struct ItemDocumentsSection: View {
     @Environment(\.modelContext) private var modelContext
 
     @Bindable var item: LTCItem
+    var onDocumentTap: (Document) -> Void
 
     // File importer & error state
     @State private var isImporterPresented: Bool = false
     @State private var importErrorMessage: String?
 
-    // Selected document wrapper for preview
-    @State private var selectedDocument: DocumentPreviewItem?
-
     // MARK: - Derived Data
 
-    /// Documents as stored on the item. In most cases insertion order will
-    /// align with createdAt, which is sufficient for v1.
     private var documents: [Document] {
         item.documents
     }
 
-    /// Binding used to present an error alert only when needed.
     private var isImportErrorAlertPresented: Binding<Bool> {
         Binding(
             get: { importErrorMessage != nil },
@@ -60,12 +45,15 @@ struct ItemDocumentsSection: View {
     // MARK: - Body
 
     var body: some View {
-        Section(header: Text("Documents")) {
+        Section {
             if documents.isEmpty {
                 emptyStateContent
             } else {
                 populatedStateContent
             }
+        } header: {
+            Text("Documents")
+                .ltcSectionHeaderStyle()
         }
         .fileImporter(
             isPresented: $isImporterPresented,
@@ -86,40 +74,6 @@ struct ItemDocumentsSection: View {
                 Text("An unknown error occurred while importing the document.")
             }
         }
-        .sheet(item: $selectedDocument) { preview in
-            let document = preview.document
-
-            // Decide how to show the document based on type.
-            if document.documentType.uppercased() == "IMAGE" {
-                NavigationStack {
-                    ZStack {
-                        Color.black.ignoresSafeArea()
-
-                        if let image = loadImage(for: document) {
-                            ZoomableDocImageView(image: image)
-                        } else {
-                            Text("Unable to load image.")
-                                .foregroundStyle(.white)
-                        }
-                    }
-                    .navigationTitle(displayName(for: document))
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .topBarLeading) {
-                            Button("Done") {
-                                selectedDocument = nil
-                            }
-                            .foregroundStyle(.white)
-                        }
-                    }
-                }
-            } else {
-                // PDFs and all other types use QuickLook
-                let absoluteURL = MediaStorage.absoluteURL(from: document.filePath)
-                QuickLookPreview(url: absoluteURL)
-                    .ignoresSafeArea()
-            }
-        }
     }
 
     // MARK: - Empty State
@@ -129,11 +83,11 @@ struct ItemDocumentsSection: View {
             HStack(spacing: 12) {
                 Image(systemName: "doc.text")
                     .font(.title2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
 
                 Text("Attach appraisals, receipts, and provenance documents.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(Theme.secondaryFont)
+                    .foregroundStyle(Theme.textSecondary)
             }
 
             Button {
@@ -142,6 +96,7 @@ struct ItemDocumentsSection: View {
                 HStack {
                     Image(systemName: "plus")
                     Text("Add Document")
+                        .font(Theme.bodyFont)
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -154,39 +109,38 @@ struct ItemDocumentsSection: View {
 
     private var populatedStateContent: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Add button at top when documents exist
             Button {
                 isImporterPresented = true
             } label: {
                 HStack {
                     Image(systemName: "plus")
                     Text("Add Document")
+                        .font(Theme.bodyFont)
                 }
                 .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
 
-            // List of existing documents
             if !documents.isEmpty {
                 ForEach(documents, id: \.documentId) { document in
                     Button {
-                        // Show viewer sheet
-                        selectedDocument = DocumentPreviewItem(document: document)
+                        onDocumentTap(document)
                     } label: {
                         HStack(spacing: 12) {
                             Image(systemName: iconName(for: document))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Theme.textSecondary)
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(displayName(for: document))
-                                    .font(.subheadline)
+                                    .font(Theme.bodyFont)
+                                    .foregroundStyle(Theme.text)
                                     .lineLimit(1)
                                     .truncationMode(.middle)
 
                                 if let subtitle = subtitle(for: document) {
                                     Text(subtitle)
-                                        .font(.footnote)
-                                        .foregroundStyle(.secondary)
+                                        .font(Theme.secondaryFont)
+                                        .foregroundStyle(Theme.textSecondary)
                                 }
                             }
 
@@ -194,7 +148,7 @@ struct ItemDocumentsSection: View {
 
                             Image(systemName: "chevron.right")
                                 .font(.footnote)
-                                .foregroundStyle(.tertiary)
+                                .foregroundStyle(Theme.textSecondary.opacity(0.7))
                         }
                     }
                     .buttonStyle(.plain)
@@ -210,8 +164,8 @@ struct ItemDocumentsSection: View {
             }
 
             Text("Tap a document to view it. PDFs open in a system viewer; images open in an in-app viewer.")
-                .font(.footnote)
-                .foregroundStyle(.tertiary)
+                .font(Theme.secondaryFont)
+                .foregroundStyle(Theme.textSecondary)
                 .padding(.top, 4)
         }
         .padding(.vertical, 4)
@@ -231,7 +185,6 @@ struct ItemDocumentsSection: View {
     }
 
     private func importDocument(from url: URL) {
-        // Security-scoped access for files outside the sandbox.
         let didAccess = url.startAccessingSecurityScopedResource()
         defer {
             if didAccess {
@@ -242,19 +195,25 @@ struct ItemDocumentsSection: View {
         do {
             let data = try Data(contentsOf: url)
 
-            // Persist file via MediaStorage
+            // Simple file size guard: 50 MB max
+            let maxSizeBytes = 50 * 1024 * 1024 // 50 MB
+            if data.count > maxSizeBytes {
+                importErrorMessage = "This document is too large (over 50 MB). Please choose a smaller file."
+                return
+            }
+
             let relativePath = try MediaStorage.saveDocument(
                 data,
                 suggestedFilename: url.lastPathComponent
             )
 
-            // Infer document type from file extension / UTI
             let inferredType = inferDocumentType(from: url)
+            let originalFilename = url.lastPathComponent
 
-            // Create and relate a new Document model
             let document = Document(
                 filePath: relativePath,
-                documentType: inferredType
+                documentType: inferredType,
+                originalFilename: originalFilename
             )
             document.item = item
             item.documents.append(document)
@@ -278,14 +237,12 @@ struct ItemDocumentsSection: View {
     }
 
     private func deleteDocument(_ document: Document) {
-        // Attempt to remove underlying file; failure is non-fatal.
         do {
             try MediaStorage.deleteFile(at: document.filePath)
         } catch {
             print("⚠️ Failed to delete document file at \(document.filePath): \(error)")
         }
 
-        // Remove from item's collection & SwiftData context.
         if let index = item.documents.firstIndex(where: { $0 === document }) {
             item.documents.remove(at: index)
         }
@@ -308,7 +265,11 @@ struct ItemDocumentsSection: View {
     }
 
     private func displayName(for document: Document) -> String {
-        // Use the last path component as the display name.
+        // Prefer the user-visible original filename, if present.
+        if let name = document.originalFilename, !name.isEmpty {
+            return name
+        }
+        // Fallback: use the stored path's last component.
         let path = document.filePath as NSString
         let last = path.lastPathComponent
         return last.isEmpty ? "Document" : last
@@ -356,123 +317,11 @@ struct ItemDocumentsSection: View {
             }
         }
 
-        // Fallback on extension string if UTType is not resolvable.
         if ext == "pdf" {
             return "PDF"
         }
 
         return ext.isEmpty ? "Other" : ext.uppercased()
-    }
-
-    // MARK: - Loading Helpers
-
-    private func loadImage(for document: Document) -> UIImage? {
-        let url = MediaStorage.absoluteURL(from: document.filePath)
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return UIImage(data: data)
-    }
-}
-
-// MARK: - Zoomable Image View for Documents
-
-/// A zoom + pan image view used in the document preview sheet.
-/// This is local to the documents module to avoid coupling to ItemDetailView.
-private struct ZoomableDocImageView: View {
-    let image: UIImage
-
-    @State private var scale: CGFloat = 1.0
-    @State private var lastScale: CGFloat = 1.0
-
-    @State private var offset: CGSize = .zero
-    @State private var lastOffset: CGSize = .zero
-
-    private let minScale: CGFloat = 1.0
-    private let maxScale: CGFloat = 4.0
-
-    var body: some View {
-        GeometryReader { geometry in
-            let size = geometry.size
-
-            Image(uiImage: image)
-                .resizable()
-                .scaledToFit()
-                .frame(width: size.width, height: size.height)
-                .scaleEffect(scale)
-                .offset(offset)
-                .gesture(
-                    magnificationGesture().simultaneously(with: dragGesture())
-                )
-                .animation(.easeInOut(duration: 0.15), value: scale)
-                .animation(.easeInOut(duration: 0.15), value: offset)
-        }
-    }
-
-    // Pinch to zoom
-    private func magnificationGesture() -> some Gesture {
-        MagnificationGesture()
-            .onChanged { value in
-                let delta = value / lastScale
-                var newScale = scale * delta
-                newScale = max(minScale, min(newScale, maxScale))
-                scale = newScale
-                lastScale = value
-            }
-            .onEnded { _ in
-                lastScale = 1.0
-                if scale < minScale {
-                    scale = minScale
-                }
-            }
-    }
-
-    // Drag to pan
-    private func dragGesture() -> some Gesture {
-        DragGesture()
-            .onChanged { value in
-                offset = CGSize(
-                    width: lastOffset.width + value.translation.width,
-                    height: lastOffset.height + value.translation.height
-                )
-            }
-            .onEnded { _ in
-                lastOffset = offset
-            }
-    }
-}
-
-// MARK: - QuickLook wrapper for PDFs and other docs
-
-private struct QuickLookPreview: UIViewControllerRepresentable {
-    let url: URL
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(url: url)
-    }
-
-    func makeUIViewController(context: Context) -> QLPreviewController {
-        let controller = QLPreviewController()
-        controller.dataSource = context.coordinator
-        return controller
-    }
-
-    func updateUIViewController(_ controller: QLPreviewController, context: Context) {
-        // No-op; single static URL.
-    }
-
-    final class Coordinator: NSObject, QLPreviewControllerDataSource {
-        let url: URL
-
-        init(url: URL) {
-            self.url = url
-        }
-
-        func numberOfPreviewItems(in controller: QLPreviewController) -> Int {
-            1
-        }
-
-        func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem {
-            url as NSURL
-        }
     }
 }
 
@@ -508,7 +357,7 @@ private let itemDocumentsPreviewContainer: ModelContainer = {
     return NavigationStack {
         if let first = items.first {
             Form {
-                ItemDocumentsSection(item: first)
+                ItemDocumentsSection(item: first) { _ in }
             }
         } else {
             Text("No preview item")
