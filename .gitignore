@@ -1,0 +1,33 @@
+# ================================
+# iOS / Xcode / Swift / Build Artifacts
+# ================================
+DerivedData/
+build/
+*.xcworkspace
+*.xcuserstate
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcuserdatad/
+.project.xcworkspace/
+
+# SwiftPM
+.build/
+.swiftpm/
+
+# ================================
+# macOS Finder Metadata
+# ================================
+.DS_Store
+
+# ================================
+# Python / FastAPI Backend (ignore everything)
+# ================================
+LTC_AI_Gateway/
+.venv/
+__pycache__/
+*.pyc
+
+# ================================
+# Misc dev files
+# ================================
+replacements.txt
+
