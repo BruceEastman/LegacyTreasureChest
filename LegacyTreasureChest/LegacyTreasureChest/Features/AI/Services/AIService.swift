@@ -17,7 +17,9 @@ final class AIService {
     static let shared = AIService()
 
     private init(
-        provider: any AIProvider = GeminiProvider(),
+        // NOTE: Default provider is now BackendAIProvider, which talks to your
+        // backend AI gateway. No Gemini key ever lives in the iOS app.
+        provider: any AIProvider = BackendAIProvider(),
         featureFlags: FeatureFlags = FeatureFlags()
     ) {
         self.provider = provider
@@ -33,7 +35,7 @@ final class AIService {
 
     /// Analyze an item photo using AI.
     ///
-    /// This is the primary function the upcoming AITestView will call.
+    /// This is the primary function the AI-assisted views call.
     func analyzeItemPhoto(
         _ image: UIImage,
         hints: ItemAIHints? = nil

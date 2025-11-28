@@ -1,4 +1,32 @@
 # Legacy Treasure Chest
+## AI Integration Status (Local Backend + Gemini)
+
+**Last Updated:** 2025-11-28
+
+- The Legacy Treasure Chest iOS app now uses a **provider-agnostic AI layer**:
+  - `AIProvider` protocol defines `analyzeItemPhoto`, `estimateValue`, `draftPersonalMessage`, and `suggestBeneficiaries`.
+  - `AIService.shared` is the façade used by views and is initialized with `BackendAIProvider` by default.
+- A separate **FastAPI backend** (`LTC_AI_Gateway`) runs on the Mac host and handles all calls to Gemini:
+  - Endpoint: `POST http://127.0.0.1:8000/ai/analyze-item-photo`
+  - Backend holds `GEMINI_API_KEY` and `GEMINI_MODEL` in `.env` and never exposes them to the iOS app.
+  - Pydantic models mirror the Swift `ItemAIHints`, `ValueRange`, and `ItemAnalysis` types.
+- `BackendAIProvider`:
+  - Encodes item photos as Base64 JPEG (`imageJpegBase64`).
+  - Sends `AnalyzeItemPhotoRequest` (image + optional `ItemAIHints`) to the backend.
+  - Decodes the response into Swift `ItemAnalysis` using `JSONDecoder` with default camelCase keys.
+- `AITestView`:
+  - Uses `AIService.shared.analyzeItemPhoto(_:hints:)` end-to-end through the backend.
+  - Confirmed working in the iOS Simulator with realistic test photos and optional hints.
+- **Security**:
+  - No Gemini API key or secret is present in the iOS app, Info.plist, or build settings.
+  - All AI traffic from the app flows through the backend gateway.
+
+**Next AI Front-End Tasks (Option B):**
+
+1. Wire `AddItemWithAIView` to rely solely on `AIService` + `BackendAIProvider`.
+2. Ensure `BatchAddItemsFromPhotosView` uses the backend for each photo in a batch.
+3. Confirm `ItemAIAnalysisSheet` calls the backend for re-analysis on existing items.
+
 ✅ Legacy Treasure Chest — Project Status (Updated)
 Last Updated: (November 28, 2025)
 Milestone: AI Batch Add & Item-Level AI Analysis — Completed

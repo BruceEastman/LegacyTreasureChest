@@ -2,7 +2,7 @@
 //  AITestView.swift
 //  LegacyTreasureChest
 //
-//  Internal-use view for testing Gemini AI item analysis.
+//  Internal-use view for testing backend AI item analysis.
 //
 
 import SwiftUI
@@ -48,7 +48,7 @@ struct AITestView: View {
                         .ltcSectionHeaderStyle()
 
                     Toggle(isOn: $isAIEnabled) {
-                        Text("Enable AI (Gemini)")
+                        Text("Enable AI (Backend)")
                             .font(Theme.bodyFont)
                             .foregroundStyle(Theme.text)
                     }
