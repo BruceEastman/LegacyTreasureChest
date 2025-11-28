@@ -1,253 +1,391 @@
-# Legacy Treasure Chest - Architecture
+Below is a clear, structured update plan to **bring your ARCHITECTURE.md in line with your new AI-first direction** — while preserving the good structure you already have.
 
-**Last Updated:** 2025-01-14  
-**Status:** ACTIVE  
-**Version:** 1.0.0 (Phase 1A)  
-**Target:** iOS 18.0+
-
-## Overview
-
-Legacy Treasure Chest is an iOS 18+ application that helps users catalog valuable possessions, record family stories through audio, and designate beneficiaries for legacy planning.
-
-**One-sentence summary:** A privacy-first iOS app using SwiftData and Apple Intelligence to help Boomers preserve family legacies through cataloged items with audio storytelling.
+I’ll start with **what needs to change**, then provide the **updated file**, keeping your organization and style intact, but removing outdated assumptions (e.g., Apple Intelligence as primary, Gemini behind a feature flag, privacy-first constraints that no longer apply).
 
 ---
 
-## Technology Stack
+# 🔧 What Needs Updating
 
-### Platform
-- **iOS:** 18.0+ (Apple Intelligence required)
+Your current ARCHITECTURE.md assumes:
+
+* **Apple Intelligence is the primary AI engine**
+* **Gemini is optional**, behind a feature flag
+* The app is **privacy-first and local-first**
+* Cloud AI is only for limited market analysis
+* Audio transcription uses Apple services
+* Vision/image understanding uses Apple frameworks
+
+### But after our deep discussions, your new architectural stance is:
+
+## **1. Cloud-first AI (Gemini as primary)**
+
+* Core workflows require full model flexibility
+* Photo → Item creation = Gemini vision + reasoning
+* Valuation = Gemini market research
+* Message drafting = Gemini or optional OpenAI
+
+## **2. AIService abstraction**
+
+* Provider-agnostic
+* GeminiProvider is first implementation
+* Future: optional OpenAIProvider, optional Apple Intents writing tools
+
+## **3. Apple Intelligence is supplemental**
+
+* Not the primary AI engine
+* Useful for:
+
+  * iOS-wide writing tools (polish user-entered text)
+  * Siri / App Intents integration
+* **No direct LLM API** for JSON or valuation → cannot support your core flows
+
+## **4. Single-user focus**
+
+* CloudKit sync is **not** in the near-term roadmap
+* Privacy trade-offs are acceptable
+* Focus is on making *your own workflow* efficient
+
+## **5. Your modules are now:**
+
+* Items (manual + AI-assisted)
+* Media (Photos, Documents, Audio)
+* Beneficiaries
+* **AI Layer** ← NEW major module
+
+So the doc needs a large but straightforward rewrite.
+
+---
+
+# ✨ Here is the Updated `ARCHITECTURE.md` (Drop-in Replacement)
+
+Below is a **fully updated, polished, ready-to-use** version that reflects your actual roadmap and priorities.
+
+You can paste this file directly into `Docs/ARCHITECTURE.md`.
+
+---
+
+````markdown
+# Legacy Treasure Chest — Architecture
+
+**Last Updated:** 2025-02-28  
+**Status:** ACTIVE  
+**Version:** 2.0.0 (AI-First Architecture)  
+**Target:** iOS 18.0+
+
+---
+
+# 1. Overview
+
+Legacy Treasure Chest is an AI-native iOS application that helps users catalog possessions, analyze value, attach media, and designate beneficiaries for legacy planning.
+
+### **New One-Sentence Summary**
+An AI-first iPhone app that uses cloud AI (Gemini) to automate item creation, valuation, and beneficiary assistance, supported by SwiftData local storage and a consistent SwiftUI design system.
+
+---
+
+# 2. Technology Stack
+
+## Platform
+- **iOS:** 18.0+
 - **Language:** Swift 6 (strict concurrency)
 - **UI Framework:** SwiftUI
 - **Architecture Pattern:** MVVM with service layer
 
-### Data & Persistence
-- **Local Storage:** SwiftData (primary)
-- **Media Storage:** File system (Application Support)
-- **Cloud Sync:** CloudKit (Phase 1B, Week 5)
-- **File Strategy:** Store metadata in SwiftData, large media as files
+## Data & Persistence
+- **Local Database:** SwiftData (primary store)
+- **Media Storage:** Application Support via `MediaStorage`
+- **Sync:** CloudKit (future, optional)
+- **Storage Principle:** Metadata in SwiftData, large binary assets in file system
 
-### AI Integration
-- **On-Device (Primary):** Apple Intelligence
-  - Description enhancement (Writing Tools)
-  - Audio transcription (Speech)
-  - Image understanding (Vision)
-- **Cloud (Optional):** Gemini 2.0 Flash
-  - Marketplace listing generation
-  - Market research and pricing
-  - Feature flag controlled (OFF by default)
+## AI Integration (New Architecture)
+### **Primary: Cloud AI (Gemini 2.0 Flash)**
+- Image analysis (item identification, attributes)
+- Value estimation via market research
+- Reasoning + classification (category suggestions)
+- Message generation
+- Beneficiary suggestion and pattern detection
 
-### Authentication
-- **Sign in with Apple** (exclusive)
-- No passwords stored
-- Keychain for sensitive data
+### **AIService Abstraction**
+A provider-agnostic façade enabling:
+- Gemini as primary provider  
+- Optional future providers (OpenAI, local models, etc.)
 
----
+```swift
+AIService
+ ├── GeminiProvider (primary)
+ └── FutureProvider (optional)
+````
 
-## Architecture Diagram
-```
-┌─────────────────────────────────────────────────────┐
-│                    SwiftUI Views                     │
-│  (Authentication, Item Detail, Audio Recording, etc) │
-└────────────────┬────────────────────────────────────┘
-                 │
-                 ▼
-┌─────────────────────────────────────────────────────┐
-│                   ViewModels                         │
-│          (@Observable, business logic)               │
-└────────────────┬────────────────────────────────────┘
-                 │
-                 ▼
-┌─────────────────────────────────────────────────────┐
-│                  Service Layer                       │
-│  ┌──────────────────────────────────────────────┐   │
-│  │ AuthService │ ItemService │ AudioService     │   │
-│  │ AIService   │ MarketAI    │ Transcription   │   │
-│  └──────────────────────────────────────────────┘   │
-└────────────────┬────────────────────────────────────┘
-                 │
-         ┌───────┴───────┐
-         ▼               ▼
-┌─────────────────┐ ┌──────────────────┐
-│   SwiftData     │ │  File System     │
-│  (metadata,     │ │  (images, audio, │
-│  relationships) │ │   documents)     │
-└─────────────────┘ └──────────────────┘
-         │
-         ▼
-┌─────────────────┐
-│   CloudKit      │
-│  (Phase 1B+)    │
-└─────────────────┘
-```
+### **Supplemental: Apple Intelligence**
+
+* System-level writing tools (polish/edit)
+* Siri + App Intents integration
+* Transcription (optional)
+
+> Apple Intelligence does *not* provide general-purpose LLM API access; it is not used for core automation.
+
+## Authentication
+
+* **Sign In With Apple** (exclusive)
+* No credentials stored
+* Keychain used only for Apple-related tokens
 
 ---
 
-## Module Structure
+# 3. Architecture Diagram
 
-### App Layer
-- **LegacyTreasureChestApp.swift:** App entry point, DI setup
-- **DependencyContainer.swift:** Service injection and configuration
-
-### Core Layer
-- **Protocols/:** Service interfaces (ServiceRegistry, FeatureFlags)
-- **Utilities/:** Helpers (AppError, AIAvailability)
-- **Extensions/:** Swift/Foundation extensions
-
-### Data Layer
-- **SwiftData/:** Models and ModelContainer setup
-- **Storage/:** Media file management (MediaStorage, MediaCleaner)
-
-### Features Layer
-- **Authentication/:** Sign in with Apple flow
-- **Items/:** Item cataloging and management (Phase 1B)
-- **Audio/:** Recording and transcription
-- **Beneficiaries/:** Legacy designation (Phase 1B)
-
-### UI Layer
-- **Components/:** Reusable UI elements
-- **Resources/:** Assets, colors, localization
-
----
-
-## Data Flow Examples
-
-### Creating an Item with Audio
 ```
-1. User taps "Record Story"
-2. RecordAudioView → RecordAudioViewModel
-3. ViewModel calls AudioService.startRecording()
-4. AudioService saves to MediaStorage
-5. On stop: TranscriptionService.transcribe()
-6. ViewModel creates AudioRecording entity
-7. SwiftData persists metadata (file path)
-8. CloudKit syncs (if enabled)
-```
-
-### Sign in with Apple
-```
-1. User taps "Sign in with Apple"
-2. AuthenticationView → AuthenticationViewModel
-3. ViewModel calls AuthService.signInWithApple()
-4. Apple ID credential received
-5. LTCUser entity created/fetched
-6. SwiftData persists user
-7. DependencyContainer sets currentUserId
-8. Navigate to HomeView
+┌──────────────────────────────────────────────────────────────┐
+│                         SwiftUI Views                         │
+│  (Items, Item Detail, AI Creation Flow, Beneficiaries, etc.)  │
+└───────────────▲──────────────────────────────────────────────┘
+                │
+                │
+┌───────────────┼──────────────────────────────────────────────┐
+│                       ViewModels                              │
+│      (@Observable, validation, orchestration, business logic) │
+└───────────────▲──────────────────────────────────────────────┘
+                │
+                │
+┌───────────────┼──────────────────────────────────────────────┐
+│                        Service Layer                           │
+│   AuthService     MediaStorage     AIService     ItemService   │
+│            ┌──────────────────────────────┐                   │
+│            │         AI Providers         │                   │
+│            │   (GeminiProvider primary)   │                   │
+│            └──────────────────────────────┘                   │
+└───────────────▲──────────────────────────────────────────────┘
+                │
+                │
+┌───────────────┼──────────────────────────────────────────────┐
+│                    Local Storage & Media Files                 │
+│          SwiftData (entities)     File System (media)          │
+└───────────────▲──────────────────────────────────────────────┘
+                │
+                │
+┌───────────────┼──────────────────────────────────────────────┐
+│                 Cloud Providers (Optional / Future)            │
+│  CloudKit Sync (multi-device)   Marketplace APIs (future)      │
+└───────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Key Design Decisions
+# 4. Module Structure
 
-### 1. SwiftData over Core Data
-**Rationale:** Modern API, simpler syntax, better CloudKit integration  
-**Trade-off:** Requires iOS 17+, less mature than Core Data  
-**Decision:** Acceptable since we target iOS 18+ only
+## App Layer
 
-### 2. File System for Media
-**Rationale:** SwiftData handles relationships, file system handles large files  
-**Benefits:** Better performance, easier backup, smaller database  
-**Implementation:** Store relative paths in SwiftData entities
+* `LegacyTreasureChestApp.swift`
+* Dependency injection setup
+* Theme initialization
 
-### 3. Apple Intelligence First
-**Rationale:** On-device = privacy, no API costs, better latency  
-**Trade-off:** Limited to newer devices  
-**Decision:** Acceptable since target audience typically has newer iPhones
+## Core Layer
 
-### 4. Optional Gemini MarketAI
-**Rationale:** Superior image recognition, 30x cheaper than alternatives  
-**Implementation:** Behind feature flag, OFF by default, user opt-in required  
-**Privacy:** Send only structured data, never raw media
+* **AIService** (new AI abstraction)
+* **GeminiProvider** (first implementation)
+* **MediaStorage / MediaCleaner**
+* Shared helpers and extensions
 
-### 5. Sign in with Apple Only
-**Rationale:** Eliminates password management, better UX, Apple ecosystem integration  
-**Trade-off:** Apple-only (acceptable for iOS-only app)  
-**Security:** Uses Keychain, supports Passkeys future enhancement
+## Data Layer
 
----
+* SwiftData models:
 
-## Performance Considerations
+  * `LTCUser`
+  * `LTCItem`
+  * `ItemImage`
+  * `AudioRecording`
+  * `Document`
+  * `Beneficiary`
+  * `ItemBeneficiary`
+  * **AI-related fields on LTCItem** (aiDescription, aiValueLow/High, etc.)
 
-### Optimizations
-- Lazy loading of images/audio
-- Background transcription
-- Optimistic UI updates
-- Image compression (80% JPEG quality)
-- Audio format: AAC-LC (efficient)
+## Features Layer
 
-### Limits (to be tuned)
-- Max image size: TBD
-- Max audio duration: TBD
-- Media cleanup: On app launch + manual Settings option
+* **Items**
 
----
+  * Manual creation + AI-assisted creation flow
+  * Item detail editing
+* **Media**
 
-## Security & Privacy
+  * Photos, Documents, Audio modules
+* **Beneficiaries**
 
-### Data Protection
-- All data encrypted at rest (iOS default)
-- Keychain for sensitive tokens
-- No passwords stored in app
-- Apple Intelligence processes on-device
+  * User-level beneficiary creation
+  * Item-level assignment (ItemBeneficiary)
+* **AI**
 
-### User Controls
-- "Use Cloud AI" toggle (Settings)
-- Export My Data
-- Delete My Data
-- Clear explanation of data usage
-
-### Cloud Data
-- MarketAI: Only send item attributes, not raw media
-- CloudKit: End-to-end encrypted (when enabled)
-- No third-party analytics
+  * AITestView (internal playground)
+  * Photo → Item analysis workflows
+  * Value refresh workflows
 
 ---
 
-## Testing Strategy
+# 5. AI Architecture (Critical)
 
-### Phase 1A (Current)
-- Build verification
-- Basic navigation
-- SwiftData persistence
+## AIService (Abstraction)
 
-### Phase 1B (Week 3-5)
-- Audio recording/playback
-- Transcription accuracy
-- Multi-device sync
-- Conflict resolution
+Defines the high-level interface the app depends on:
 
-### Phase 2 (Weeks 6+)
-- Household collaboration
-- Two-device concurrent edits
-- Permission enforcement
+```swift
+protocol AIProvider {
+    func analyzeItemPhoto(_ data: Data) async throws -> ItemAnalysis
+    func estimateValue(description: String, category: String?) async throws -> ValueRange
+    func draftMessage(item: LTCItem, beneficiary: Beneficiary) async throws -> String
+    func suggestBeneficiaries(item: LTCItem, candidates: [Beneficiary]) async throws -> [BeneficiarySuggestion]
+}
+```
+
+## GeminiProvider
+
+* The first concrete provider
+* Handles:
+
+  * REST requests
+  * API key management
+  * JSON decoding
+  * Error + retry logic
+* Owns prompt templates and tuning
+
+## Data Models
+
+Used both in AIService and SwiftData:
+
+* `ItemAnalysis`
+
+  * title
+  * description
+  * category
+  * confidence
+  * valueHints?
+
+* `ValueRange`
+
+  * low, high
+  * currency
+  * sources
+  * lastUpdated
+
+* `BeneficiarySuggestion`
+
+  * beneficiary
+  * confidence
+  * reasoning summary
 
 ---
 
-## Future Enhancements (Post-MVP)
+# 6. Design System (Theme.swift)
 
-1. **Video recordings** (similar to audio)
-2. **Marketplace integrations** (eBay, Craigslist APIs)
-3. **Estate planning export** (PDF reports)
-4. **Siri Shortcuts** ("Add item from photo")
-5. **Apple Watch** companion app
-6. **iPad** optimized layouts
+All modules adhere to:
+
+* Brand typography (Theme fonts)
+* Brand colors (Theme.primary, Theme.accent, etc.)
+* Spacing system via Theme.spacing
+* Section header styling (`.ltcSectionHeaderStyle()`)
+* Card backgrounds via `.ltcCardBackground()`
+
+The design system ensures UI consistency across:
+
+* Photos
+* Documents
+* Audio
+* Beneficiaries
+* AI item creation & review screens
 
 ---
 
-## Related Documents
+# 7. Key Architectural Decisions (Updated)
 
-- [DATA-MODEL.md](DATA-MODEL.md) - SwiftData entity definitions
-- [SERVICES.md](SERVICES.md) - Service layer protocols
-- [AI-LAYER.md](AI-LAYER.md) - AI integration details
-- [MVP-SCOPE.md](MVP-SCOPE.md) - Development timeline
+### **1. Cloud-First AI (Gemini as Primary)**
+
+**Why:**
+
+* Most capable vision + reasoning model available
+* Handles valuation via market research
+* Clearer JSON control
+* Needed for your workflow
+
+**Trade-offs:**
+
+* Requires network connectivity
+* API costs (acceptable for solo use)
 
 ---
 
-## Change Log
+### **2. AIService Provider Pattern**
 
-- **2025-01-14:** Initial architecture document (Phase 1A)
-  - Foundation code complete
-  - SwiftData models defined
-  - Media storage configured
-  - Feature flags implemented
+**Why:**
+
+* Allows Gemini now
+* Allows OpenAI later
+* Keeps business logic stable
+
+---
+
+### **3. Apple Intelligence = Supplemental**
+
+**Why:**
+
+* No general-purpose LLM API
+* Great for writing polish + Siri
+* Not suitable for your automated flows
+
+---
+
+### **4. SwiftData for All Entities**
+
+* Local, simple, modern
+* Excellent match for your single-user phase
+
+---
+
+### **5. Manual → AI-assisted → Fully Automated Workflows**
+
+Your modules follow this evolution path:
+
+1. Manual flows (already implemented)
+2. AI-assisted creation (Phase 1)
+3. AI-suggested beneficiaries (Phase 2)
+4. Value refresh automation (Phase 3)
+5. Fairness dashboard (Phase 4)
+
+---
+
+# 8. Future Enhancements (True Roadmap)
+
+1. **Add Item with AI flow** (photo → analysis → review → save)
+2. **Batch photo import** for scanning a room quickly
+3. **Value refresh scheduler**
+4. **Beneficiary AI (patterns + fairness insight)**
+5. **Legacy export (PDF / digital book)**
+6. **CloudKit multi-device sync**
+7. **Optional spouse/caregiver collaboration**
+8. **Marketplace APIs (eBay/Etsy/Auction houses)**
+
+---
+
+# 9. Related Documents
+
+* DATA-MODEL.md
+* SERVICES.md
+* MVP-SCOPE.md
+* AI-LAYER.md (future detailed AI docs)
+
+```
+
+---
+
+# 4️⃣ Summary
+
+- This updated `ARCHITECTURE.md` now matches **your real direction**:  
+  **AI-first, Gemini-first, provider-agnostic, cloud-first, with Apple Intelligence as supplemental**.
+- It removes outdated assumptions and aligns with the plan we will implement in the AI module buildout.
+- You can replace your existing file with this one directly.
+
+If you’d like, I can also generate:
+
+- `AI-LAYER.md` (detailed design for AIService + GeminiProvider)  
+- A diagram showing the planned “Add Item with AI” flow  
+- Prompt templates for Gemini photo analysis  
+
+Just tell me what you’d like next.
+```
