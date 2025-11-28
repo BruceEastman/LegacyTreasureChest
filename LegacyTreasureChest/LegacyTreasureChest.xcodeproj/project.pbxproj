@@ -11,9 +11,22 @@
 		BEFA6E2F2ED6777500A86ED8 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		BEFA6E502ED7ABD700A86ED8 /* Exceptions for "LegacyTreasureChest" folder in "LegacyTreasureChest" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = BE3A74662ECE64C000DFEE10 /* LegacyTreasureChest */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		BE3A74692ECE64C000DFEE10 /* LegacyTreasureChest */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				BEFA6E502ED7ABD700A86ED8 /* Exceptions for "LegacyTreasureChest" folder in "LegacyTreasureChest" target */,
+			);
 			path = LegacyTreasureChest;
 			sourceTree = "<group>";
 		};
@@ -258,6 +271,7 @@
 				DEVELOPMENT_TEAM = 8TNF6SJ6QB;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LegacyTreasureChest/Info.plist;
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Legacy Treasure Chest uses the microphone so you can record stories about your items.\nLegacy Treasure Chest uses the microphone so you can record stories about your items.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -291,6 +305,7 @@
 				DEVELOPMENT_TEAM = 8TNF6SJ6QB;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LegacyTreasureChest/Info.plist;
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Legacy Treasure Chest uses the microphone so you can record stories about your items.\nLegacy Treasure Chest uses the microphone so you can record stories about your items.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

@@ -6,13 +6,15 @@
 //  Uses @Query so changes (insert/delete) are reflected automatically.
 //  The + button navigates to AddItemView for full item creation,
 //  and tapping an item pushes ItemDetailView for editing.
+//  A separate photo toolbar button opens BatchAddItemsFromPhotosView
+//  to create multiple items from photos using AI.
 //
 
 import SwiftUI
 import SwiftData
 
 struct ItemsListView: View {
-    // SwiftData context for deletes (inserts happen in AddItemView)
+    // SwiftData context for deletes (inserts happen in AddItemView or batch import)
     @Environment(\.modelContext) private var modelContext
 
     // Live-updating query of all items, newest first
@@ -95,7 +97,16 @@ struct ItemsListView: View {
         .navigationTitle("Your Items")
         .tint(Theme.accent)
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
+            // Two visible buttons on the trailing side:
+            // 1) Add from Photos (AI)  2) Add Item manually
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                NavigationLink {
+                    BatchAddItemsFromPhotosView()
+                } label: {
+                    Image(systemName: "photo.on.rectangle.angled")
+                }
+                .accessibilityLabel("Add Items from Photos (AI)")
+
                 NavigationLink {
                     AddItemView()
                 } label: {

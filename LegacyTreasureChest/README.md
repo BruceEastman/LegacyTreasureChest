@@ -1,4 +1,89 @@
 # Legacy Treasure Chest
+## Beneficiaries Module (Item-Level Assignment)
+
+**Status:** Implemented and working in the iOS app.
+
+The Beneficiaries module allows an LTCUser to define people who will receive specific items and to configure when and how those people gain access.
+
+### Data Model
+
+- `LTCUser`
+  - Owns `beneficiaries: [Beneficiary]`
+- `Beneficiary`
+  - Core fields: `name`, `relationship`, optional `email`, optional `phoneNumber`
+  - Optional contact linkage via `contactIdentifier` and `isLinkedToContact`
+  - Back-link to item links via `itemLinks: [ItemBeneficiary]`
+- `LTCItem`
+  - Owns `itemBeneficiaries: [ItemBeneficiary]`
+- `ItemBeneficiary` (junction model)
+  - Links `LTCItem` ↔ `Beneficiary`
+  - Stores:
+    - `accessPermission: AccessPermission`  
+      - `.immediate`, `.afterSpecificDate`, `.uponPassing`
+    - Optional `accessDate`
+    - Optional `personalMessage`
+    - `notificationStatus: NotificationStatus`
+      - `.notSent`, `.sent`, `.accepted`
+
+This keeps Beneficiary as the canonical LTC record, with ItemBeneficiary holding per-item rules.
+
+### UI / UX
+
+All UI is Theme-driven (`Theme.swift`) and integrated into `ItemDetailView`:
+
+- **ItemDetailView**
+  - Hosts the Beneficiaries section alongside Photos, Documents, and Audio.
+  - Owns presentation for:
+    - Beneficiary picker/creator sheet
+    - Beneficiary link editor sheet
+  - Supports:
+    - Add Beneficiary to item
+    - Edit link (access rules + message)
+    - Remove link (swipe-to-delete)
+
+- **ItemBeneficiariesSection**
+  - Shows an empty state when there are no linked beneficiaries:
+    - Explanation of purpose
+    - Themed “Add Beneficiary” button
+  - When links exist:
+    - Card-style list of beneficiaries
+    - Displays:
+      - Beneficiary name and relationship
+      - Access permission summary (Immediate / After date / Upon passing)
+      - Notification status badge
+    - Tapping a row opens the editor; swipe-to-delete removes the link.
+
+- **BeneficiaryPickerSheet**
+  - Presented from `ItemDetailView` on “Add Beneficiary”.
+  - Shows:
+    - Existing beneficiaries for the current `LTCUser`
+    - A form to create a new beneficiary (name, relationship, optional email/phone)
+  - Selecting or creating a beneficiary:
+    - Creates a new `ItemBeneficiary` with default `.immediate` access
+    - Attaches it to the current item
+    - Associates new Beneficiaries with the user so they are available for other items
+
+- **ItemBeneficiaryEditSheet**
+  - Allows editing an existing `ItemBeneficiary` link:
+    - Picker for `accessPermission`
+    - Date picker for `accessDate` when `.afterSpecificDate` is chosen
+    - Card-style `TextEditor` for `personalMessage`
+    - Read-only display of `notificationStatus`
+  - Changes are saved back to the linked `ItemBeneficiary` when the user taps “Done”.
+
+### Future Enhancements (Planned)
+
+- Integrate with device Contacts:
+  - Import a contact to create or link a `Beneficiary`
+  - Populate `contactIdentifier` and `isLinkedToContact`
+- Notification workflows:
+  - Use `notificationStatus` to track outbound messages and acknowledgements
+- Dedicated Beneficiaries management screen:
+  - View and manage all Beneficiaries independent of items
+- AI assistance:
+  - Suggest likely beneficiaries for items
+  - Draft personal messages based on item history and user preferences
+
 # 📌 Milestone Update — Audio Stories Module Implemented (Nov 2025)
 
 The **Audio Stories** module for Legacy Treasure Chest is now fully implemented and integrated into the Item Detail flow. This brings audio recording, playback, and management capabilities to each item in the catalog.

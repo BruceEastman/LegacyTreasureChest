@@ -2,9 +2,9 @@
 //  HomeView.swift
 //  LegacyTreasureChest
 //
-//  Simple home screen shown after successful sign-in.
-//  Now includes navigation into the Items list.
-//  Phase 1C baseline.
+//  Home screen shown after successful sign-in.
+//  Includes navigation into the Items list and the AI Test Lab.
+//  Updated to use Theme.swift design system.
 //
 
 import SwiftUI
@@ -15,40 +15,67 @@ struct HomeView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 24) {
+            VStack(spacing: Theme.spacing.large) {
                 // App icon / visual anchor
                 Image(systemName: "shippingbox.circle.fill")
                     .font(.system(size: 72))
-                    .foregroundStyle(.tint)
-                    .padding(.top, 60)
+                    .foregroundStyle(Theme.accent)
+                    .padding(.top, Theme.spacing.xl)
 
                 // Headline
                 Text("Welcome to Legacy Treasure Chest")
-                    .font(.title.bold())
+                    .font(Theme.titleFont)
+                    .foregroundStyle(Theme.text)
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal)
+                    .padding(.horizontal, Theme.spacing.large)
 
                 // Subheadline
-                Text("Next we’ll start cataloging your items, photos, and audio stories.")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
+                Text("Next we’ll start cataloging your items, photos, audio stories, and beneficiaries.")
+                    .font(Theme.bodyFont)
+                    .foregroundStyle(Theme.textSecondary)
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal)
+                    .padding(.horizontal, Theme.spacing.large)
 
-                // MARK: – Navigation into Items
+                // MARK: – Primary navigation card (Items)
 
                 NavigationLink {
                     ItemsListView()
                 } label: {
                     Text("View Your Items")
+                        .font(Theme.bodyFont.weight(.semibold))
                         .frame(maxWidth: .infinity)
                         .padding()
-                        .background(Color.accentColor)
-                        .foregroundColor(.white)
-                        .cornerRadius(12)
+                        .background(Theme.primary)
+                        .foregroundStyle(Color.white)
+                        .cornerRadius(16)
                 }
-                .padding(.horizontal, 40)
-                .padding(.top, 8)
+                .padding(.horizontal, Theme.spacing.xl)
+                .padding(.top, Theme.spacing.small)
+
+                // MARK: – Tools & Labs
+
+                VStack(alignment: .leading, spacing: Theme.spacing.small) {
+                    Text("Tools & Labs")
+                        .ltcSectionHeaderStyle()
+
+                    NavigationLink {
+                        AITestView()
+                    } label: {
+                        VStack(alignment: .leading, spacing: Theme.spacing.small) {
+                            Text("AI Test Lab")
+                                .font(Theme.bodyFont.weight(.semibold))
+                                .foregroundStyle(Theme.text)
+
+                            Text("Try Gemini-powered item analysis with sample photos.")
+                                .font(Theme.secondaryFont)
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .ltcCardBackground()
+                    }
+                }
+                .padding(.horizontal, Theme.spacing.xl)
+                .padding(.top, Theme.spacing.medium)
 
                 // MARK: – Sign Out
 
@@ -56,18 +83,20 @@ struct HomeView: View {
                     onSignOut()
                 } label: {
                     Text("Sign Out")
+                        .font(Theme.bodyFont)
                         .frame(maxWidth: .infinity)
                         .padding()
                         .background(Color(.systemGray5))
-                        .foregroundColor(.primary)
-                        .cornerRadius(12)
+                        .foregroundStyle(Theme.text)
+                        .cornerRadius(16)
                 }
-                .padding(.horizontal, 40)
-                .padding(.top, 4)
+                .padding(.horizontal, Theme.spacing.xl)
+                .padding(.top, Theme.spacing.small)
 
-                Spacer(minLength: 40)
+                Spacer(minLength: Theme.spacing.xl)
             }
         }
+        .background(Theme.background.ignoresSafeArea())
         .navigationTitle("Home")
         .navigationBarTitleDisplayMode(.inline)
     }

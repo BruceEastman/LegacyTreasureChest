@@ -51,6 +51,9 @@ struct ItemDetailView: View {
     @State private var isBeneficiaryPickerPresented: Bool = false
     @State private var editingLinkItem: BeneficiaryEditItem?
 
+    // AI analysis sheet
+    @State private var isAIAnalysisPresented: Bool = false
+
     // Base category options
     private let defaultCategories: [String] = [
         "Uncategorized",
@@ -79,6 +82,8 @@ struct ItemDetailView: View {
 
     var body: some View {
         Form {
+            // MARK: - Basic Info
+
             Section {
                 TextField("Name", text: $item.name)
                     .textInputAutocapitalization(.words)
@@ -91,6 +96,8 @@ struct ItemDetailView: View {
                 Text("Basic Info")
                     .ltcSectionHeaderStyle()
             }
+
+            // MARK: - Details
 
             Section {
                 Picker("Category", selection: $item.category) {
@@ -113,17 +120,53 @@ struct ItemDetailView: View {
                     .ltcSectionHeaderStyle()
             }
 
+            // MARK: - AI Assistance
+
+            Section {
+                Button {
+                    isAIAnalysisPresented = true
+                } label: {
+                    HStack {
+                        Image(systemName: "sparkles")
+                        Text("Analyze with AI")
+                            .font(Theme.bodyFont.weight(.semibold))
+                    }
+                }
+                .disabled(item.images.isEmpty)
+            } header: {
+                Text("AI Assistance")
+                    .ltcSectionHeaderStyle()
+            } footer: {
+                if item.images.isEmpty {
+                    Text("Add at least one photo in the Photos section to enable AI analysis.")
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                } else {
+                    Text("AI will analyze the first photo for this item and suggest improved title, description, category, and value.")
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                }
+            }
+
+            // MARK: - Photos
+
             // Photos section reports taps back to this parent view.
             ItemPhotosSection(item: item) { image in
                 photoPreviewItem = PhotoPreviewItem(filePath: image.filePath)
             }
+
+            // MARK: - Documents
 
             // Documents section also reports taps back to this parent view.
             ItemDocumentsSection(item: item) { document in
                 documentPreviewItem = DocumentPreviewItem(document: document)
             }
 
+            // MARK: - Audio
+
             ItemAudioSection(item: item)
+
+            // MARK: - Beneficiaries
 
             ItemBeneficiariesSection(
                 item: item,
@@ -137,6 +180,8 @@ struct ItemDetailView: View {
                     removeItemBeneficiary(link)
                 }
             )
+
+            // MARK: - Footer
 
             Section {
                 EmptyView()
@@ -167,6 +212,10 @@ struct ItemDetailView: View {
         // Beneficiary link editor sheet.
         .sheet(item: $editingLinkItem) { editItem in
             ItemBeneficiaryEditSheet(link: editItem.link)
+        }
+        // AI analysis sheet.
+        .sheet(isPresented: $isAIAnalysisPresented) {
+            ItemAIAnalysisSheet(item: item)
         }
     }
 
