@@ -63,6 +63,14 @@ struct ItemDetailView: View {
         "Collectibles",
         "Documents",
         "Electronics",
+        "Appliance",
+        "Rug",
+        "China & Crystal",
+        "Luxury Personal Items",
+        "Clothing",
+        "Tools",
+        "Luggage",
+        "Decor",
         "Other"
     ]
 

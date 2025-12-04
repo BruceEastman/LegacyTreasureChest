@@ -12,6 +12,7 @@
 
 import SwiftUI
 import SwiftData
+import UIKit
 
 struct ItemsListView: View {
     // SwiftData context for deletes (inserts happen in AddItemView or batch import)
@@ -30,6 +31,11 @@ struct ItemsListView: View {
     // Currency code based on current locale, defaulting to USD
     private var currencyCode: String {
         Locale.current.currency?.identifier ?? "USD"
+    }
+
+    // Whether we are actively filtering by search
+    private var isSearching: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var body: some View {
@@ -55,40 +61,38 @@ struct ItemsListView: View {
                             .padding(.vertical, Theme.spacing.medium)
                     }
                 } else {
-                    ForEach(filtered) { item in
-                        NavigationLink {
-                            ItemDetailView(item: item)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                // Item name – primary
-                                Text(item.name)
-                                    .font(Theme.sectionHeaderFont)
-                                    .foregroundStyle(Theme.text)
-
-                                // Description – secondary
-                                if !item.itemDescription.isEmpty {
-                                    Text(item.itemDescription)
-                                        .font(Theme.secondaryFont)
-                                        .foregroundStyle(Theme.textSecondary)
-                                        .lineLimit(2)
-                                }
-
-                                // Show value if it's greater than zero
-                                if item.value > 0 {
-                                    Text(item.value, format: .currency(code: currencyCode))
-                                        .font(Theme.secondaryFont)
-                                        .foregroundStyle(Theme.textSecondary)
-                                }
-
-                                // Created date as subtle metadata
-                                Text(item.createdAt, style: .date)
-                                    .font(.caption)
-                                    .foregroundStyle(Theme.textSecondary)
+                    if isSearching {
+                        // Flat list when searching – easier to scan matches
+                        ForEach(filtered) { item in
+                            NavigationLink {
+                                ItemDetailView(item: item)
+                            } label: {
+                                itemRow(for: item)
                             }
-                            .padding(.vertical, 4)
+                        }
+                        .onDelete(perform: deleteItemsFlat)
+                    } else {
+                        // Grouped by category when not searching
+                        let grouped = Dictionary(grouping: filtered, by: normalizedCategory(for:))
+                        let sortedCategories = sortedCategories(from: Array(grouped.keys))
+
+                        ForEach(sortedCategories, id: \.self) { category in
+                            if let itemsInSection = grouped[category] {
+                                Section(header: Text(category).font(Theme.sectionHeaderFont)) {
+                                    ForEach(itemsInSection) { item in
+                                        NavigationLink {
+                                            ItemDetailView(item: item)
+                                        } label: {
+                                            itemRow(for: item)
+                                        }
+                                    }
+                                    .onDelete { offsets in
+                                        deleteItems(offsets, in: itemsInSection)
+                                    }
+                                }
+                            }
                         }
                     }
-                    .onDelete(perform: deleteItems)
                 }
             }
             .scrollContentBackground(.hidden)   // Hide default list background
@@ -117,6 +121,87 @@ struct ItemsListView: View {
         }
     }
 
+    // MARK: - Row + Thumbnail
+
+    @ViewBuilder
+    private func itemRow(for item: LTCItem) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            thumbnail(for: item)
+
+            VStack(alignment: .leading, spacing: 4) {
+                // Item name – primary
+                Text(item.name)
+                    .font(Theme.sectionHeaderFont)
+                    .foregroundStyle(Theme.text)
+
+                // Description – secondary
+                if !item.itemDescription.isEmpty {
+                    Text(item.itemDescription)
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(2)
+                }
+
+                // Show value if it's greater than zero
+                if item.value > 0 {
+                    Text(item.value, format: .currency(code: currencyCode))
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                }
+
+                // Created date as subtle metadata
+                Text(item.createdAt, style: .date)
+                    .font(.caption)
+                    .foregroundStyle(Theme.textSecondary)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private func thumbnail(for item: LTCItem) -> some View {
+        if let firstImage = item.images.first,
+           let uiImage = MediaStorage.loadImage(from: firstImage.filePath) {
+            Image(uiImage: uiImage)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 56, height: 56)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.secondary.opacity(0.2), lineWidth: 0.5)
+                )
+                .clipped()
+        } else {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Theme.background)
+
+                Image(systemName: "photo")
+                    .font(.system(size: 20))
+                    .foregroundStyle(Theme.textSecondary.opacity(0.8))
+            }
+            .frame(width: 56, height: 56)
+        }
+    }
+
+    // MARK: - Category Helpers
+
+    /// Normalize an item's category for grouping (fallback to "Uncategorized").
+    private func normalizedCategory(for item: LTCItem) -> String {
+        let trimmed = item.category.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Uncategorized" : trimmed
+    }
+
+    /// Sort categories for section order: "Uncategorized" first, then alpha.
+    private func sortedCategories(from keys: [String]) -> [String] {
+        keys.sorted { lhs, rhs in
+            if lhs == "Uncategorized" { return true }
+            if rhs == "Uncategorized" { return false }
+            return lhs.localizedCaseInsensitiveCompare(rhs) == .orderedAscending
+        }
+    }
+
     // MARK: - Filtering
 
     /// Apply simple name/description search based on searchText
@@ -137,14 +222,21 @@ struct ItemsListView: View {
 
     // MARK: - Actions
 
-    private func deleteItems(at offsets: IndexSet) {
+    /// Delete in flat (search) mode.
+    private func deleteItemsFlat(at offsets: IndexSet) {
         let current = filteredItems()
-
         for index in offsets {
             let item = current[index]
             modelContext.delete(item)
         }
-        // @Query + SwiftData will automatically reflect deletions.
+    }
+
+    /// Delete in grouped mode – offsets are relative to the section's items.
+    private func deleteItems(_ offsets: IndexSet, in items: [LTCItem]) {
+        for index in offsets {
+            let item = items[index]
+            modelContext.delete(item)
+        }
     }
 }
 
