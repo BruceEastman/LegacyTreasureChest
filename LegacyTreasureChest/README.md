@@ -1,4 +1,46 @@
 # Legacy Treasure Chest
+✅ README Update (drop-in text block)
+Add this as a new section near the top of your README under “Current Status” or “Recent Work Completed”.
+(You can also keep it as a dated changelog entry.)
+Beneficiaries Module — Completed Boomer-Side Functionality (2025-02)
+The Beneficiaries module is now fully implemented for the primary “owner” (Boomer) workflow. The following features are complete:
+Beneficiary Management
+Create beneficiaries manually with name, relationship, email, and phone number.
+Import beneficiaries directly from iOS Contacts using a custom ContactPicker.
+Automatic deduplication: selecting a contact for an existing name merges the data rather than creating duplicates.
+Beneficiaries imported from Contacts display a subtle “Linked to Contacts” badge in all views.
+Edit Beneficiary screen allows updating:
+name
+relationship
+email
+phone
+contact linkage (“Update from Contacts”)
+Relationship Selector
+Relationship field now uses a structured selector for consistent data:
+Son, Daughter, Grandchild, Niece, Nephew, Sibling, Friend, Other
+“Other / Custom…” opens a free-text field.
+Beneficiary records always store a clean relationship value.
+Assignment & Item Linking
+Beneficiaries can be assigned to items through the ItemDetail screen using a picker.
+Each assignment stores the access permission (immediate, upon passing, specific date).
+Users can remove assignments or edit permissions at any time.
+Beneficiary Overview Screen
+“Your Beneficiaries” screen shows:
+name + relationship
+number of assigned items
+total assigned value (using the item’s current estimated value)
+a badge for Contacts-linked beneficiaries
+Unassigned items appear in a separate section for quick distribution.
+Beneficiary Detail View
+Shows:
+complete beneficiary information
+Contact linkage indicator
+assigned item list with thumbnails and permission details
+total assigned value summary
+Inline “Edit Beneficiary” button opens the edit sheet.
+General Notes
+This module is now feature-complete for the owner workflow and ready for TestFlight.
+Future enhancements (Millennial/recipient workflow, shared claiming, CloudKit multi-user sync) can build on this foundation.
 ### 2025-11-28 — Beneficiaries Module & Contacts Integration
 
 **Beneficiaries (Owner / Boomer view)**

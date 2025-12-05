@@ -2,7 +2,9 @@
 //  BeneficiaryFormSheet.swift
 //  LegacyTreasureChest
 //
-//  Simple form sheet to create a new Beneficiary manually.
+//  Sheet for manually creating a new Beneficiary.
+//  Uses a relationship preset picker + optional custom relationship,
+//  and supports basic contact details.
 //
 
 import SwiftUI
@@ -13,11 +15,28 @@ struct BeneficiaryFormSheet: View {
     @Environment(\.modelContext) private var modelContext
 
     @State private var name: String = ""
-    @State private var relationship: String = ""
+    @State private var relationshipPreset: String = "Other / Custom"
+    @State private var customRelationship: String = ""
     @State private var email: String = ""
     @State private var phone: String = ""
 
-    // Simple validation: require a name.
+    // Common relationship options for consistency.
+    private let relationshipPresets: [String] = [
+        "Spouse/Partner",
+        "Daughter",
+        "Son",
+        "Child",
+        "Grandchild",
+        "Sibling",
+        "Parent",
+        "Niece/Nephew",
+        "Other Family",
+        "Friend",
+        "Charity/Organization",
+        "Other / Custom"
+    ]
+
+    // Require a name; relationship can be preset or custom.
     private var canSave: Bool {
         !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
@@ -29,10 +48,14 @@ struct BeneficiaryFormSheet: View {
                     TextField("Full Name", text: $name)
                         .font(Theme.bodyFont)
                         .textInputAutocapitalization(.words)
+                } header: {
+                    Text("Name")
+                        .ltcSectionHeaderStyle()
+                }
 
-                    TextField("Relationship (e.g., Daughter)", text: $relationship)
-                        .font(Theme.bodyFont)
+                relationshipSection
 
+                Section {
                     TextField("Email (optional)", text: $email)
                         .font(Theme.bodyFont)
                         .keyboardType(.emailAddress)
@@ -42,10 +65,10 @@ struct BeneficiaryFormSheet: View {
                         .font(Theme.bodyFont)
                         .keyboardType(.phonePad)
                 } header: {
-                    Text("New Beneficiary")
+                    Text("Contact")
                         .ltcSectionHeaderStyle()
                 } footer: {
-                    Text("This person will appear in your beneficiary list and can be assigned to items in your legacy plan.")
+                    Text("You can also link or update this person from Contacts later.")
                         .font(Theme.secondaryFont)
                         .foregroundStyle(Theme.textSecondary)
                 }
@@ -74,19 +97,52 @@ struct BeneficiaryFormSheet: View {
         }
     }
 
-    // MARK: - Actions
+    // MARK: - Relationship Section
+
+    private var relationshipSection: some View {
+        Section {
+            Picker("Relationship", selection: $relationshipPreset) {
+                ForEach(relationshipPresets, id: \.self) { preset in
+                    Text(preset)
+                        .font(Theme.bodyFont)
+                        .tag(preset)
+                }
+            }
+
+            if relationshipPreset == "Other / Custom" {
+                TextField("Custom relationship (e.g., Grand-niece)", text: $customRelationship)
+                    .font(Theme.bodyFont)
+            }
+        } header: {
+            Text("Relationship")
+                .ltcSectionHeaderStyle()
+        } footer: {
+            Text("Choose the closest description, or use a custom label that makes sense for your family.")
+                .font(Theme.secondaryFont)
+                .foregroundStyle(Theme.textSecondary)
+        }
+    }
+
+    // MARK: - Save
 
     private func saveBeneficiary() {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else { return }
 
-        let trimmedRelationship = relationship.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedCustom = customRelationship.trimmingCharacters(in: .whitespacesAndNewlines)
+        let relationshipValue: String
+        if relationshipPreset == "Other / Custom" {
+            relationshipValue = trimmedCustom
+        } else {
+            relationshipValue = relationshipPreset
+        }
+
         let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedPhone = phone.trimmingCharacters(in: .whitespacesAndNewlines)
 
         let beneficiary = Beneficiary(
             name: trimmedName,
-            relationship: trimmedRelationship,
+            relationship: relationshipValue,
             email: trimmedEmail.isEmpty ? nil : trimmedEmail,
             phoneNumber: trimmedPhone.isEmpty ? nil : trimmedPhone
         )
@@ -106,7 +162,9 @@ private let beneficiaryFormPreviewContainer: ModelContainer = {
     return container
 }()
 
-#Preview("Add Beneficiary Form") {
-    BeneficiaryFormSheet()
-        .modelContainer(beneficiaryFormPreviewContainer)
+#Preview("Add Beneficiary") {
+    NavigationStack {
+        BeneficiaryFormSheet()
+    }
+    .modelContainer(beneficiaryFormPreviewContainer)
 }

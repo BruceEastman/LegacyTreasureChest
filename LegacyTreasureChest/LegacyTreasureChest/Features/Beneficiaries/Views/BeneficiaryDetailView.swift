@@ -42,14 +42,6 @@ struct BeneficiaryDetailView: View {
         .background(Theme.background)
         .navigationTitle("Beneficiary")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Edit") {
-                    isEditing = true
-                }
-                .font(Theme.bodyFont)
-            }
-        }
         .sheet(isPresented: $isEditing) {
             BeneficiaryEditSheet(beneficiary: beneficiary)
         }
@@ -60,6 +52,7 @@ struct BeneficiaryDetailView: View {
     private var beneficiaryHeaderSection: some View {
         Section {
             VStack(alignment: .leading, spacing: Theme.spacing.small) {
+                // Name + relationship
                 Text(beneficiary.name)
                     .font(Theme.bodyFont.weight(.semibold))
                     .foregroundStyle(Theme.text)
@@ -70,6 +63,20 @@ struct BeneficiaryDetailView: View {
                         .foregroundStyle(Theme.textSecondary)
                 }
 
+                // Contacts link indicator (subtle, consistent with list row)
+                if beneficiary.isLinkedToContact {
+                    HStack(spacing: 4) {
+                        Image(systemName: "person.crop.circle.badge.checkmark")
+                            .font(.caption2)
+                            .foregroundStyle(Theme.textSecondary)
+
+                        Text("Linked to Contacts")
+                            .font(Theme.secondaryFont)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                }
+
+                // Email / phone
                 if let email = beneficiary.email, !email.isEmpty {
                     Text(email)
                         .font(Theme.secondaryFont)
@@ -82,6 +89,7 @@ struct BeneficiaryDetailView: View {
                         .foregroundStyle(Theme.textSecondary)
                 }
 
+                // Total value summary
                 if totalValue > 0 {
                     Divider()
                         .padding(.vertical, Theme.spacing.small)
@@ -96,6 +104,22 @@ struct BeneficiaryDetailView: View {
                             .foregroundStyle(Theme.text)
                     }
                 }
+
+                // Edit button – clearly about the Beneficiary, not items.
+                Button {
+                    isEditing = true
+                } label: {
+                    HStack {
+                        Image(systemName: "square.and.pencil")
+                        Text("Edit Beneficiary")
+                            .font(Theme.bodyFont.weight(.semibold))
+                        Spacer()
+                    }
+                    .padding(.vertical, 8)
+                }
+                .buttonStyle(.bordered)
+                .tint(Theme.accent)
+                .padding(.top, Theme.spacing.medium)
             }
             .padding(.vertical, Theme.spacing.small)
         } header: {
@@ -221,10 +245,12 @@ private let beneficiaryDetailPreviewContainer: ModelContainer = {
     )
 
     let beneficiary = Beneficiary(
-        name: "Alex Johnson",
-        relationship: "Daughter",
-        email: "alex@example.com",
-        phoneNumber: "555-123-4567"
+        name: "Kate Bell",
+        relationship: "",
+        email: "kate-bell@mac.com",
+        phoneNumber: "555-564-8583",
+        contactIdentifier: "CONTACT-KATE",
+        isLinkedToContact: true
     )
 
     let link1 = ItemBeneficiary(
