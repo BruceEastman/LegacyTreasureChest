@@ -260,3 +260,29 @@ public final class ItemBeneficiary {
         self.updatedAt = updatedAt
     }
 }
+
+// MARK: - Category Helpers
+
+extension LTCItem {
+    /// Centralized list of base categories used across the app.
+    /// If you add or rename categories, update them here so
+    /// AddItemView, AddItemWithAIView, and ItemDetailView stay in sync.
+    static let baseCategories: [String] = [
+        "Uncategorized",
+        "Art",
+        "Furniture",
+        "Jewelry",
+        "Collectibles",
+        "Documents",
+        "Electronics",
+        "Appliance",
+        "Rug",
+        "China & Crystal",
+        "Luxury Personal Items",
+        "Clothing",
+        "Tools",
+        "Luggage",
+        "Decor",
+        "Other"
+    ]
+}

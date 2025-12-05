@@ -1,4 +1,99 @@
 # Legacy Treasure Chest
+### 2025-11-28 — Beneficiaries Module & Contacts Integration
+
+**Beneficiaries (Owner / Boomer view)**
+
+- Implemented **YourBeneficiariesView** as the top-level entry point:
+  - Shows each Beneficiary with relationship, number of items, and total assigned value (using current item values).
+  - Displays a **“From Contacts”** badge for Beneficiaries linked to iOS Contacts.
+  - Supports swipe-to-delete for Beneficiaries with no assigned items and prevents deletion when items are still linked (with an explanatory message).
+
+- Implemented **BeneficiaryDetailView**:
+  - Shows contact info (name, relationship, email, phone).
+  - Shows total value of assigned items.
+  - Lists assigned items with thumbnails, category, per-item value, and access rules, navigating into `ItemDetailView` on tap.
+
+- Implemented **BeneficiaryFormSheet** (manual add):
+  - Simple, theme-aligned sheet for manually adding Beneficiaries (name, relationship, email, phone).
+  - New Beneficiaries appear in both Your Beneficiaries and the item-level Beneficiary picker.
+
+- Implemented **ContactPickerView** + top-level Contacts integration:
+  - “+” menu in Your Beneficiaries offers:
+    - **Add from Contacts** — opens the system Contacts picker.
+    - **Add Manually** — opens `BeneficiaryFormSheet`.
+  - Selecting a contact will:
+    - Reuse an existing Beneficiary linked to that contact if one exists.
+    - Otherwise, try to **merge with an existing Beneficiary** by name/email (to avoid duplicates).
+    - Only create a brand new Beneficiary when no reasonable match is found.
+  - When merging, the app fills in missing email/phone but preserves any user-edited name.
+
+- Item-level Beneficiary UX:
+  - `ItemBeneficiariesSection` shows per-item Beneficiary links with access rules and notification status.
+  - Users can:
+    - Add a Beneficiary to an item via the Beneficiary picker.
+    - Edit a link via `ItemBeneficiaryEditSheet` (access rules, date, personal message).
+    - Remove a link (deletes the junction record, not the Beneficiary).
+
+- **Unassigned Items**:
+  - `YourBeneficiariesView` shows a dedicated **Unassigned Items** section listing items with no Beneficiaries.
+  - Tapping an item navigates into `ItemDetailView` to assign Beneficiaries from there.
+
+**Other sync / polish**
+
+- Aligned category options across:
+  - `ItemDetailView`
+  - `AddItemView`
+  - `AddItemWithAIView`
+- Ensured Beneficiary-related views are fully Theme-driven (typography, colors, spacing) and integrated into the main navigation via Home → Beneficiaries.
+
+## Status Update – AI Integration, Items UI, and Documents (2025-12-04)
+
+### AI Integration
+
+- AI item analysis now runs through the **LTC AI Gateway** backend:
+  - iOS uses `AIService` with `BackendAIProvider`.
+  - Backend is a FastAPI app that calls Gemini 2.0 Flash and returns strict JSON.
+  - No Gemini API keys or secrets are present in the iOS app.
+- The following flows are working end-to-end:
+  - `AITestView` (internal lab) – single photo → ItemAnalysis.
+  - Batch Add from Photos – multiple photos → multiple items with AI-filled details.
+  - AI-assisted analysis on existing items via `ItemAIAnalysisSheet`.
+
+### Items UI & Categories
+
+- “Your Items” list now:
+  - Shows a **thumbnail** for each item (first photo if available, placeholder otherwise).
+  - Groups items by **Category** when not searching (Art, Jewelry, Rug, Luxury Personal Items, etc.).
+  - Falls back to a flat thumbnail list while searching, for easier scanning of matches.
+- Category options have been expanded and aligned with the AI backend, including:
+  - `China & Crystal`
+  - `Luxury Personal Items`
+  - `Tools`
+  - Plus existing categories like `Art`, `Furniture`, `Jewelry`, `Collectibles`, `Rug`, `Luggage`, `Decor`, `Other`.
+- Existing items may still have older or legacy category values; these will be normalized over time as items are edited.
+
+### Documents vs Photos – Current Decision
+
+- **Documents**:
+  - Currently optimized for PDFs and other files added via the system file picker (Files, Mail, etc.).
+- **Photos**:
+  - All camera-based images, including photos of receipts, appraisals, labels, and other “document-like” images, are managed in the Photos section.
+- Intentional decision for this phase:
+  - Documents = external files (especially PDFs).
+  - Photos = all images, even when they represent documentation.
+- Deferred enhancement:
+  - In a future iteration, enhance the Documents module to:
+    - Import images from Photos as `IMAGE` documents.
+    - Add document-type metadata (e.g., Appraisal, Receipt, Warranty, Insurance Statement).
+
+### Next Focus – Beneficiaries
+
+- Upcoming work will focus on the **Beneficiaries** experience:
+  - Confirm and polish the existing Item → Beneficiary linking (ItemBeneficiariesSection, BeneficiaryPickerSheet, ItemBeneficiaryEditSheet).
+  - Introduce a “Your Beneficiaries” screen to view and manage beneficiaries.
+  - Add a “Beneficiary detail” view to see all items associated with a given person (e.g., “What does Sarah get?”).
+- AI features for beneficiary suggestions (`suggestBeneficiaries`) and personalized messaging (`draftPersonalMessage`) remain planned but are not yet implemented; current phase is about getting the core data model and UX flows solid.
+
 ## AI Integration Status (Local Backend + Gemini)
 
 **Last Updated:** 2025-11-28

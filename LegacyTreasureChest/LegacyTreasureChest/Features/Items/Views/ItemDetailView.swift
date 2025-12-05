@@ -54,25 +54,8 @@ struct ItemDetailView: View {
     // AI analysis sheet
     @State private var isAIAnalysisPresented: Bool = false
 
-    // Base category options
-    private let defaultCategories: [String] = [
-        "Uncategorized",
-        "Art",
-        "Furniture",
-        "Jewelry",
-        "Collectibles",
-        "Documents",
-        "Electronics",
-        "Appliance",
-        "Rug",
-        "China & Crystal",
-        "Luxury Personal Items",
-        "Clothing",
-        "Tools",
-        "Luggage",
-        "Decor",
-        "Other"
-    ]
+    // Base category options (centralized via LTCItem.baseCategories)
+    private let defaultCategories: [String] = LTCItem.baseCategories
 
     // Include the item's current category if it's not in the defaults
     private var categoryOptions: [String] {

@@ -101,8 +101,17 @@ struct ItemsListView: View {
         .navigationTitle("Your Items")
         .tint(Theme.accent)
         .toolbar {
-            // Two visible buttons on the trailing side:
-            // 1) Add from Photos (AI)  2) Add Item manually
+            // Leading: Beneficiaries overview
+            ToolbarItem(placement: .topBarLeading) {
+                NavigationLink {
+                    YourBeneficiariesView()
+                } label: {
+                    Image(systemName: "person.3.fill")
+                }
+                .accessibilityLabel("View Beneficiaries")
+            }
+
+            // Trailing: Add from Photos (AI) + Add Item manually
             ToolbarItemGroup(placement: .topBarTrailing) {
                 NavigationLink {
                     BatchAddItemsFromPhotosView()

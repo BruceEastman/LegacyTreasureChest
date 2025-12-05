@@ -198,14 +198,20 @@ struct BeneficiaryPickerSheet: View {
     @Bindable var item: LTCItem
     var user: LTCUser?
 
+    // All beneficiaries in the store, sorted by createdAt
+    @Query(sort: \Beneficiary.createdAt, order: .forward)
+    private var allBeneficiaries: [Beneficiary]
+
     @State private var newName: String = ""
     @State private var newRelationship: String = ""
     @State private var newEmail: String = ""
     @State private var newPhone: String = ""
 
+    /// Existing beneficiaries available for selection.
+    /// For now we just use allBeneficiaries; later we can de-duplicate
+    /// or filter by user if needed.
     private var existingBeneficiaries: [Beneficiary] {
-        (user?.beneficiaries ?? [])
-            .sorted { $0.createdAt < $1.createdAt }
+        allBeneficiaries
     }
 
     var body: some View {

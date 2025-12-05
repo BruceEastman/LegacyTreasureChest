@@ -16,17 +16,8 @@ struct AddItemView: View {
     @State private var name: String = ""
     @State private var itemDescription: String = ""
 
-    // Category options for new items
-    private let defaultCategories: [String] = [
-        "Uncategorized",
-        "Art",
-        "Furniture",
-        "Jewelry",
-        "Collectibles",
-        "Documents",
-        "Electronics",
-        "Other"
-    ]
+    // Category options for new items (centralized via LTCItem.baseCategories)
+    private let defaultCategories: [String] = LTCItem.baseCategories
 
     @State private var selectedCategory: String = "Uncategorized"
 
@@ -60,11 +51,17 @@ struct AddItemView: View {
                     }
                 }
 
-                TextField("Estimated Value", value: $value, format: .currency(code: currencyCode))
-                    .keyboardType(.decimalPad)
+                TextField(
+                    "Estimated Value",
+                    value: $value,
+                    format: .currency(code: currencyCode)
+                )
+                .keyboardType(.decimalPad)
             }
 
-            Section(footer: Text("You can add photos, audio stories, and documents in a future update.")) {
+            Section(
+                footer: Text("You can add photos, documents, audio stories, and beneficiaries from the item details screen.")
+            ) {
                 EmptyView()
             }
         }

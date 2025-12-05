@@ -37,20 +37,8 @@ struct AddItemWithAIView: View {
     @State private var name: String = ""
     @State private var itemDescription: String = ""
 
-    // Category options (can expand based on AI output)
-    private let baseCategories: [String] = [
-        "Uncategorized",
-        "Art",
-        "Furniture",
-        "Jewelry",
-        "Collectibles",
-        "Documents",
-        "Electronics",
-        "Luggage",
-        "Rug",
-        "Appliance",
-        "Other"
-    ]
+    // Category options (centralized via LTCItem.baseCategories)
+    private let baseCategories: [String] = LTCItem.baseCategories
 
     @State private var categoryOptions: [String] = []
     @State private var selectedCategory: String = "Uncategorized"
@@ -115,8 +103,10 @@ struct AddItemWithAIView: View {
             }
 
             // Optional hints
-            Section(header: Text("Optional Hints for AI"),
-                    footer: Text("These hints are only used to guide AI. You can still edit the final item details after analysis.")) {
+            Section(
+                header: Text("Optional Hints for AI"),
+                footer: Text("These hints are only used to guide AI. You can still edit the final item details after analysis.")
+            ) {
                 TextField("Working Title (optional)", text: $hintTitle)
                 TextField("Short Description (optional)", text: $hintDescription)
                 TextField("Known Category (optional)", text: $hintCategory)
@@ -137,8 +127,12 @@ struct AddItemWithAIView: View {
                     }
                 }
 
-                TextField("Estimated Value", value: $value, format: .currency(code: currencyCode))
-                    .keyboardType(.decimalPad)
+                TextField(
+                    "Estimated Value",
+                    value: $value,
+                    format: .currency(code: currencyCode)
+                )
+                .keyboardType(.decimalPad)
             }
 
             if let analysisResult {
