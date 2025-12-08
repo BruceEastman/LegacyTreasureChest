@@ -225,10 +225,25 @@ struct AddItemWithAIView: View {
             selectedCategory = suggestedCategory
         }
 
-        // Value: use midpoint of valueHints if present.
+        // Value: use midpoint / estimate from valueHints if present.
         if let hints = analysis.valueHints {
-            let mid = (hints.low + hints.high) / 2.0
-            if mid > 0 {
+            let mid: Double? = {
+                if let est = hints.estimatedValue {
+                    return est
+                }
+                if let low = hints.valueLow, let high = hints.valueHigh {
+                    return (low + high) / 2.0
+                }
+                if let low = hints.valueLow {
+                    return low
+                }
+                if let high = hints.valueHigh {
+                    return high
+                }
+                return nil
+            }()
+
+            if let mid, mid > 0 {
                 value = mid
             }
         }
@@ -257,18 +272,70 @@ struct AddItemWithAIView: View {
             value: value ?? 0
         )
 
-        // Optionally: persist some AI fields into the item for later reference
+        // Optionally: persist some AI fields into the item and valuation.
         if let analysisResult {
             item.llmGeneratedTitle = analysisResult.title
             item.llmGeneratedDescription = analysisResult.summary
+
             if let hints = analysisResult.valueHints {
-                item.suggestedPriceNew = hints.high
-                item.suggestedPriceUsed = hints.low
+                // Update simple numeric fields on the item.
+                let mid: Double? = {
+                    if let est = hints.estimatedValue {
+                        return est
+                    }
+                    if let low = hints.valueLow, let high = hints.valueHigh {
+                        return (low + high) / 2.0
+                    }
+                    if let low = hints.valueLow {
+                        return low
+                    }
+                    if let high = hints.valueHigh {
+                        return high
+                    }
+                    return nil
+                }()
+
+                if let mid, mid > 0 {
+                    item.value = mid
+                }
+
+                if let high = hints.valueHigh {
+                    item.suggestedPriceNew = high
+                } else if let est = hints.estimatedValue {
+                    item.suggestedPriceNew = est
+                }
+
+                if let low = hints.valueLow {
+                    item.suggestedPriceUsed = low
+                } else if let est = hints.estimatedValue {
+                    item.suggestedPriceUsed = est
+                }
+
+                // Create a valuation record.
+                let valuation = ItemValuation(
+                    valueLow: hints.valueLow,
+                    estimatedValue: hints.estimatedValue,
+                    valueHigh: hints.valueHigh,
+                    currencyCode: hints.currencyCode,
+                    confidenceScore: hints.confidenceScore,
+                    valuationDate: hints.valuationDate.flatMap(parseISO8601Date),
+                    aiProvider: hints.aiProvider,
+                    aiNotes: hints.aiNotes,
+                    missingDetails: hints.missingDetails ?? [],
+                    userNotes: nil
+                )
+                item.valuation = valuation
             }
         }
 
         modelContext.insert(item)
         dismiss()
+    }
+
+    /// Parse ISO 8601 timestamps like "2025-12-08T21:57:15.698594Z".
+    private func parseISO8601Date(_ string: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        return formatter.date(from: string)
     }
 }
 

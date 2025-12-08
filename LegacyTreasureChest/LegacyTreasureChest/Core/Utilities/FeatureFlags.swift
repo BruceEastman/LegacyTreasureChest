@@ -3,8 +3,7 @@
 //  LegacyTreasureChest
 //
 //  Centralized feature toggles backed by UserDefaults.
-//  This version avoids SwiftUI/Observable macros so it is stable and
-//  safe to use from anywhere in the app.
+//  Updated so Market AI defaults to ON on first launch.
 //
 
 import Foundation
@@ -17,13 +16,27 @@ final class FeatureFlags {
     
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        registerDefaultValues()
         logCurrentValues()
+    }
+    
+    /// Register default values **only for keys that are not already set**.
+    /// This ensures first-launch behavior works correctly while preserving overrides.
+    private func registerDefaultValues() {
+        let defaultsToRegister: [String: Any] = [
+            AppConstants.StorageKeys.enableMarketAI: true,   // 🔥 AI ON by default
+            AppConstants.StorageKeys.enableCloudKit: false,
+            AppConstants.StorageKeys.enableHouseholds: false,
+            AppConstants.StorageKeys.showDebugInfo: false
+        ]
+        
+        defaults.register(defaults: defaultsToRegister)
     }
     
     // MARK: - Market / AI
     
-    /// Enables Gemini-powered marketplace features.
-    /// OFF by default for privacy and cost.
+    /// Enables Gemini-powered valuation & market intelligence.
+    /// Default = TRUE on fresh installs.
     var enableMarketAI: Bool {
         get { defaults.bool(forKey: AppConstants.StorageKeys.enableMarketAI) }
         set { defaults.set(newValue, forKey: AppConstants.StorageKeys.enableMarketAI) }

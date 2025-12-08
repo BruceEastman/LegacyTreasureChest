@@ -79,6 +79,8 @@ public final class LTCItem {
     @Relationship(deleteRule: .cascade) public var audioRecordings: [AudioRecording] = []
     @Relationship(deleteRule: .cascade) public var documents: [Document] = []
     @Relationship(deleteRule: .cascade) public var itemBeneficiaries: [ItemBeneficiary] = []
+    /// Optional AI-driven valuation attached to this item (v1: single latest valuation).
+    @Relationship(deleteRule: .cascade) public var valuation: ItemValuation?
     
     public init(
         itemId: UUID = UUID(),
@@ -94,6 +96,78 @@ public final class LTCItem {
         self.itemDescription = itemDescription
         self.category = category
         self.value = value
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+}
+
+// MARK: - ItemValuation
+
+/// AI-assisted valuation attached to a single LTCItem.
+/// v1 keeps one valuation per item; future versions can expand to history if needed.
+@Model
+public final class ItemValuation {
+    @Attribute(.unique) public var valuationId: UUID
+    
+    /// Lower bound of the estimated value (conservative).
+    public var valueLow: Double?
+    
+    /// Best single-number estimate (midpoint / most likely).
+    public var estimatedValue: Double?
+    
+    /// Upper bound of the estimated value (optimistic but realistic).
+    public var valueHigh: Double?
+    
+    /// ISO 4217 currency code, e.g. "USD".
+    public var currencyCode: String
+    
+    /// Overall AI confidence in this valuation [0, 1].
+    public var confidenceScore: Double?
+    
+    /// When this valuation was produced (if parsed from backend).
+    public var valuationDate: Date?
+    
+    /// Which AI provider / model was used, e.g. "gemini-2.0-flash-exp".
+    public var aiProvider: String?
+    
+    /// Human-readable explanation of why this range was chosen.
+    public var aiNotes: String?
+    
+    /// Short prompts describing what additional details would improve accuracy.
+    public var missingDetails: [String]
+    
+    /// User’s own comments or adjustments to this valuation.
+    public var userNotes: String?
+    
+    public var createdAt: Date
+    public var updatedAt: Date
+    
+    public init(
+        valuationId: UUID = UUID(),
+        valueLow: Double? = nil,
+        estimatedValue: Double? = nil,
+        valueHigh: Double? = nil,
+        currencyCode: String = "USD",
+        confidenceScore: Double? = nil,
+        valuationDate: Date? = nil,
+        aiProvider: String? = nil,
+        aiNotes: String? = nil,
+        missingDetails: [String] = [],
+        userNotes: String? = nil,
+        createdAt: Date = .now,
+        updatedAt: Date = .now
+    ) {
+        self.valuationId = valuationId
+        self.valueLow = valueLow
+        self.estimatedValue = estimatedValue
+        self.valueHigh = valueHigh
+        self.currencyCode = currencyCode
+        self.confidenceScore = confidenceScore
+        self.valuationDate = valuationDate
+        self.aiProvider = aiProvider
+        self.aiNotes = aiNotes
+        self.missingDetails = missingDetails
+        self.userNotes = userNotes
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

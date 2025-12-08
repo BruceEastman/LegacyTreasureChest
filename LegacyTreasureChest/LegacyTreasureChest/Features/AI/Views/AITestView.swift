@@ -212,7 +212,7 @@ struct AITestView: View {
                 }
             }
 
-            // Value hints
+            // Value hints (new ValueHints model)
             if let value = result.valueHints {
                 Divider()
 
@@ -220,15 +220,44 @@ struct AITestView: View {
                     Text("Value Estimate (\(value.currencyCode))")
                         .font(Theme.bodyFont.weight(.semibold))
 
-                    Text("Range: \(Int(value.low)) – \(Int(value.high))")
-                    if let c = value.confidence {
+                    // Range / point estimate
+                    if let low = value.valueLow, let high = value.valueHigh {
+                        Text("Range: \(Int(low)) – \(Int(high))")
+                    } else if let est = value.estimatedValue {
+                        Text("Estimated: \(Int(est))")
+                    }
+
+                    // Confidence
+                    if let c = value.confidenceScore {
                         Text(String(format: "Confidence: %.2f", c))
                     }
-                    if !value.sources.isEmpty {
-                        Text("Sources: \(value.sources.joined(separator: ", "))")
+
+                    // Provider + timestamp
+                    if let provider = value.aiProvider, !provider.isEmpty {
+                        Text("Provider: \(provider)")
                     }
-                    if let updated = value.lastUpdated, !updated.isEmpty {
-                        Text("Last Updated: \(updated)")
+                    if let updated = value.valuationDate, !updated.isEmpty {
+                        Text("Valuation Date: \(updated)")
+                    }
+
+                    // AI notes
+                    if let notes = value.aiNotes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text("AI Notes:")
+                            .font(Theme.secondaryFont.weight(.semibold))
+                        Text(notes)
+                            .font(Theme.secondaryFont)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+
+                    // Missing details
+                    if let missing = value.missingDetails, !missing.isEmpty {
+                        Text("Missing Details (for better accuracy):")
+                            .font(Theme.secondaryFont.weight(.semibold))
+                        ForEach(missing, id: \.self) { detail in
+                            Text("• \(detail)")
+                                .font(Theme.secondaryFont)
+                                .foregroundStyle(Theme.textSecondary)
+                        }
                     }
                 }
                 .font(Theme.bodyFont)
@@ -293,7 +322,6 @@ struct AITestView: View {
 
         if let data = try? await item.loadTransferable(type: Data.self),
            let image = UIImage(data: data) {
-
             self.selectedImage = image
         }
     }

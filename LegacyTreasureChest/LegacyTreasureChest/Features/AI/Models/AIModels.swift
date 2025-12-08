@@ -67,6 +67,11 @@ struct ItemAIHints: Codable, Sendable {
 
 /// High-level understanding of an item derived from photos and (optional) text.
 /// All enrichment fields are optional so providers can omit them safely.
+///
+/// NOTE:
+/// - The backend returns a field named `description`.
+/// - We map that into `summary` on the Swift side via CodingKeys to keep
+///   existing call sites using `summary`.
 struct ItemAnalysis: Codable, Sendable {
     // Core summary (used to seed LTCItem fields)
     var title: String
@@ -77,8 +82,8 @@ struct ItemAnalysis: Codable, Sendable {
     var tags: [String]?
     var confidence: Double?
 
-    // Value hints
-    var valueHints: ValueRange?
+    // Value hints (used to build ItemValuation)
+    var valueHints: ValueHints?
 
     // Rich, structured details (all optional)
     var extractedText: String?
@@ -93,13 +98,33 @@ struct ItemAnalysis: Codable, Sendable {
     var eraOrYear: String?
     var features: [String]?
 
+    enum CodingKeys: String, CodingKey {
+        case title
+        case summary = "description" // backend uses "description"
+        case category
+        case tags
+        case confidence
+        case valueHints
+        case extractedText
+        case brand
+        case modelNumber
+        case maker
+        case materials
+        case style
+        case origin
+        case condition
+        case dimensions
+        case eraOrYear
+        case features
+    }
+
     init(
         title: String,
         summary: String,
         category: String,
         tags: [String]? = nil,
         confidence: Double? = nil,
-        valueHints: ValueRange? = nil,
+        valueHints: ValueHints? = nil,
         extractedText: String? = nil,
         brand: String? = nil,
         modelNumber: String? = nil,
@@ -132,9 +157,70 @@ struct ItemAnalysis: Codable, Sendable {
     }
 }
 
-// MARK: - Value Range
+// MARK: - ValueHints (backend-aligned)
+
+/// Represents structured valuation hints returned by the backend for an item.
+/// This maps 1:1 to the Python `ValueHints` Pydantic model and is what we will
+/// use to build SwiftData `ItemValuation` records.
+struct ValueHints: Codable, Sendable {
+    /// Lower bound of the estimate (conservative).
+    var valueLow: Double?
+
+    /// Midpoint or best single-number estimate.
+    var estimatedValue: Double?
+
+    /// Upper bound of the estimate (optimistic but realistic).
+    var valueHigh: Double?
+
+    /// ISO 4217 currency code (e.g., "USD").
+    var currencyCode: String
+
+    /// Overall AI confidence in this valuation [0, 1].
+    var confidenceScore: Double?
+
+    /// When this valuation was produced (ISO-8601 string).
+    /// Kept as String to avoid decode failures from format drift.
+    var valuationDate: String?
+
+    /// Which AI provider / model was used (e.g., "gemini-2.0-flash").
+    var aiProvider: String?
+
+    /// Human-readable explanation of why this range was chosen.
+    var aiNotes: String?
+
+    /// Short prompts describing what additional details would improve accuracy.
+    var missingDetails: [String]?
+
+    init(
+        valueLow: Double? = nil,
+        estimatedValue: Double? = nil,
+        valueHigh: Double? = nil,
+        currencyCode: String = "USD",
+        confidenceScore: Double? = nil,
+        valuationDate: String? = nil,
+        aiProvider: String? = nil,
+        aiNotes: String? = nil,
+        missingDetails: [String]? = nil
+    ) {
+        self.valueLow = valueLow
+        self.estimatedValue = estimatedValue
+        self.valueHigh = valueHigh
+        self.currencyCode = currencyCode
+        self.confidenceScore = confidenceScore
+        self.valuationDate = valuationDate
+        self.aiProvider = aiProvider
+        self.aiNotes = aiNotes
+        self.missingDetails = missingDetails
+    }
+}
+
+// MARK: - Value Range (legacy / generic)
 
 /// Represents an estimated monetary range for an item.
+///
+/// NOTE: This struct is still available for other features (e.g. future
+/// `estimateValue(for:)` flows), but the `analyzeItemPhoto` endpoint now
+/// returns `ValueHints` instead.
 struct ValueRange: Codable, Sendable {
     /// Lower bound of the estimate.
     var low: Double

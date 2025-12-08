@@ -211,7 +211,7 @@ struct ItemAIAnalysisSheet: View {
                 }
             }
 
-            // Value hints
+            // Value hints (ValueHints model)
             if let value = result.valueHints {
                 Divider()
 
@@ -219,12 +219,45 @@ struct ItemAIAnalysisSheet: View {
                     Text("Value Estimate (\(value.currencyCode))")
                         .font(Theme.bodyFont.weight(.semibold))
 
-                    Text("Range: \(Int(value.low)) – \(Int(value.high))")
-                    if let c = value.confidence {
+                    // Range / point estimate
+                    if let low = value.valueLow, let high = value.valueHigh {
+                        Text("Range: \(Int(low)) – \(Int(high))")
+                    } else if let est = value.estimatedValue {
+                        Text("Estimated: \(Int(est))")
+                    }
+
+                    // Confidence
+                    if let c = value.confidenceScore {
                         Text(String(format: "Confidence: %.2f", c))
                     }
-                    if !value.sources.isEmpty {
-                        Text("Sources: \(value.sources.joined(separator: ", "))")
+
+                    // Provider + timestamp
+                    if let provider = value.aiProvider, !provider.isEmpty {
+                        Text("Provider: \(provider)")
+                    }
+                    if let updated = value.valuationDate, !updated.isEmpty {
+                        Text("Valuation Date: \(updated)")
+                    }
+
+                    // AI notes
+                    if let notes = value.aiNotes,
+                       !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text("AI Notes:")
+                            .font(Theme.secondaryFont.weight(.semibold))
+                        Text(notes)
+                            .font(Theme.secondaryFont)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+
+                    // Missing details
+                    if let missing = value.missingDetails, !missing.isEmpty {
+                        Text("Missing Details (for better accuracy):")
+                            .font(Theme.secondaryFont.weight(.semibold))
+                        ForEach(missing, id: \.self) { detail in
+                            Text("• \(detail)")
+                                .font(Theme.secondaryFont)
+                                .foregroundStyle(Theme.textSecondary)
+                        }
                     }
                 }
                 .font(Theme.bodyFont)
@@ -354,14 +387,43 @@ struct ItemAIAnalysisSheet: View {
 
         item.itemDescription = descriptionLines.joined(separator: "\n")
 
-        // Value: use midpoint of valueHints if present.
+        // Value: use ValueHints if present for item.value and ItemValuation.
         if let valueHints = analysis.valueHints {
-            let mid = (valueHints.low + valueHints.high) / 2.0
-            if mid > 0 {
+            // 1) Update the item's simple numeric value.
+            let mid: Double? = {
+                if let est = valueHints.estimatedValue {
+                    return est
+                }
+                if let low = valueHints.valueLow, let high = valueHints.valueHigh {
+                    return (low + high) / 2.0
+                }
+                if let low = valueHints.valueLow {
+                    return low
+                }
+                if let high = valueHints.valueHigh {
+                    return high
+                }
+                return nil
+            }()
+
+            if let mid, mid > 0 {
                 item.value = mid
             }
-            item.suggestedPriceNew = valueHints.high
-            item.suggestedPriceUsed = valueHints.low
+
+            if let high = valueHints.valueHigh {
+                item.suggestedPriceNew = high
+            } else if let est = valueHints.estimatedValue {
+                item.suggestedPriceNew = est
+            }
+
+            if let low = valueHints.valueLow {
+                item.suggestedPriceUsed = low
+            } else if let est = valueHints.estimatedValue {
+                item.suggestedPriceUsed = est
+            }
+
+            // 2) Upsert the ItemValuation record.
+            upsertValuation(from: valueHints)
         }
 
         // Store AI metadata for future use.
@@ -370,6 +432,44 @@ struct ItemAIAnalysisSheet: View {
 
         // Close sheet after applying.
         dismiss()
+    }
+
+    // MARK: - Valuation Mapping
+
+    /// Create or update the item's ItemValuation from backend ValueHints.
+    private func upsertValuation(from hints: ValueHints) {
+        let valuation: ItemValuation
+
+        if let existing = item.valuation {
+            valuation = existing
+        } else {
+            valuation = ItemValuation(currencyCode: hints.currencyCode)
+            item.valuation = valuation
+        }
+
+        valuation.valueLow = hints.valueLow
+        valuation.estimatedValue = hints.estimatedValue
+        valuation.valueHigh = hints.valueHigh
+        valuation.currencyCode = hints.currencyCode
+        valuation.confidenceScore = hints.confidenceScore
+        valuation.aiProvider = hints.aiProvider
+        valuation.aiNotes = hints.aiNotes
+        valuation.missingDetails = hints.missingDetails ?? valuation.missingDetails
+
+        // Preserve any existing userNotes; we never overwrite them from AI.
+        // valuation.userNotes stays as-is.
+
+        if let dateString = hints.valuationDate {
+            valuation.valuationDate = parseISO8601Date(dateString)
+        }
+
+        valuation.updatedAt = .now
+    }
+
+    /// Parse ISO 8601 timestamps like "2025-12-08T21:57:15.698594Z".
+    private func parseISO8601Date(_ string: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        return formatter.date(from: string)
     }
 }
 

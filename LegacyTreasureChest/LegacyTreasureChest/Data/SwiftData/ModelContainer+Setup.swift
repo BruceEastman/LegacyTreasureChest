@@ -10,7 +10,7 @@ import SwiftData
 
 extension ModelContainer {
     /// Create and configure the SwiftData ModelContainer for the app.
-    /// This is not yet used by the App entry point; wiring comes in Phase 1B.
+    /// Used by LegacyTreasureChestApp as the primary container.
     static func makeContainer() throws -> ModelContainer {
         let schema = Schema([
             LTCUser.self,
@@ -19,7 +19,8 @@ extension ModelContainer {
             AudioRecording.self,
             Document.self,
             Beneficiary.self,
-            ItemBeneficiary.self
+            ItemBeneficiary.self,
+            ItemValuation.self        // ← NEW model added to schema
         ])
         
         let configuration = ModelConfiguration(

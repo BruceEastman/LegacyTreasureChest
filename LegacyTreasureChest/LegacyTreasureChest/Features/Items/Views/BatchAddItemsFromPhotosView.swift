@@ -143,9 +143,16 @@ struct BatchAddItemsFromPhotosView: View {
                             .foregroundStyle(Theme.textSecondary)
 
                         if let value = analysis.valueHints {
-                            Text("Estimated: \(Int(value.low))–\(Int(value.high)) \(value.currencyCode)")
-                                .font(Theme.secondaryFont)
-                                .foregroundStyle(Theme.textSecondary)
+                            // Show either range or single estimate.
+                            if let low = value.valueLow, let high = value.valueHigh {
+                                Text("Estimated: \(Int(low))–\(Int(high)) \(value.currencyCode)")
+                                    .font(Theme.secondaryFont)
+                                    .foregroundStyle(Theme.textSecondary)
+                            } else if let est = value.estimatedValue {
+                                Text("Estimated: \(Int(est)) \(value.currencyCode)")
+                                    .font(Theme.secondaryFont)
+                                    .foregroundStyle(Theme.textSecondary)
+                            }
                         }
                     } else if draft.isAnalyzing {
                         HStack(spacing: Theme.spacing.small) {
@@ -323,14 +330,54 @@ struct BatchAddItemsFromPhotosView: View {
             value: 0
         )
 
-        // Value handling
-        if let valueHints = analysis.valueHints {
-            let mid = (valueHints.low + valueHints.high) / 2.0
-            if mid > 0 {
+        // Value handling + create ItemValuation if available.
+        if let hints = analysis.valueHints {
+            let mid: Double? = {
+                if let est = hints.estimatedValue {
+                    return est
+                }
+                if let low = hints.valueLow, let high = hints.valueHigh {
+                    return (low + high) / 2.0
+                }
+                if let low = hints.valueLow {
+                    return low
+                }
+                if let high = hints.valueHigh {
+                    return high
+                }
+                return nil
+            }()
+
+            if let mid, mid > 0 {
                 item.value = mid
             }
-            item.suggestedPriceNew = valueHints.high
-            item.suggestedPriceUsed = valueHints.low
+
+            if let high = hints.valueHigh {
+                item.suggestedPriceNew = high
+            } else if let est = hints.estimatedValue {
+                item.suggestedPriceNew = est
+            }
+
+            if let low = hints.valueLow {
+                item.suggestedPriceUsed = low
+            } else if let est = hints.estimatedValue {
+                item.suggestedPriceUsed = est
+            }
+
+            // Persist a valuation record.
+            let valuation = ItemValuation(
+                valueLow: hints.valueLow,
+                estimatedValue: hints.estimatedValue,
+                valueHigh: hints.valueHigh,
+                currencyCode: hints.currencyCode,
+                confidenceScore: hints.confidenceScore,
+                valuationDate: hints.valuationDate.flatMap(parseISO8601Date),
+                aiProvider: hints.aiProvider,
+                aiNotes: hints.aiNotes,
+                missingDetails: hints.missingDetails ?? [],
+                userNotes: nil
+            )
+            item.valuation = valuation
         }
 
         item.llmGeneratedTitle = analysis.title
@@ -340,6 +387,12 @@ struct BatchAddItemsFromPhotosView: View {
         item.images.append(imageRecord)
 
         modelContext.insert(item)
+    }
+
+    /// Parse ISO 8601 timestamps like "2025-12-08T21:57:15.698594Z".
+    private func parseISO8601Date(_ string: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        return formatter.date(from: string)
     }
 }
 
