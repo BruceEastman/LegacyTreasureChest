@@ -22,6 +22,10 @@ struct ItemAIAnalysisSheet: View {
     @State private var analysisResult: ItemAnalysis?
     @State private var errorMessage: String?
 
+    /// Extra owner-supplied details that should help the AI value this item.
+    /// Stored in ItemValuation.userNotes so it persists per item.
+    @State private var extraDetailsText: String = ""
+
     // Derived: whether the item has at least one image we can use.
     private var firstImagePath: String? {
         item.images.first?.filePath
@@ -37,6 +41,9 @@ struct ItemAIAnalysisSheet: View {
 
                     // Photo preview or guidance
                     photoSection
+
+                    // Extra details for AI expert
+                    extraDetailsSection
 
                     // Run analysis
                     analyzeButton
@@ -92,6 +99,7 @@ struct ItemAIAnalysisSheet: View {
             }
             .onAppear {
                 loadPreviewImageIfNeeded()
+                loadExtraDetailsIfNeeded()
             }
         }
     }
@@ -152,6 +160,33 @@ struct ItemAIAnalysisSheet: View {
         }
     }
 
+    /// Section where the user can provide extra details that matter for valuation.
+    private var extraDetailsSection: some View {
+        VStack(alignment: .leading, spacing: Theme.spacing.small) {
+            Text("More Details for AI Expert")
+                .ltcSectionHeaderStyle()
+
+            Text(extraDetailsHelpText)
+                .font(Theme.secondaryFont)
+                .foregroundStyle(Theme.textSecondary)
+
+            ZStack(alignment: .topLeading) {
+                TextEditor(text: $extraDetailsText)
+                    .font(Theme.secondaryFont)
+                    .padding(8)
+
+                if extraDetailsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(extraDetailsPlaceholderText)
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary.opacity(0.7))
+                        .padding(12)
+                }
+            }
+            .frame(minHeight: 120)
+            .ltcCardBackground()
+        }
+    }
+
     private var analyzeButton: some View {
         Button {
             Task { await runAnalysis() }
@@ -177,131 +212,186 @@ struct ItemAIAnalysisSheet: View {
     @ViewBuilder
     private func analysisCard(_ result: ItemAnalysis) -> some View {
         VStack(alignment: .leading, spacing: Theme.spacing.medium) {
-            Text("AI Suggestions")
-                .ltcSectionHeaderStyle()
 
-            VStack(alignment: .leading, spacing: Theme.spacing.small) {
-                Text(result.title)
-                    .font(Theme.bodyFont.weight(.semibold))
-                    .foregroundStyle(Theme.text)
-
-                Text(result.summary)
-                    .font(Theme.bodyFont)
-                    .foregroundStyle(Theme.textSecondary)
-
-                Text("Category: \(result.category)")
-                    .font(Theme.secondaryFont)
-                    .foregroundStyle(Theme.text)
-            }
-
-            Divider()
-
-            // Tags / confidence
-            VStack(alignment: .leading, spacing: Theme.spacing.small) {
-                let tagsText = (result.tags ?? []).joined(separator: ", ")
-                if !tagsText.isEmpty {
-                    Text("Tags: \(tagsText)")
-                        .font(Theme.secondaryFont)
-                }
-
-                if let c = result.confidence {
-                    Text(String(format: "Confidence: %.2f", c))
-                        .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.textSecondary)
-                }
-            }
-
-            // Value hints (ValueHints model)
-            if let value = result.valueHints {
+            // 1. Valuation Summary (if available)
+            if let valueHints = result.valueHints {
+                valuationSummarySection(valueHints)
                 Divider()
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Value Estimate (\(value.currencyCode))")
-                        .font(Theme.bodyFont.weight(.semibold))
-
-                    // Range / point estimate
-                    if let low = value.valueLow, let high = value.valueHigh {
-                        Text("Range: \(Int(low)) – \(Int(high))")
-                    } else if let est = value.estimatedValue {
-                        Text("Estimated: \(Int(est))")
-                    }
-
-                    // Confidence
-                    if let c = value.confidenceScore {
-                        Text(String(format: "Confidence: %.2f", c))
-                    }
-
-                    // Provider + timestamp
-                    if let provider = value.aiProvider, !provider.isEmpty {
-                        Text("Provider: \(provider)")
-                    }
-                    if let updated = value.valuationDate, !updated.isEmpty {
-                        Text("Valuation Date: \(updated)")
-                    }
-
-                    // AI notes
-                    if let notes = value.aiNotes,
-                       !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Text("AI Notes:")
-                            .font(Theme.secondaryFont.weight(.semibold))
-                        Text(notes)
-                            .font(Theme.secondaryFont)
-                            .foregroundStyle(Theme.textSecondary)
-                    }
-
-                    // Missing details
-                    if let missing = value.missingDetails, !missing.isEmpty {
-                        Text("Missing Details (for better accuracy):")
-                            .font(Theme.secondaryFont.weight(.semibold))
-                        ForEach(missing, id: \.self) { detail in
-                            Text("• \(detail)")
-                                .font(Theme.secondaryFont)
-                                .foregroundStyle(Theme.textSecondary)
-                        }
-                    }
-                }
-                .font(Theme.bodyFont)
-                .foregroundStyle(Theme.text)
             }
 
-            // Brand / model / details
-            VStack(alignment: .leading, spacing: Theme.spacing.small) {
-                detailRow(label: "Brand", value: result.brand)
-                detailRow(label: "Model", value: result.modelNumber)
-                detailRow(label: "Maker", value: result.maker)
+            // 2. AI Suggestions (title / summary / category / tags)
+            suggestionsSection(result)
 
-                let materials = (result.materials ?? []).joined(separator: ", ")
-                if !materials.isEmpty {
-                    detailRow(label: "Materials", value: materials)
-                }
-
-                detailRow(label: "Style", value: result.style)
-                detailRow(label: "Origin", value: result.origin)
-                detailRow(label: "Condition", value: result.condition)
-                detailRow(label: "Dimensions", value: result.dimensions)
-                detailRow(label: "Era / Year", value: result.eraOrYear)
-
-                let features = (result.features ?? []).joined(separator: ", ")
-                if !features.isEmpty {
-                    detailRow(label: "Features", value: features)
-                }
+            // 3. Valuation details, missing details, AI notes
+            if let valueHints = result.valueHints {
+                Divider()
+                valuationDetailsSection(valueHints)
             }
 
-            // Extracted text
+            // 4. Item details (brand, maker, materials, etc.)
+            Divider()
+            itemDetailsSection(result)
+
+            // 5. Extracted text (if present)
             if let text = result.extractedText,
                !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Divider()
+                extractedTextSection(text)
+            }
+        }
+        .ltcCardBackground()
+        .padding(.top, Theme.spacing.large)
+    }
+
+    // MARK: - Analysis Sections
+
+    private func valuationSummarySection(_ value: ValueHints) -> some View {
+        VStack(alignment: .leading, spacing: Theme.spacing.small) {
+            Text("Valuation Summary")
+                .ltcSectionHeaderStyle()
+
+            // Main value line
+            if let low = value.valueLow, let high = value.valueHigh {
+                Text("\(formattedCurrency(low, code: value.currencyCode)) – \(formattedCurrency(high, code: value.currencyCode))")
+                    .font(Theme.bodyFont.weight(.semibold))
+                    .foregroundStyle(Theme.text)
+            } else if let est = value.estimatedValue {
+                Text(formattedCurrency(est, code: value.currencyCode))
+                    .font(Theme.bodyFont.weight(.semibold))
+                    .foregroundStyle(Theme.text)
+            } else {
+                Text("No value estimate available")
+                    .font(Theme.secondaryFont)
+                    .foregroundStyle(Theme.textSecondary)
+            }
+
+            // Confidence label (High / Medium / Low)
+            if let confidenceLabel = confidenceDescription(for: value.confidenceScore) {
+                Text("Confidence: \(confidenceLabel)")
+                    .font(Theme.secondaryFont)
+                    .foregroundStyle(Theme.textSecondary)
+            }
+        }
+    }
+
+    private func suggestionsSection(_ result: ItemAnalysis) -> some View {
+        VStack(alignment: .leading, spacing: Theme.spacing.small) {
+            Text("AI Suggestions")
+                .ltcSectionHeaderStyle()
+
+            Text(result.title)
+                .font(Theme.bodyFont.weight(.semibold))
+                .foregroundStyle(Theme.text)
+
+            Text(result.summary)
+                .font(Theme.bodyFont)
+                .foregroundStyle(Theme.textSecondary)
+
+            Text("Category: \(result.category)")
+                .font(Theme.secondaryFont)
+                .foregroundStyle(Theme.text)
+
+            let tagsText = (result.tags ?? []).joined(separator: ", ")
+            if !tagsText.isEmpty {
+                Text("Tags: \(tagsText)")
+                    .font(Theme.secondaryFont)
+                    .foregroundStyle(Theme.textSecondary)
+            }
+
+            if let c = result.confidence {
+                Text(String(format: "Overall analysis confidence: %.2f", c))
+                    .font(Theme.secondaryFont)
+                    .foregroundStyle(Theme.textSecondary)
+            }
+        }
+    }
+
+    private func valuationDetailsSection(_ value: ValueHints) -> some View {
+        VStack(alignment: .leading, spacing: Theme.spacing.medium) {
+            // Improve this estimate (Missing details)
+            if let missing = value.missingDetails, !missing.isEmpty {
                 VStack(alignment: .leading, spacing: Theme.spacing.small) {
-                    Text("Extracted Text")
-                        .font(Theme.bodyFont.weight(.semibold))
-                    Text(text)
+                    Text("Improve This Estimate")
+                        .ltcSectionHeaderStyle()
+
+                    Text("For a more precise value, the AI suggests providing:")
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+
+                    ForEach(missing, id: \.self) { detail in
+                        Text("• \(detail)")
+                            .font(Theme.secondaryFont)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                }
+            }
+
+            // Why this range (AI Notes + provider + date)
+            VStack(alignment: .leading, spacing: Theme.spacing.small) {
+                Text("Why This Estimate")
+                    .ltcSectionHeaderStyle()
+
+                if let provider = value.aiProvider, !provider.isEmpty {
+                    Text("Provider: \(provider)")
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                }
+
+                if let updated = value.valuationDate, !updated.isEmpty {
+                    Text("Valuation Date: \(updated)")
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                }
+
+                if let notes = value.aiNotes,
+                   !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(notes)
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                } else {
+                    Text("The AI based this estimate on similar items, materials, and visible condition in the photo.")
                         .font(Theme.secondaryFont)
                         .foregroundStyle(Theme.textSecondary)
                 }
             }
         }
-        .ltcCardBackground()
-        .padding(.top, Theme.spacing.large)
+    }
+
+    private func itemDetailsSection(_ result: ItemAnalysis) -> some View {
+        VStack(alignment: .leading, spacing: Theme.spacing.small) {
+            Text("Item Details")
+                .ltcSectionHeaderStyle()
+
+            detailRow(label: "Brand", value: result.brand)
+            detailRow(label: "Model", value: result.modelNumber)
+            detailRow(label: "Maker", value: result.maker)
+
+            let materials = (result.materials ?? []).joined(separator: ", ")
+            if !materials.isEmpty {
+                detailRow(label: "Materials", value: materials)
+            }
+
+            detailRow(label: "Style", value: result.style)
+            detailRow(label: "Origin", value: result.origin)
+            detailRow(label: "Condition", value: result.condition)
+            detailRow(label: "Dimensions", value: result.dimensions)
+            detailRow(label: "Era / Year", value: result.eraOrYear)
+
+            let features = (result.features ?? []).joined(separator: ", ")
+            if !features.isEmpty {
+                detailRow(label: "Features", value: features)
+            }
+        }
+    }
+
+    private func extractedTextSection(_ text: String) -> some View {
+        VStack(alignment: .leading, spacing: Theme.spacing.small) {
+            Text("Extracted Text")
+                .font(Theme.bodyFont.weight(.semibold))
+            Text(text)
+                .font(Theme.secondaryFont)
+                .foregroundStyle(Theme.textSecondary)
+        }
     }
 
     @ViewBuilder
@@ -317,11 +407,42 @@ struct ItemAIAnalysisSheet: View {
         }
     }
 
+    // MARK: - Extra details helper text (category-aware)
+
+    private var extraDetailsHelpText: String {
+        switch item.category {
+        case "Jewelry":
+            return "Add any details you know that affect this jewelry item’s value, such as metal purity and weight, stone details, chain length, provenance, or certificates."
+        case "Rug":
+            return "Add any details you know that affect this rug’s value. Helpful information includes approximate knots per square inch (KPSI), materials (wool, silk, cotton foundation), origin, approximate age, condition, and where it was purchased."
+        default:
+            return "Add any details you know that affect this item’s value, such as brand or maker, materials, size, age, condition, and where or how it was purchased."
+        }
+    }
+
+    private var extraDetailsPlaceholderText: String {
+        switch item.category {
+        case "Jewelry":
+            return "Example: 14k gold chain, approx. 18\"; cross and chain ~8g total; diamond is ~1.2ct, G/VS2 with GIA certificate; purchased at a local jeweler around 1995."
+        case "Rug":
+            return "Example: Persian Luri hand-knotted rug, approx. 4.5 × 7 ft, ~290 KPSI on the back, wool and silk pile with cotton foundation, very good condition, purchased in a high-end rug gallery in San Francisco around 1995."
+        default:
+            return "Example: Mid-century teak sideboard from Danish maker, approx. 72\" wide, original hardware, minor surface wear, purchased from a vintage furniture shop in 2015."
+        }
+    }
+
     // MARK: - Logic
 
     private func loadPreviewImageIfNeeded() {
         guard let path = firstImagePath else { return }
         previewImage = MediaStorage.loadImage(from: path)
+    }
+
+    /// Load any previously-saved extra details from the current valuation.
+    private func loadExtraDetailsIfNeeded() {
+        if let notes = item.valuation?.userNotes {
+            extraDetailsText = notes
+        }
     }
 
     private func runAnalysis() async {
@@ -330,13 +451,32 @@ struct ItemAIAnalysisSheet: View {
             return
         }
 
+        // Persist extra details into ItemValuation.userNotes before running AI.
+        saveExtraDetailsToValuation()
+
         isAnalyzing = true
         errorMessage = nil
         analysisResult = nil
 
+        // Base description from the item.
+        let baseDescription = item.itemDescription.isEmpty ? nil : item.itemDescription
+
+        // Extra owner details from the current valuation.
+        let extraDetails = item.valuation?.userNotes?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let combinedDescription: String?
+        if let base = baseDescription, let extra = extraDetails, !extra.isEmpty {
+            combinedDescription = base + "\n\nAdditional details from owner:\n" + extra
+        } else if let extra = extraDetails, !extra.isEmpty {
+            combinedDescription = "Additional details from owner:\n" + extra
+        } else {
+            combinedDescription = baseDescription
+        }
+
         let hints = ItemAIHints(
             userWrittenTitle: item.name.isEmpty ? nil : item.name,
-            userWrittenDescription: item.itemDescription.isEmpty ? nil : item.itemDescription,
+            userWrittenDescription: combinedDescription,
             knownCategory: item.category.isEmpty ? nil : item.category
         )
 
@@ -436,6 +576,33 @@ struct ItemAIAnalysisSheet: View {
 
     // MARK: - Valuation Mapping
 
+    /// Persist extra details into ItemValuation.userNotes so they survive across runs.
+    private func saveExtraDetailsToValuation() {
+        let trimmed = extraDetailsText.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // If the user cleared the field and we have a valuation, clear the notes.
+        if trimmed.isEmpty {
+            if let valuation = item.valuation {
+                valuation.userNotes = nil
+                valuation.updatedAt = .now
+            }
+            return
+        }
+
+        // Ensure there is a valuation object to hang these notes on.
+        let valuation: ItemValuation
+        if let existing = item.valuation {
+            valuation = existing
+        } else {
+            let defaultCurrency = Locale.current.currency?.identifier ?? "USD"
+            valuation = ItemValuation(currencyCode: defaultCurrency)
+            item.valuation = valuation
+        }
+
+        valuation.userNotes = trimmed
+        valuation.updatedAt = .now
+    }
+
     /// Create or update the item's ItemValuation from backend ValueHints.
     private func upsertValuation(from hints: ValueHints) {
         let valuation: ItemValuation
@@ -454,10 +621,8 @@ struct ItemAIAnalysisSheet: View {
         valuation.confidenceScore = hints.confidenceScore
         valuation.aiProvider = hints.aiProvider
         valuation.aiNotes = hints.aiNotes
-        valuation.missingDetails = hints.missingDetails ?? valuation.missingDetails
-
         // Preserve any existing userNotes; we never overwrite them from AI.
-        // valuation.userNotes stays as-is.
+        valuation.missingDetails = hints.missingDetails ?? valuation.missingDetails
 
         if let dateString = hints.valuationDate {
             valuation.valuationDate = parseISO8601Date(dateString)
@@ -470,6 +635,31 @@ struct ItemAIAnalysisSheet: View {
     private func parseISO8601Date(_ string: String) -> Date? {
         let formatter = ISO8601DateFormatter()
         return formatter.date(from: string)
+    }
+
+    // MARK: - Helpers
+
+    /// Simple currency formatter that respects the provided ISO 4217 code.
+    private func formattedCurrency(_ value: Double, code: String) -> String {
+        let intValue = Int(value.rounded())
+        return "\(intValue) \(code)"
+    }
+
+    /// Map confidence score into a human-readable label.
+    private func confidenceDescription(for score: Double?) -> String? {
+        guard let score else { return nil }
+        let numeric = String(format: "%.2f", score)
+
+        switch score {
+        case 0.8...1.0:
+            return "High (\(numeric))"
+        case 0.5..<0.8:
+            return "Medium (\(numeric))"
+        case 0..<0.5:
+            return "Low (\(numeric))"
+        default:
+            return numeric
+        }
     }
 }
 
@@ -487,8 +677,8 @@ private let itemAIAnalysisPreviewContainer: ModelContainer = {
     let sample = LTCItem(
         name: "Sample Item",
         itemDescription: "Sample description for AI analysis preview.",
-        category: "Furniture",
-        value: 100
+        category: "Jewelry",
+        value: 250
     )
 
     context.insert(sample)

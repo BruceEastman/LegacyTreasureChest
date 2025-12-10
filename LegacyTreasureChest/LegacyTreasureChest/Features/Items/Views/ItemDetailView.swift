@@ -81,7 +81,8 @@ struct ItemDetailView: View {
                     .font(Theme.bodyFont)
 
                 TextField("Description", text: $item.itemDescription, axis: .vertical)
-                    .lineLimit(3, reservesSpace: true)
+                    // Removed .lineLimit(3, reservesSpace: true) so the field can
+                    // grow vertically to show the full description with no hidden scrolling.
                     .font(Theme.bodyFont)
             } header: {
                 Text("Basic Info")

@@ -1,4 +1,64 @@
 # Legacy Treasure Chest
+✅ AI Valuation UX & Data Model Update (Dec 9 2025)
+This update summarizes recent improvements to the AI Valuation workflow, including how users provide additional details, how valuations are stored, and how the system now explains why an item is valued the way it is.
+1. Unified Expert Valuation Experience
+We refined the AI Analysis workflow so that every item—regardless of category—receives the same high-quality valuation experience.
+Category-specific logic (e.g., jewelry vs. rugs vs. artwork) is handled by the backend Expert model, while the frontend presents a consistent, easy-to-understand interface.
+Key principles:
+One valuation snapshot per item, stored in ItemValuation.
+No valuation history for now (keeps UX clean and avoids data clutter).
+Users can re-run analysis anytime to generate an updated expert view.
+2. “More Details for AI Expert” (User Notes)
+We introduced a persistent notes field that lets users supply details that significantly improve valuation accuracy—such as:
+Jewelry: weight, purity, chain length, certification
+Rugs: knots per square inch, origin, age
+Art: medium, dimensions, signed/original
+These notes are:
+Saved on the item (valuation.userNotes)
+Reused automatically every time AI analysis is run
+Included directly in the backend prompt to influence the valuation
+Users no longer need to retype these details—this behaves like a conversational memory for the item.
+3. Clear, Human-Readable Item Description
+When users apply an AI analysis:
+The summary and key attributes (materials, maker, style, condition, features) are merged into the item’s saved description.
+This ensures the item record itself tells the story:
+“This item, with these characteristics, is why the valuation range is what it is.”
+The description now shows the defining traits that drive value and will remain visible even when not viewing the AI sheet.
+4. Full AI Explanation Always Available (On-Demand)
+We decided not to store the entire AI analysis structure long-term.
+Instead:
+The user can re-run Analyze with AI anytime to regenerate the full detailed analysis.
+This is fast, always up-to-date, and uses their saved notes.
+The saved summary + valuation snapshot is sufficient for everyday viewing.
+This avoids expanding the data model prematurely while still giving users full transparency whenever they want it.
+5. Backend Prompt Enhancements (Next Step)
+To further improve valuation quality:
+The backend will treat user notes as high-signal authoritative details.
+The model will be asked to include optional “Approximate new replacement price” information in its explanation, when relevant.
+This will appear in the AI Notes section (not as a stored numeric field).
+This helps users understand both resale value and replacement cost when planning their estate or insurance needs.
+Summary of Current Direction
+Keep the valuation model simple (one snapshot).
+Let users add meaningful details that persist with the item.
+Let the AI regenerate full explanations when needed.
+Ensure item descriptions clearly capture the characteristics that drive value.
+Continue improving the backend Expert prompt to make the analysis more helpful.
+✅ 1. README Update — Current Status (drop this into the top of README)
+📌 Current Status — AI ValueHints v2 Integration December 8 2025
+The Legacy Treasure Chest app now uses the updated ValueHints → ValueRange model across the entire AI pipeline. This includes:
+Backend now returns the enriched value_hints block:
+low, high, currency_code, confidence, sources[], and last_updated
+Swift front-end updated to match the new model:
+AIModels.ValueRange replaced old ValueHints
+All views updated (AddItemWithAIView, BatchAddItemsFromPhotosView, ItemAIAnalysisSheet, AITestView)
+Feature flag defaults updated to ensure AI is enabled by default (enableMarketAI = true)
+SwiftData rebuild completed after schema updates (simulator reset required)
+AI analysis now provides:
+richer details (materials, maker, condition, features, extracted text)
+improved valuation metadata
+correct propagation of value estimates into LTCItem.value, suggestedPriceNew, suggestedPriceUsed
+Next major milestone:
+→ Design and implement ItemValuation.swift, allowing the app to store multiple valuation snapshots per item, with source/model/date/version fields.
 ✅ README Update (drop-in text block)
 Add this as a new section near the top of your README under “Current Status” or “Recent Work Completed”.
 (You can also keep it as a dated changelog entry.)
