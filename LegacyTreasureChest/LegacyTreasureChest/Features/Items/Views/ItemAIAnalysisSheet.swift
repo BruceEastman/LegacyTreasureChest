@@ -415,6 +415,32 @@ struct ItemAIAnalysisSheet: View {
             return "Add any details you know that affect this jewelry item’s value, such as metal purity and weight, stone details, chain length, provenance, or certificates."
         case "Rug":
             return "Add any details you know that affect this rug’s value. Helpful information includes approximate knots per square inch (KPSI), materials (wool, silk, cotton foundation), origin, approximate age, condition, and where it was purchased."
+        case "Luxury Personal Items":
+            return "Add any details you know that affect this luxury item’s value. Helpful information includes brand, model or collection name, materials, condition, and whether you have the original box, papers, receipts, dust bag, or authenticity cards."
+        case "Art":
+            return "Add any details you know that affect this artwork’s value. Helpful information includes the artist’s name, title of the work, medium (oil, acrylic, print, photograph), whether it is an original or a print, any edition number, approximate size, condition, and where it was purchased."
+        case "China & Crystal":
+            return "Add any details you know that affect this china or crystal’s value. Helpful information includes the brand (for example, Waterford, Wedgwood, Royal Doulton, Lenox), pattern name, how many matching pieces or place settings you have, whether the pattern is discontinued, and any chips, cracks, or cloudiness."
+        case "Furniture":
+            return "Add any details you know that affect this furniture item’s value. Helpful information includes the maker or brand, approximate dimensions, wood or materials, age or era (for example, mid-century), any known designer or line, condition issues (scratches, stains, repairs), and whether it has been refinished or reupholstered."
+        case "Electronics":
+            return "Add any details you know that affect this electronic item’s value. Helpful information includes the brand and model, approximate year of purchase, key features (for example, 4K, SSD), whether it still works properly, and any notable wear or damage."
+        case "Appliance":
+            return "Add any details you know that affect this appliance’s value. Helpful information includes the brand and model, approximate age, whether it is in good working order, any major repairs, and any visible dents, rust, or wear."
+        case "Tools":
+            return "Add any details you know that affect this tool’s value. Helpful information includes the brand and model, tool type, whether it works properly, and whether batteries, chargers, or accessories are included."
+        case "Clothing":
+            return "Add any details you know that affect this clothing item’s value. Helpful information includes the brand, size, type of garment, whether it is designer or specialty (for example, wedding dress), and any stains, tears, or alterations."
+        case "Luggage":
+            return "Add any details you know that affect this luggage item’s value. Helpful information includes the brand, size, type (carry-on vs checked), materials, and the condition of wheels, handles, zippers, and interior."
+        case "Decor":
+            return "Add any details you know that affect this decor item’s value. Helpful information includes the maker or brand (if any), style (modern, traditional, mid-century, etc.), materials, size, and any chips, scratches, or wear."
+        case "Collectibles":
+            return "Add any details you know that affect this collectible’s value. Helpful information includes the maker or line (for example, Hummel, Lladro), character or subject, edition or year, whether the original box or certificates are included, and overall condition."
+        case "Documents":
+            return "Add any details you know about this document. Most documents have organizational value rather than monetary value, unless it is a signed or historical item. Helpful information includes whether it is signed, dated, and if it has any known historical or collectible significance."
+        case "Uncategorized", "Other":
+            return "Add any details you know that affect this item’s value, such as brand or maker, materials, size, age, condition, and where or how it was purchased. If it does not fit a normal category, briefly explain what it is used for."
         default:
             return "Add any details you know that affect this item’s value, such as brand or maker, materials, size, age, condition, and where or how it was purchased."
         }
@@ -426,6 +452,32 @@ struct ItemAIAnalysisSheet: View {
             return "Example: 14k gold chain, approx. 18\"; cross and chain ~8g total; diamond is ~1.2ct, G/VS2 with GIA certificate; purchased at a local jeweler around 1995."
         case "Rug":
             return "Example: Persian Luri hand-knotted rug, approx. 4.5 × 7 ft, ~290 KPSI on the back, wool and silk pile with cotton foundation, very good condition, purchased in a high-end rug gallery in San Francisco around 1995."
+        case "Luxury Personal Items":
+            return "Example: Cartier Panthère watch in yellow gold and steel, runs well, light surface wear on bracelet, no major scratches on crystal, includes original box but no papers, purchased in the mid-1990s."
+        case "Art":
+            return "Example: Signed oil painting on canvas by a local artist, approx. 24\" × 36\" including frame, good condition with no visible tears or flaking, purchased at a gallery in 2005 for around $1,200."
+        case "China & Crystal":
+            return "Example: Waterford Lismore pattern, 8 wine glasses and 8 water goblets, all matching, no chips or cracks, crystal still clear (no dishwasher haze), wedding gifts from the late 1980s, original boxes for 4 of the pieces."
+        case "Furniture":
+            return "Example: Mid-century teak sideboard, approx. 72\" wide, likely Danish, solid wood with veneer doors, original hardware, minor surface scratches, no major damage, purchased from a vintage furniture shop around 2010."
+        case "Electronics":
+            return "Example: Samsung 55\" 4K TV, purchased around 2018, works well, includes remote, no major screen damage, a few small cosmetic scuffs on the frame."
+        case "Appliance":
+            return "Example: Whirlpool front-load washer, purchased around 2016, still in good working order, minor cosmetic scratches on the side, no known major repairs."
+        case "Tools":
+            return "Example: DeWalt cordless drill, 20V platform, includes 2 batteries and charger, used for home projects only, still works well, light wear on housing."
+        case "Clothing":
+            return "Example: Women’s Burberry trench coat, size 8, classic tan color, lightly worn, no visible stains or tears, purchased around 2012."
+        case "Luggage":
+            return "Example: Samsonite hard-shell spinner suitcase, medium checked size, navy blue, all wheels and handles work, some scuffing from use but no cracks."
+        case "Decor":
+            return "Example: Large decorative wall mirror with gold-tone frame, approx. 36\" × 48\", traditional style, minor wear on frame edges, glass in good condition."
+        case "Collectibles":
+            return "Example: Hummel figurine, \"Apple Tree Boy\", with Goebel mark on base, no chips or cracks, original box included, purchased in the late 1980s."
+        case "Documents":
+            return "Example: Framed signed letter from a local public figure from the 1970s, original signature (not a copy), good condition, no major stains or tears."
+        case "Uncategorized", "Other":
+            return "Example: Unique handmade item from a local craft fair, wooden and metal materials, approx. 18\" tall, good condition, purchased around 2010."
         default:
             return "Example: Mid-century teak sideboard from Danish maker, approx. 72\" wide, original hardware, minor surface wear, purchased from a vintage furniture shop in 2015."
         }

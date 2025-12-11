@@ -1,4 +1,227 @@
 # Legacy Treasure Chest
+
+## AI Valuation System 12-11-2025
+
+Legacy Treasure Chest includes a unified AI Valuation system that analyzes item photos and returns structured, conservative resale value hints for estate planning and downsizing.
+
+The system has two main parts:
+
+- **Backend – LTC AI Valuation Gateway (FastAPI + Gemini)**
+- **iOS App – Item AI Analysis Sheet (SwiftUI + SwiftData)**
+
+The goal is to give Boomers a realistic, conservative resale view of their belongings, not optimistic retail or insurance values.
+
+---
+
+### 1. High-Level Flow
+
+1. User creates or selects an item and adds at least one photo.
+2. From the Item Detail screen, the user taps **“Analyze with AI”**.
+3. The iOS app sends:
+   - The **first item photo**
+   - The item’s **current title, description, and category**
+   - Any **extra details** the user typed in the “More Details for AI Expert” text area
+4. The backend calls Gemini with:
+   - A **central system prompt** describing the valuation philosophy
+   - **Category-specific Expert guidance** (Jewelry, Rugs, Art, China & Crystal, Furniture, Luxury Personal Items)
+   - **General guidance** for remaining household categories
+   - The image and assembled user hints
+5. Gemini returns a strict JSON object (mapped to `ItemAnalysis` + `ValueHints`).
+6. The iOS app:
+   - Shows a **Valuation Summary**, **AI Suggestions**, **Why This Estimate**, and **Missing Details**
+   - Updates the item’s **title, category, description, and valuation fields** when the user taps **“Apply Suggestions”**
+
+---
+
+### 2. Backend – Category Experts and General Guidance
+
+All valuation runs through a single endpoint:
+
+- `POST /ai/analyze-item-photo`
+  - Request: `AnalyzeItemPhotoRequest` (image + optional `ItemAIHints`)
+  - Response: `ItemAnalysis` with nested `ValueHints`
+
+The central prompt:
+
+- Enforces a **strict JSON schema** (no markdown, no extra fields).
+- Uses **conservative fair-market resale value** (estate-sale / consignment / realistic online resale), *not* retail or insurance values.
+- Encourages clear explanations in `aiNotes` and short, actionable prompts in `missingDetails`.
+
+#### 2.1 Category-Specific Experts
+
+The backend prompt currently includes dedicated guidance for:
+
+- **Jewelry Expert v1**
+- **Rugs Expert v1**
+- **Art Expert v1**
+- **China & Crystal Expert v1**
+- **Furniture Expert v1**
+- **Luxury Personal Items Expert v1**
+
+Each Expert:
+- Uses conservative **resale ranges** (`valueLow`, `estimatedValue`, `valueHigh` in USD).
+- Explains **why** the range was chosen in `aiNotes`.
+- Returns **high-impact missing details** in `missingDetails` (e.g., weight in grams, KPSI, artist signature, pattern name, maker labels).
+- Adjusts behavior when the user provides better hints (brand, model, KPSI, provenance, etc.).
+
+##### Jewelry Expert v1
+- Focus: intrinsic + brand-driven value for rings, necklaces, bracelets, earrings, etc.
+- Key drivers: **metal purity and weight, stone identity/quality, designer brand** (Cartier, Tiffany, Roberto Coin, etc.).
+- Uses **real-world resale comps** (The RealReal, eBay, consignment) rather than retail/insurance.
+- `missingDetails` examples:
+  - “Need weight in grams”
+  - “Need close-up of hallmark”
+  - “Need stone type and approximate carat weight”
+
+##### Rugs Expert v1
+- Focus: hand-knotted and workshop rugs.
+- Key drivers: **weave quality (KPSI / weave tier), materials (wool/silk/cotton), origin, size, age, condition**.
+- Treats **user-supplied KPSI** as trustworthy when provided (user counts knots on the back).
+- When KPSI is unknown, estimates a **weave tier** (coarse / medium / fine / very fine) and stays conservative.
+- `missingDetails` examples:
+  - “Need approximate KPSI (count knots per inch on the back)”
+  - “Need clear close-up photo of the BACK with a ruler”
+  - “Need the rug’s exact size”
+
+##### Art Expert v1
+- Focus: wall art and collectible art (paintings, prints, drawings, photographs).
+- Key drivers: **artist identity, medium, original vs print, edition, size, condition, provenance**.
+- Distinguishes **decorative art** from potentially collectible work.
+- Conservative when artist/medium/edition are unclear.
+- `missingDetails` examples:
+  - “Need clear close-up photo of the artist’s signature”
+  - “Need approximate height and width of the artwork”
+  - “Need to know whether this is an original painting or a print”
+
+##### China & Crystal Expert v1
+- Focus: **fine china patterns and crystal stemware/serveware**.
+- Key drivers: **brand, pattern name, quantity / completeness of sets, condition, discontinued status**.
+- Recognizes that the market is generally **soft** versus original wedding registry / boutique pricing.
+- `missingDetails` examples:
+  - “Need brand and pattern name from the underside mark”
+  - “Need to know how many matching pieces or place settings are included”
+  - “Need information about chips, cracks, or cloudiness”
+
+##### Furniture Expert v1
+- Focus: household furniture (case goods, tables, seating, beds).
+- Key drivers: **maker/brand, design era (e.g., mid-century), materials, construction quality, size, condition**.
+- Recognizes that most used furniture sells for a **fraction of original retail**, unless it is designer / iconic.
+- `missingDetails` examples:
+  - “Need maker or brand name from any labels or stamps”
+  - “Need approximate dimensions (width, depth, height)”
+  - “Need closer photos of any damage or wear”
+
+##### Luxury Personal Items Expert v1
+- Rule of thumb:
+  - If value is driven by **brand + model + condition**, use **“Luxury Personal Items”**.
+  - If value is driven mostly by **metal weight or gemstone quality**, use **“Jewelry”**.
+- Covers:
+  - **Watches (fine timepieces)** – Rolex, Cartier, Omega, Patek, AP, etc.
+  - **Designer Handbags** – Chanel, Hermès, LV, Gucci, YSL, Prada, etc.
+  - **Fine Writing Instruments** – Montblanc, Pelikan, Waterman (high-end), etc.
+  - **Small Leather Goods (SLGs)** – wallets, card holders, belts, key holders.
+  - **Luxury Accessories** – designer sunglasses, scarves, cufflinks, lighters.
+  - **Designer Jewelry behaving like a luxury good** – Cartier Love, Tiffany T, Yurman cable, Bvlgari B.Zero1, etc.
+- Strong emphasis on **brand, model, authenticity cues, condition, and completeness** (box, papers, dust bag, authenticity cards).
+- `missingDetails` examples:
+  - “Need exact brand and model name”
+  - “Need photo of case back or reference/serial number”
+  - “Need to know if original box and papers are included”
+
+#### 2.2 General Guidance for Remaining Categories
+
+For remaining categories, the backend uses a **shared guidance block** instead of a full Expert:
+
+- **Collectibles** (figurines, sports memorabilia, toys, etc.)
+- **Electronics**
+- **Appliance**
+- **Tools**
+- **Clothing**
+- **Luggage**
+- **Decor**
+- **Documents**
+- **Uncategorized / Other**
+
+Each of these:
+- Still returns a **conservative resale range**, focusing on realistic estate-sale / local-market outcomes.
+- Emphasizes **brand, model/type, age, working condition, and visible wear**.
+- Returns short, category-aware `missingDetails` prompts (e.g., “Need exact brand and model,” “Need to know if this item still works,” “Need closer photos of wheels and handles,” etc.).
+- Treats most **documents** as having **organizational, not monetary value**, unless clearly collectible/historical.
+
+---
+
+### 3. iOS – Item AI Analysis Sheet (Hints & UX)
+
+The iOS side uses a single view:
+
+- `ItemAIAnalysisSheet`
+  - Shows the **Current Item** (name, description, category, value)
+  - Shows the **Photo Used for Analysis** (first image)
+  - Provides a **“More Details for AI Expert”** section
+  - Runs analysis and displays:
+    - **Valuation Summary**
+    - **AI Suggestions** (title, summary, category, tags)
+    - **Improve This Estimate** (missing details)
+    - **Why This Estimate** (provider, date, aiNotes)
+    - **Item Details** (brand, maker, materials, style, origin, condition, features)
+
+#### 3.1 Category-Aware Hints in the Text Area
+
+The **hint text and placeholder example** in “More Details for AI Expert” are now **category-aware**:
+
+- For example:
+  - **Jewelry:** suggests metal purity, weight in grams, stone details, certificates.
+  - **Rug:** suggests KPSI, materials, origin, size, age, condition, where purchased.
+  - **Art:** suggests artist, medium, original vs print, edition number, size, provenance.
+  - **China & Crystal:** suggests brand/pattern, number of pieces/place settings, chips/cracks/cloudiness.
+  - **Furniture:** suggests maker/brand, dimensions, wood/materials, era, refinishing/reupholstery, condition.
+  - **Luxury Personal Items:** suggests brand, model/collection, materials, condition, box/papers/receipts.
+  - Other categories: show tailored hints (Electronics, Appliances, Tools, Clothing, Luggage, Decor, Collectibles, Documents, Other).
+
+These hints live entirely on the **iOS side** and are mapped by `item.category` so the same UI works for all Experts and generic categories.
+
+#### 3.2 How User Notes Are Used
+
+- The text the user enters in “More Details for AI Expert” is stored in `ItemValuation.userNotes`.
+- Before each run:
+  - The sheet combines:
+    - The current `item.itemDescription`
+    - Any persisted `userNotes`
+  - Into a single description passed to the backend as part of `ItemAIHints`.
+- Over time, the user can refine the description and notes to produce:
+  - Better **titles / summaries**
+  - More accurate **valuation ranges**
+  - More targeted **missingDetails** prompts
+
+---
+
+### 4. Valuation Mapping into SwiftData
+
+On successful analysis:
+
+- `ItemAIAnalysisSheet`:
+  - Updates `item.name` from the AI `title`.
+  - Updates `item.category` from `analysis.category`.
+  - Builds a richer `item.itemDescription` combining:
+    - AI `summary`
+    - Key details (maker, materials, style, condition, features).
+  - Maps `ValueHints` into:
+    - `item.value` (midpoint if range, otherwise `estimatedValue` or boundary)
+    - `item.suggestedPriceNew` (typically `valueHigh` or `estimatedValue`)
+    - `item.suggestedPriceUsed` (typically `valueLow` or `estimatedValue`)
+  - Upserts `ItemValuation`:
+    - `valueLow`, `estimatedValue`, `valueHigh`
+    - `currencyCode`
+    - `confidenceScore`
+    - `aiProvider`
+    - `aiNotes`
+    - `missingDetails`
+    - `valuationDate` (from backend, set per run)
+    - `updatedAt` timestamp
+  - Preserves any existing `userNotes` (never overwritten by AI).
+
+This design lets the user run multiple valuation passes per item as they add more details and photos, while keeping a single, latest `ItemValuation` attached to each `LTCItem`.
+
 ✅ AI Valuation UX & Data Model Update (Dec 9 2025)
 This update summarizes recent improvements to the AI Valuation workflow, including how users provide additional details, how valuations are stored, and how the system now explains why an item is valued the way it is.
 1. Unified Expert Valuation Experience
