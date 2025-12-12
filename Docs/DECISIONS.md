@@ -1,3 +1,228 @@
+Last updated 12/11/2025
+Here’s the Estate Dashboard spec rewritten around **Legacy** and **Liquidate**.
+
+---
+
+## 1. What the Dashboard Does (with Legacy/Liquidate)
+
+The Estate Dashboard gives the owner a clear snapshot of **what their estate is worth** today (conservative sale value) and **what happens to each item**:
+
+* **Legacy items** – things that are meant to go to specific people (have one or more Beneficiaries).
+* **Liquidate items** – things that will be sold, with proceeds handled by the will/estate plan.
+
+Behind the scenes, we derive this purely from existing data:
+
+* **Legacy** = items where `item.itemBeneficiaries` is **not empty**
+* **Liquidate** = items where `item.itemBeneficiaries` is **empty**
+
+No schema change is required for v1.
+
+---
+
+## 2. EstateDashboardView – v1 Layout (Legacy / Liquidate)
+
+### A. Navigation Placement
+
+**HomeView:**
+
+* Keep the current hero and welcome text.
+
+* Provide two primary actions (NavigationLinks):
+
+  1. **“Estate Dashboard”** – goes to `EstateDashboardView()`
+  2. **“View Your Items”** – goes to `ItemsListView()`
+
+* The Dashboard is a **separate screen**, not embedded as a large panel in Home.
+
+  * First-time users naturally tap Dashboard after onboarding.
+  * Returning users can go straight to “View Your Items” without scrolling past a big dashboard.
+
+We’ll wire `EstateDashboardView` as a new NavigationLink from `HomeView`.
+
+---
+
+### B. Sections & Metrics (using Legacy / Liquidate)
+
+#### 1) Estate Snapshot (Header)
+
+**Section: “Estate Snapshot”**
+
+Metrics:
+
+* **Total Estate Value (Conservative Sale Value)**
+
+  * For v1:
+    `effectiveValue(item) = item.valuation?.estimatedValue ?? item.value`
+    `totalEstateValue = sum(effectiveValue(item))`
+* **Total Items**
+
+  * `totalItems = items.count`
+* **By estate path (counts)**
+
+  * `legacyItemCount = count of items with item.itemBeneficiaries.isEmpty == false`
+  * `liquidateItemCount = totalItems - legacyItemCount`
+
+Display:
+
+* Large number: “Total estate (sale value): **$X**”
+* Smaller line: “Items: **N total** · **Legacy: A** · **Liquidate: B**”
+* One-line explainer:
+
+  > “Items without a named beneficiary are treated as Liquidate items—sold, with proceeds handled by your will or estate plan.”
+
+---
+
+#### 2) Estate Paths – Legacy vs Liquidate
+
+**Section: “Estate Paths”**
+
+For each path:
+
+* **Legacy**
+
+  * `legacyItemCount`
+  * `legacyValue = sum(effectiveValue(item)) for legacy items`
+* **Liquidate**
+
+  * `liquidateItemCount`
+  * `liquidateValue = sum(effectiveValue(item)) for liquidate items`
+
+Display rows like:
+
+* **Legacy Items** – `18 items · $82,400`
+* **Liquidate Items** – `142 items · $163,350`
+
+Optionally, a simple horizontal share bar for each path to show % of total estate value.
+
+---
+
+#### 3) Valuation Coverage
+
+**Section: “Valuation Readiness”**
+
+We care that both Legacy and Liquidate items have realistic sale values.
+
+Define:
+
+* `hasValuation(item) = (effectiveValue(item) > 0)`
+* **Overall:**
+
+  * `valuedItemsCount = count where hasValuation(item)`
+  * `unvaluedItemsCount = totalItems - valuedItemsCount`
+  * `valuationCompletion = valuedItemsCount / max(totalItems, 1)`
+* **By path (optional but useful):**
+
+  * Legacy:
+
+    * `legacyValuedCount = valued legacy items`
+    * `legacyValuationCompletion = legacyValuedCount / max(legacyItemCount, 1)`
+  * Liquidate:
+
+    * `liquidateValuedCount = valued liquidate items`
+    * `liquidateValuationCompletion = liquidateValuedCount / max(liquidateItemCount, 1)`
+
+Display:
+
+* Overall progress bar:
+  “Valuations complete for **68%** of your items.”
+* Optional small labels:
+
+  * “Legacy items valued: 100%”
+  * “Liquidate items valued: 64%”
+
+Short footer:
+
+> “Values are conservative resale estimates from AI or your own entries.”
+
+---
+
+#### 4) Value by Category
+
+**Section: “Value by Category”**
+
+Group items by `item.category`:
+
+For each category:
+
+* `categoryItemCount`
+* `categoryTotalValue = sum(effectiveValue(item))`
+
+Display:
+
+* **Jewelry** – `12 items · $32,500`
+* **Art** – `8 items · $18,200`
+* **Rugs** – `5 items · $9,800`
+
+For v1, keep this simple. In a later iteration we can split each category’s row into Legacy vs Liquidate slices if that feels important.
+
+---
+
+#### 5) High-Value Liquidate Items
+
+**Section: “High-Value Liquidate Items”**
+
+This is the actionable “what really matters” list for the executor and for potential reclassification to Legacy if family changes their mind.
+
+Filter:
+
+* `item.itemBeneficiaries.isEmpty == true` (Liquidate)
+* `effectiveValue(item) > 0`
+
+Sort:
+
+* Descending by `effectiveValue(item)`
+
+Take:
+
+* Top N (e.g., 5)
+
+Display rows similar to your existing list styles:
+
+* Thumbnail (first image or placeholder)
+* Name
+* Category
+* Value
+* Tap → `ItemDetailView(item: item)`
+
+Footer text idea:
+
+> “These items are worth the most but are currently marked for liquidation. You can open any item to assign it as a Legacy item.”
+
+---
+
+#### 6) Readiness / Next Steps (Text Only)
+
+**Section: “Next Steps”**
+
+Use simple, rule-based suggestions:
+
+* If `valuationCompletion < 0.7`:
+
+  * “You have many items without a sale value. Consider running AI analysis on Liquidate items to improve your estate readiness.”
+* Else if `liquidateValuedCount` is high but `legacyItemCount` is very small:
+
+  * “Most of your estate is ready to be sold. You may want to review a handful of special items to mark them as Legacy for specific people.”
+* Else if there are many high-value Liquidate items:
+
+  * “You have several high-value Liquidate items. Talk with your beneficiaries about whether any should be moved into your Legacy plan.”
+
+No AI call required in v1; this is deterministic logic off the aggregates.
+
+---
+
+## 3. Next Logical Step
+
+If this Legacy/Liquidate-based layout matches your intent, the next step is:
+
+* Define the exact **SwiftData aggregation layer** inside `EstateDashboardView`:
+
+  * How we fetch `LTCItem`s.
+  * Helper functions like `effectiveValue(_:)`, `isLegacy(_:)`, `isLiquidate(_:)`.
+  * Computation of each metric described above.
+
+Once you’re ready, I can move on to Step 2 and propose the structure for `EstateDashboardView.swift` (data helpers + section layout) and then we’ll wire it into `HomeView`.
+
+
 # Legacy Treasure Chest - Architecture Decision Records (ADR)
 
 **Last Updated:** 2025-01-14  

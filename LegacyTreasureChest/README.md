@@ -1,4 +1,53 @@
 # Legacy Treasure Chest
+## Status Update — Estate Dashboard & Reports (2025-12-12)
+
+### Estate Dashboard (Readiness Snapshot)
+
+We added a v1 **Estate Dashboard** that answers: **“How ready is my estate inventory and allocation?”** using local SwiftData aggregation (no new backend endpoints).
+
+Key concepts:
+
+- **Legacy** = items with one or more beneficiaries assigned  
+- **Liquidate** = items with no beneficiary (assumed to be sold; proceeds handled by the will/estate plan)
+
+Dashboard sections:
+
+- **Estate Snapshot**: total conservative estate value, item counts, Legacy vs Liquidate split
+- **Estate Paths**: value + percentage share for Legacy vs Liquidate
+- **Valuation Readiness**: valuation completion overall + by path  
+  - Includes a lightweight **ⓘ tip** sheet (“How to increase readiness”) with prescriptive guidance and direct navigation to:
+    - Items
+    - Batch Add from Photos
+- **Value by Category**: aggregated value and counts per category
+- **High-Value Liquidate Items**: surfaces top Liquidate items by conservative value for quick review/triage
+- **Export & Share**: entry point for generating printable reports (see below)
+
+Implementation files:
+
+- `LegacyTreasureChest/LegacyTreasureChest/Features/EstateDashboard/EstateDashboardView.swift`
+
+### Estate Reports (PDF)
+
+We added v1 PDF report generation, designed for sharing with an executor, attorney, or family:
+
+- **Estate Snapshot Report** (one-page summary)
+- **Detailed Inventory Report** (full item list with category, path, beneficiary, and value)
+
+Entry points:
+
+- From **Estate Dashboard** → **Export & Share** (bottom of dashboard)
+- From **Home** (developer/lab tool entry used during testing)
+
+Implementation files:
+
+- `LegacyTreasureChest/LegacyTreasureChest/Features/EstateReports/EstateReportsView.swift`
+- `LegacyTreasureChest/LegacyTreasureChest/Features/EstateReports/EstateReportGenerator.swift`
+
+### Notes / Decisions
+
+- The dashboard and reports use **local SwiftData only** (no new backend work).
+- Conservative value calculations prioritize `ItemValuation.estimatedValue` when present, otherwise fall back to `LTCItem.value`.
+- UX goal: keep reports discoverable but **not disruptive** to the primary “Items-first” workflow.
 
 ## AI Valuation System 12-11-2025
 

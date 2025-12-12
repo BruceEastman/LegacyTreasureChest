@@ -3,9 +3,9 @@
 //  LegacyTreasureChest
 //
 //  Home screen shown after successful sign-in.
-//  Includes navigation into the Items list and the AI Test Lab.
-//  Updated to use Theme.swift design system and includes
-//  a developer-only "Reset All Data" tool.
+//  Includes navigation into the Items list, the Estate Dashboard,
+//  Estate Reports, and the AI Test Lab. Also includes a developer-only
+//  "Reset All Data" tool.
 //
 
 import SwiftUI
@@ -42,6 +42,28 @@ struct HomeView: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, Theme.spacing.large)
 
+                // MARK: – Estate Dashboard
+
+                NavigationLink {
+                    EstateDashboardView()
+                } label: {
+                    VStack(alignment: .leading, spacing: Theme.spacing.small) {
+                        Text("Estate Dashboard")
+                            .font(Theme.bodyFont.weight(.semibold))
+                            .foregroundStyle(Color.white)
+
+                        Text("See your total estate value, Legacy items, and what will be Liquidated.")
+                            .font(Theme.secondaryFont)
+                            .foregroundStyle(Color.white.opacity(0.9))
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+                    .background(Theme.accent)
+                    .cornerRadius(16)
+                }
+                .padding(.horizontal, Theme.spacing.xl)
+                .padding(.top, Theme.spacing.small)
+
                 // MARK: – Primary navigation card (Items)
 
                 NavigationLink {
@@ -64,6 +86,24 @@ struct HomeView: View {
                     Text("Tools & Labs")
                         .ltcSectionHeaderStyle()
 
+                    // Estate Reports entry point
+                    NavigationLink {
+                        EstateReportsView()
+                    } label: {
+                        VStack(alignment: .leading, spacing: Theme.spacing.small) {
+                            Text("Estate Reports")
+                                .font(Theme.bodyFont.weight(.semibold))
+                                .foregroundStyle(Theme.text)
+
+                            Text("Generate PDF reports for your estate, beneficiaries, and executor.")
+                                .font(Theme.secondaryFont)
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .ltcCardBackground()
+                    }
+
+                    // AI Test Lab
                     NavigationLink {
                         AITestView()
                     } label: {
@@ -146,7 +186,7 @@ struct HomeView: View {
             }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("This will permanently delete all items, beneficiaries, media links, and related records stored on this device. This is intended for development and testing only.")
+            Text("This will permanently delete all items, beneficiaries, media, and related records stored on this device. This is intended for development and testing only.")
         }
     }
 
@@ -154,8 +194,6 @@ struct HomeView: View {
 
     private func resetAllData() {
         do {
-            // Order doesn’t matter much because of cascade rules, but we make sure
-            // to remove junction entities and media explicitly for clarity.
             try deleteAll(of: ItemBeneficiary.self)
             try deleteAll(of: ItemImage.self)
             try deleteAll(of: AudioRecording.self)
