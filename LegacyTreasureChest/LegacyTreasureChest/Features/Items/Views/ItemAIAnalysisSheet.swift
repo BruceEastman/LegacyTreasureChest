@@ -26,6 +26,9 @@ struct ItemAIAnalysisSheet: View {
     /// Stored in ItemValuation.userNotes so it persists per item.
     @State private var extraDetailsText: String = ""
 
+    /// Navigation to editor (instead of a nested sheet).
+    @State private var showExtraDetailsEditor: Bool = false
+
     // Derived: whether the item has at least one image we can use.
     private var firstImagePath: String? {
         item.images.first?.filePath
@@ -81,21 +84,26 @@ struct ItemAIAnalysisSheet: View {
                 .padding(.horizontal, Theme.spacing.large)
                 .padding(.top, Theme.spacing.large)
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("AI Analysis")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Close") {
-                        dismiss()
-                    }
+                    Button("Close") { dismiss() }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     if let result = analysisResult {
-                        Button("Apply") {
-                            applyAnalysis(result)
-                        }
+                        Button("Apply") { applyAnalysis(result) }
                     }
                 }
+            }
+            .navigationDestination(isPresented: $showExtraDetailsEditor) {
+                ExtraDetailsEditorView(
+                    title: "More Details",
+                    prompt: extraDetailsHelpText,
+                    placeholder: extraDetailsPlaceholderText,
+                    text: $extraDetailsText
+                )
             }
             .onAppear {
                 loadPreviewImageIfNeeded()
@@ -161,6 +169,7 @@ struct ItemAIAnalysisSheet: View {
     }
 
     /// Section where the user can provide extra details that matter for valuation.
+    /// We navigate to a dedicated editor (no nested sheet).
     private var extraDetailsSection: some View {
         VStack(alignment: .leading, spacing: Theme.spacing.small) {
             Text("More Details for AI Expert")
@@ -170,19 +179,33 @@ struct ItemAIAnalysisSheet: View {
                 .font(Theme.secondaryFont)
                 .foregroundStyle(Theme.textSecondary)
 
-            ZStack(alignment: .topLeading) {
-                TextEditor(text: $extraDetailsText)
-                    .font(Theme.secondaryFont)
-                    .padding(8)
+            Button {
+                showExtraDetailsEditor = true
+            } label: {
+                VStack(alignment: .leading, spacing: Theme.spacing.small) {
+                    if extraDetailsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text(extraDetailsPlaceholderText)
+                            .font(Theme.secondaryFont)
+                            .foregroundStyle(Theme.textSecondary.opacity(0.7))
+                            .lineLimit(3)
+                    } else {
+                        Text(extraDetailsText)
+                            .font(Theme.secondaryFont)
+                            .foregroundStyle(Theme.text)
+                            .lineLimit(6)
+                    }
 
-                if extraDetailsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Text(extraDetailsPlaceholderText)
-                        .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.textSecondary.opacity(0.7))
-                        .padding(12)
+                    HStack(spacing: 6) {
+                        Image(systemName: "pencil")
+                        Text("Tap to edit")
+                    }
+                    .font(Theme.secondaryFont.weight(.semibold))
+                    .foregroundStyle(Theme.accent)
+                    .padding(.top, 6)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(minHeight: 120)
+            .buttonStyle(.plain)
             .ltcCardBackground()
         }
     }
@@ -192,11 +215,9 @@ struct ItemAIAnalysisSheet: View {
             Task { await runAnalysis() }
         } label: {
             HStack {
-                if isAnalyzing {
-                    ProgressView()
-                }
+                if isAnalyzing { ProgressView() }
                 Image(systemName: "sparkles")
-                Text("Run Analysis")
+                Text(isAnalyzing ? "Analyzing…" : "Run Analysis")
                     .font(Theme.bodyFont.weight(.semibold))
             }
             .frame(maxWidth: .infinity)
@@ -250,7 +271,6 @@ struct ItemAIAnalysisSheet: View {
             Text("Valuation Summary")
                 .ltcSectionHeaderStyle()
 
-            // Main value line
             if let low = value.valueLow, let high = value.valueHigh {
                 Text("\(formattedCurrency(low, code: value.currencyCode)) – \(formattedCurrency(high, code: value.currencyCode))")
                     .font(Theme.bodyFont.weight(.semibold))
@@ -265,7 +285,6 @@ struct ItemAIAnalysisSheet: View {
                     .foregroundStyle(Theme.textSecondary)
             }
 
-            // Confidence label (High / Medium / Low)
             if let confidenceLabel = confidenceDescription(for: value.confidenceScore) {
                 Text("Confidence: \(confidenceLabel)")
                     .font(Theme.secondaryFont)
@@ -308,7 +327,6 @@ struct ItemAIAnalysisSheet: View {
 
     private func valuationDetailsSection(_ value: ValueHints) -> some View {
         VStack(alignment: .leading, spacing: Theme.spacing.medium) {
-            // Improve this estimate (Missing details)
             if let missing = value.missingDetails, !missing.isEmpty {
                 VStack(alignment: .leading, spacing: Theme.spacing.small) {
                     Text("Improve This Estimate")
@@ -326,7 +344,6 @@ struct ItemAIAnalysisSheet: View {
                 }
             }
 
-            // Why this range (AI Notes + provider + date)
             VStack(alignment: .leading, spacing: Theme.spacing.small) {
                 Text("Why This Estimate")
                     .ltcSectionHeaderStyle()
@@ -543,11 +560,9 @@ struct ItemAIAnalysisSheet: View {
     }
 
     private func applyAnalysis(_ analysis: ItemAnalysis) {
-        // Core fields
         item.name = analysis.title
         item.category = analysis.category
 
-        // Build a richer description that includes key AI details.
         var descriptionLines: [String] = []
         descriptionLines.append(analysis.summary)
 
@@ -557,8 +572,7 @@ struct ItemAIAnalysisSheet: View {
             detailsParts.append("Maker: \(maker)")
         }
         if let materialsArray = analysis.materials, !materialsArray.isEmpty {
-            let joined = materialsArray.joined(separator: ", ")
-            detailsParts.append("Materials: \(joined)")
+            detailsParts.append("Materials: \(materialsArray.joined(separator: ", "))")
         }
         if let style = analysis.style, !style.isEmpty {
             detailsParts.append("Style: \(style)")
@@ -567,34 +581,22 @@ struct ItemAIAnalysisSheet: View {
             detailsParts.append("Condition: \(condition)")
         }
         if let featuresArray = analysis.features, !featuresArray.isEmpty {
-            let joined = featuresArray.joined(separator: ", ")
-            detailsParts.append("Features: \(joined)")
+            detailsParts.append("Features: \(featuresArray.joined(separator: ", "))")
         }
 
         if !detailsParts.isEmpty {
-            let detailsLine = detailsParts.joined(separator: " • ")
-            descriptionLines.append("")              // blank line between summary and details
-            descriptionLines.append(detailsLine)
+            descriptionLines.append("")
+            descriptionLines.append(detailsParts.joined(separator: " • "))
         }
 
         item.itemDescription = descriptionLines.joined(separator: "\n")
 
-        // Value: use ValueHints if present for item.value and ItemValuation.
         if let valueHints = analysis.valueHints {
-            // 1) Update the item's simple numeric value.
             let mid: Double? = {
-                if let est = valueHints.estimatedValue {
-                    return est
-                }
-                if let low = valueHints.valueLow, let high = valueHints.valueHigh {
-                    return (low + high) / 2.0
-                }
-                if let low = valueHints.valueLow {
-                    return low
-                }
-                if let high = valueHints.valueHigh {
-                    return high
-                }
+                if let est = valueHints.estimatedValue { return est }
+                if let low = valueHints.valueLow, let high = valueHints.valueHigh { return (low + high) / 2.0 }
+                if let low = valueHints.valueLow { return low }
+                if let high = valueHints.valueHigh { return high }
                 return nil
             }()
 
@@ -614,25 +616,20 @@ struct ItemAIAnalysisSheet: View {
                 item.suggestedPriceUsed = est
             }
 
-            // 2) Upsert the ItemValuation record.
             upsertValuation(from: valueHints)
         }
 
-        // Store AI metadata for future use.
         item.llmGeneratedTitle = analysis.title
         item.llmGeneratedDescription = analysis.summary
 
-        // Close sheet after applying.
         dismiss()
     }
 
     // MARK: - Valuation Mapping
 
-    /// Persist extra details into ItemValuation.userNotes so they survive across runs.
     private func saveExtraDetailsToValuation() {
         let trimmed = extraDetailsText.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // If the user cleared the field and we have a valuation, clear the notes.
         if trimmed.isEmpty {
             if let valuation = item.valuation {
                 valuation.userNotes = nil
@@ -641,7 +638,6 @@ struct ItemAIAnalysisSheet: View {
             return
         }
 
-        // Ensure there is a valuation object to hang these notes on.
         let valuation: ItemValuation
         if let existing = item.valuation {
             valuation = existing
@@ -655,7 +651,6 @@ struct ItemAIAnalysisSheet: View {
         valuation.updatedAt = .now
     }
 
-    /// Create or update the item's ItemValuation from backend ValueHints.
     private func upsertValuation(from hints: ValueHints) {
         let valuation: ItemValuation
 
@@ -673,7 +668,6 @@ struct ItemAIAnalysisSheet: View {
         valuation.confidenceScore = hints.confidenceScore
         valuation.aiProvider = hints.aiProvider
         valuation.aiNotes = hints.aiNotes
-        // Preserve any existing userNotes; we never overwrite them from AI.
         valuation.missingDetails = hints.missingDetails ?? valuation.missingDetails
 
         if let dateString = hints.valuationDate {
@@ -683,21 +677,16 @@ struct ItemAIAnalysisSheet: View {
         valuation.updatedAt = .now
     }
 
-    /// Parse ISO 8601 timestamps like "2025-12-08T21:57:15.698594Z".
     private func parseISO8601Date(_ string: String) -> Date? {
         let formatter = ISO8601DateFormatter()
         return formatter.date(from: string)
     }
 
-    // MARK: - Helpers
-
-    /// Simple currency formatter that respects the provided ISO 4217 code.
     private func formattedCurrency(_ value: Double, code: String) -> String {
         let intValue = Int(value.rounded())
         return "\(intValue) \(code)"
     }
 
-    /// Map confidence score into a human-readable label.
     private func confidenceDescription(for score: Double?) -> String? {
         guard let score else { return nil }
         let numeric = String(format: "%.2f", score)
@@ -715,43 +704,87 @@ struct ItemAIAnalysisSheet: View {
     }
 }
 
-// MARK: - Preview
+// MARK: - Dedicated “More Details” editor (keyboard-safe)
 
-#if DEBUG
-private let itemAIAnalysisPreviewContainer: ModelContainer = {
-    let container = try! ModelContainer(
-        for: LTCItem.self,
-        configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-    )
+private struct ExtraDetailsEditorView: View {
+    let title: String
+    let prompt: String
+    let placeholder: String
 
-    let context = ModelContext(container)
+    @Binding var text: String
 
-    let sample = LTCItem(
-        name: "Sample Item",
-        itemDescription: "Sample description for AI analysis preview.",
-        category: "Jewelry",
-        value: 250
-    )
+    @Environment(\.dismiss) private var dismiss
+    @FocusState private var isFocused: Bool
 
-    context.insert(sample)
+    var body: some View {
+        VStack(spacing: 0) {
 
-    return container
-}()
+            // Scrollable content
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
 
-#Preview {
-    let container = itemAIAnalysisPreviewContainer
-    let context = ModelContext(container)
+                    Text(prompt)
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
 
-    let descriptor = FetchDescriptor<LTCItem>()
-    let items = (try? context.fetch(descriptor)) ?? []
+                    ZStack(alignment: .topLeading) {
+                        TextEditor(text: $text)
+                            .font(Theme.bodyFont)
+                            .focused($isFocused)
+                            .frame(minHeight: 220) // 👈 guarantees visible typing area
+                            .padding(12)
 
-    return NavigationStack {
-        if let first = items.first {
-            ItemAIAnalysisSheet(item: first)
-        } else {
-            Text("No preview item")
+                        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            Text(placeholder)
+                                .font(Theme.secondaryFont)
+                                .foregroundStyle(Theme.textSecondary.opacity(0.6))
+                                .padding(18)
+                                .onTapGesture { isFocused = true }
+                        }
+                    }
+                    .background(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(Color(.systemBackground))
+                            .shadow(radius: 1)
+                    )
+                }
+                .padding()
+            }
+
+            // Spacer that keeps content above keyboard
+            .safeAreaInset(edge: .bottom) {
+                Color.clear.frame(height: 60)
+            }
+        }
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+
+            // Nav Done = save + dismiss screen
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Done") {
+                    dismiss()
+                }
+                .fontWeight(.semibold)
+            }
+
+            // Keyboard Done = dismiss keyboard only
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    isFocused = false
+                }
+            }
+        }
+
+        // 🔑 Critical line: stop SwiftUI from resizing for keyboard
+        .ignoresSafeArea(.keyboard)
+
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                isFocused = true
+            }
         }
     }
-    .modelContainer(container)
 }
-#endif
+

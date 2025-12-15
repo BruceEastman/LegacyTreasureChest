@@ -1,4 +1,33 @@
 # Legacy Treasure Chest
+## Current Status (Milestone: Physical Device Run)
+
+**As of December 2025**
+
+Legacy Treasure Chest now runs successfully on a physical iPhone (iOS 18+) using a local FastAPI AI gateway during development.
+
+### What’s Working
+- App installs and launches on a real iPhone (not simulator-only)
+- SwiftUI + SwiftData core flows operational
+- Navigation, Items, Estate Dashboard, Reports, and AI Test Lab accessible
+- Backend AI requests routed through a local FastAPI gateway (no API keys in app)
+- App Transport Security configured for local network development
+- Signing, entitlements, and Info.plist stabilized
+
+### Development Setup Notes
+- `Generate Info.plist File` is disabled
+- App uses a manually managed `Info.plist`
+- Local AI gateway accessed via LAN IP during development
+- This configuration is **development-only** and will change before TestFlight/App Store distribution
+
+### Next Phase
+The next development phase focuses on **real household usage**:
+- UX clarity and friction reduction
+- Copy and guidance improvements
+- Workflow validation with real items, photos, and family members
+- Refining AI usefulness based on actual behavior, not test cases
+
+Infrastructure is considered “good enough” for now; priority shifts to product experience.
+
 ## Status Update — Estate Dashboard & Reports (2025-12-12)
 
 ### Estate Dashboard (Readiness Snapshot)

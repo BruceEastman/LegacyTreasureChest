@@ -120,7 +120,7 @@ struct ItemDetailView: View {
                 } label: {
                     HStack {
                         Image(systemName: "sparkles")
-                        Text("Analyze with AI")
+                        Text("Improve with AI")
                             .font(Theme.bodyFont.weight(.semibold))
                     }
                 }
@@ -134,7 +134,7 @@ struct ItemDetailView: View {
                         .font(Theme.secondaryFont)
                         .foregroundStyle(Theme.textSecondary)
                 } else {
-                    Text("AI will analyze the first photo for this item and suggest improved title, description, category, and value.")
+                    Text("Use AI to Refine the item's title, description, category, and estimated value using your photos and added details.")
                         .font(Theme.secondaryFont)
                         .foregroundStyle(Theme.textSecondary)
                 }
