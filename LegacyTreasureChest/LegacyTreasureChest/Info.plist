@@ -2,7 +2,47 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>GEMINI_MODEL_NAME</key>
-	<string>gemini-2.0-flash-exp</string>
+
+    <!-- Required bundle keys -->
+    <key>CFBundleIdentifier</key>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+
+    <key>CFBundleName</key>
+    <string>$(PRODUCT_NAME)</string>
+
+    <key>CFBundleExecutable</key>
+    <string>$(EXECUTABLE_NAME)</string>
+
+    <key>CFBundleVersion</key>
+    <string>$(CURRENT_PROJECT_VERSION)</string>
+
+    <key>CFBundleShortVersionString</key>
+    <string>$(MARKETING_VERSION)</string>
+
+    <!-- App configuration -->
+    <key>GEMINI_MODEL_NAME</key>
+    <string>gemini-2.0-flash-exp</string>
+
+    <!-- Local Network permission (REQUIRED for iPhone → Mac gateway access) -->
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>
+    Legacy Treasure Chest needs access to your local network to connect to your AI Gateway running on your Mac.
+    </string>
+
+    <!-- App Transport Security exception for local AI Gateway -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSExceptionDomains</key>
+        <dict>
+            <key>192.168.4.27</key>
+            <dict>
+                <key>NSTemporaryExceptionAllowsInsecureHTTPLoads</key>
+                <true/>
+                <key>NSIncludesSubdomains</key>
+                <false/>
+            </dict>
+        </dict>
+    </dict>
+
 </dict>
 </plist>

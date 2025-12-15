@@ -17,13 +17,22 @@ struct BackendAIProvider: AIProvider {
     private let baseURL: URL
     private let urlSession: URLSession
 
+    /// Default backend base URL:
+    /// - Simulator: 127.0.0.1 points to your Mac host
+    /// - Physical iPhone: must use your Mac's LAN IP
+    private static var defaultBaseURL: URL {
+        #if targetEnvironment(simulator)
+        return URL(string: "http://127.0.0.1:8000")!
+        #else
+        return URL(string: "http://192.168.4.27:8000")!
+        #endif
+    }
+
     init(
         // For now, we hard-code a dev URL so we are not dependent on AppConfig.
         // This should match your local FastAPI server:
-        //   uvicorn main:app --reload --port 8000
-        //
-        // When running on the iOS Simulator, 127.0.0.1 points to your Mac host.
-        baseURL: URL = URL(string: "http://127.0.0.1:8000")!,
+        //   uvicorn main:app --reload --host 0.0.0.0 --port 8000
+        baseURL: URL = BackendAIProvider.defaultBaseURL,
         urlSession: URLSession = .shared
     ) {
         self.baseURL = baseURL
