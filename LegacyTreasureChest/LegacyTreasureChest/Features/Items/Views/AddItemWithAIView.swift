@@ -37,6 +37,9 @@ struct AddItemWithAIView: View {
     @State private var name: String = ""
     @State private var itemDescription: String = ""
 
+    // NEW: quantity
+    @State private var quantity: Int = 1
+
     // Category options (centralized via LTCItem.baseCategories)
     private let baseCategories: [String] = LTCItem.baseCategories
 
@@ -48,6 +51,14 @@ struct AddItemWithAIView: View {
     // Currency code based on current locale, defaulting to USD
     private var currencyCode: String {
         Locale.current.currency?.identifier ?? "USD"
+    }
+
+    private var unitValue: Double {
+        max(value ?? 0, 0)
+    }
+
+    private var totalValue: Double {
+        unitValue * Double(max(quantity, 1))
     }
 
     // Simple validation: require a name and at least one analysis run
@@ -127,12 +138,27 @@ struct AddItemWithAIView: View {
                     }
                 }
 
+                Stepper(value: $quantity, in: 1...999) {
+                    HStack {
+                        Text("Quantity")
+                        Spacer()
+                        Text("\(quantity)")
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                }
+
                 TextField(
-                    "Estimated Value",
+                    "Estimated Value (each)",
                     value: $value,
                     format: .currency(code: currencyCode)
                 )
                 .keyboardType(.decimalPad)
+
+                if quantity > 1, unitValue > 0 {
+                    Text("Total: \(totalValue, format: .currency(code: currencyCode)) (\(unitValue, format: .currency(code: currencyCode)) each)")
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                }
             }
 
             if let analysisResult {
@@ -254,7 +280,6 @@ struct AddItemWithAIView: View {
 
         if let data = try? await item.loadTransferable(type: Data.self),
            let image = UIImage(data: data) {
-
             self.selectedImage = image
         }
     }
@@ -269,7 +294,8 @@ struct AddItemWithAIView: View {
             name: trimmedName,
             itemDescription: trimmedDescription,
             category: selectedCategory,
-            value: value ?? 0
+            value: value ?? 0,
+            quantity: quantity
         )
 
         // Optionally: persist some AI fields into the item and valuation.
@@ -280,18 +306,10 @@ struct AddItemWithAIView: View {
             if let hints = analysisResult.valueHints {
                 // Update simple numeric fields on the item.
                 let mid: Double? = {
-                    if let est = hints.estimatedValue {
-                        return est
-                    }
-                    if let low = hints.valueLow, let high = hints.valueHigh {
-                        return (low + high) / 2.0
-                    }
-                    if let low = hints.valueLow {
-                        return low
-                    }
-                    if let high = hints.valueHigh {
-                        return high
-                    }
+                    if let est = hints.estimatedValue { return est }
+                    if let low = hints.valueLow, let high = hints.valueHigh { return (low + high) / 2.0 }
+                    if let low = hints.valueLow { return low }
+                    if let high = hints.valueHigh { return high }
                     return nil
                 }()
 
@@ -311,7 +329,7 @@ struct AddItemWithAIView: View {
                     item.suggestedPriceUsed = est
                 }
 
-                // Create a valuation record.
+                // Create a valuation record (unit valuation).
                 let valuation = ItemValuation(
                     valueLow: hints.valueLow,
                     estimatedValue: hints.estimatedValue,

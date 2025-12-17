@@ -71,6 +71,24 @@ struct ItemDetailView: View {
         Locale.current.currency?.identifier ?? "USD"
     }
 
+    // MARK: - Quantity + Value Helpers (Unit vs Total)
+
+    private var safeQuantity: Int {
+        max(item.quantity, 1)
+    }
+
+    /// Unit value (per item): prefer AI valuation estimatedValue when present, else item.value.
+    private var unitValue: Double {
+        if let est = item.valuation?.estimatedValue, est > 0 {
+            return est
+        }
+        return max(item.value, 0)
+    }
+
+    private var totalValue: Double {
+        unitValue * Double(safeQuantity)
+    }
+
     var body: some View {
         Form {
             // MARK: - Basic Info
@@ -100,16 +118,39 @@ struct ItemDetailView: View {
                     }
                 }
 
+                // Quantity (v1)
+                Stepper(value: $item.quantity, in: 1...999, step: 1) {
+                    HStack {
+                        Text("Quantity")
+                            .font(Theme.bodyFont)
+                        Spacer()
+                        Text("\(safeQuantity)")
+                            .font(Theme.bodyFont.weight(.semibold))
+                            .foregroundStyle(Theme.text)
+                    }
+                }
+
                 TextField(
-                    "Estimated Value",
+                    "Estimated Value (Each)",
                     value: $item.value,
                     format: .currency(code: currencyCode)
                 )
                 .keyboardType(.decimalPad)
                 .font(Theme.bodyFont)
+
             } header: {
                 Text("Details")
                     .ltcSectionHeaderStyle()
+            } footer: {
+                if safeQuantity > 1 {
+                    Text("Total: \(totalValue, format: .currency(code: currencyCode)) (\(unitValue, format: .currency(code: currencyCode)) each)")
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                } else {
+                    Text("Estimated Value is a per-item value. Use Quantity for sets (e.g., 8 glasses).")
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                }
             }
 
             // MARK: - AI Assistance
@@ -134,7 +175,7 @@ struct ItemDetailView: View {
                         .font(Theme.secondaryFont)
                         .foregroundStyle(Theme.textSecondary)
                 } else {
-                    Text("Use AI to Refine the item's title, description, category, and estimated value using your photos and added details.")
+                    Text("Use AI to refine the item’s title, description, category, and estimated value using your photos and added details.")
                         .font(Theme.secondaryFont)
                         .foregroundStyle(Theme.textSecondary)
                 }
@@ -455,6 +496,7 @@ private struct QuickLookPreview: UIViewControllerRepresentable {
     final class Coordinator: NSObject, QLPreviewControllerDataSource {
         let url: URL
 
+        // ✅ FIXED: correct initializer signature
         init(url: URL) {
             self.url = url
         }
@@ -499,7 +541,8 @@ private let itemDetailPreviewContainer: ModelContainer = {
         name: "Vintage Camera",
         itemDescription: "A family heirloom camera passed down from my grandfather.",
         category: "Collectibles",
-        value: 250
+        value: 250,
+        quantity: 2
     )
 
     context.insert(sample)

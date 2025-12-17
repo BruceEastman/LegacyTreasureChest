@@ -33,11 +33,11 @@ public final class LTCUser {
     public var name: String?
     public var createdAt: Date
     public var updatedAt: Date
-    
+
     // Relationships
     @Relationship(deleteRule: .cascade) public var items: [LTCItem] = []
     @Relationship(deleteRule: .cascade) public var beneficiaries: [Beneficiary] = []
-    
+
     public init(
         userId: UUID = UUID(),
         appleUserIdentifier: String,
@@ -63,16 +63,22 @@ public final class LTCItem {
     public var name: String
     public var itemDescription: String
     public var category: String
+
+    /// Unit value (per single item). Total value = unit value × quantity.
     public var value: Double
+
+    /// Quantity of identical items represented by this entry. Minimum 1.
+    public var quantity: Int = 1
+
     public var createdAt: Date
     public var updatedAt: Date
-    
+
     // AI-generated fields (optional)
     public var llmGeneratedTitle: String?
     public var llmGeneratedDescription: String?
     public var suggestedPriceNew: Double?
     public var suggestedPriceUsed: Double?
-    
+
     // Relationships (user is optional to avoid creation crashes)
     @Relationship(inverse: \LTCUser.items) public var user: LTCUser?
     @Relationship(deleteRule: .cascade) public var images: [ItemImage] = []
@@ -81,13 +87,14 @@ public final class LTCItem {
     @Relationship(deleteRule: .cascade) public var itemBeneficiaries: [ItemBeneficiary] = []
     /// Optional AI-driven valuation attached to this item (v1: single latest valuation).
     @Relationship(deleteRule: .cascade) public var valuation: ItemValuation?
-    
+
     public init(
         itemId: UUID = UUID(),
         name: String,
         itemDescription: String,
         category: String,
         value: Double = 0,
+        quantity: Int = 1,
         createdAt: Date = .now,
         updatedAt: Date = .now
     ) {
@@ -96,6 +103,7 @@ public final class LTCItem {
         self.itemDescription = itemDescription
         self.category = category
         self.value = value
+        self.quantity = max(1, quantity)
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -108,40 +116,40 @@ public final class LTCItem {
 @Model
 public final class ItemValuation {
     @Attribute(.unique) public var valuationId: UUID
-    
+
     /// Lower bound of the estimated value (conservative).
     public var valueLow: Double?
-    
+
     /// Best single-number estimate (midpoint / most likely).
     public var estimatedValue: Double?
-    
+
     /// Upper bound of the estimated value (optimistic but realistic).
     public var valueHigh: Double?
-    
+
     /// ISO 4217 currency code, e.g. "USD".
     public var currencyCode: String
-    
+
     /// Overall AI confidence in this valuation [0, 1].
     public var confidenceScore: Double?
-    
+
     /// When this valuation was produced (if parsed from backend).
     public var valuationDate: Date?
-    
+
     /// Which AI provider / model was used, e.g. "gemini-2.0-flash-exp".
     public var aiProvider: String?
-    
+
     /// Human-readable explanation of why this range was chosen.
     public var aiNotes: String?
-    
+
     /// Short prompts describing what additional details would improve accuracy.
     public var missingDetails: [String]
-    
+
     /// User’s own comments or adjustments to this valuation.
     public var userNotes: String?
-    
+
     public var createdAt: Date
     public var updatedAt: Date
-    
+
     public init(
         valuationId: UUID = UUID(),
         valueLow: Double? = nil,
@@ -180,9 +188,9 @@ public final class ItemImage {
     @Attribute(.unique) public var imageId: UUID
     public var filePath: String          // Relative path to image file
     public var createdAt: Date
-    
+
     @Relationship(inverse: \LTCItem.images) public var item: LTCItem?
-    
+
     public init(
         imageId: UUID = UUID(),
         filePath: String,
@@ -204,9 +212,9 @@ public final class AudioRecording {
     public var transcription: String?    // Apple Intelligence transcription
     public var createdAt: Date
     public var updatedAt: Date
-    
+
     @Relationship(inverse: \LTCItem.audioRecordings) public var item: LTCItem?
-    
+
     public init(
         audioRecordingId: UUID = UUID(),
         filePath: String,
@@ -233,9 +241,9 @@ public final class Document {
     public var documentType: String
     public var originalFilename: String? // Human-friendly name as chosen by user
     public var createdAt: Date
-    
+
     @Relationship(inverse: \LTCItem.documents) public var item: LTCItem?
-    
+
     public init(
         documentId: UUID = UUID(),
         filePath: String,
@@ -264,10 +272,10 @@ public final class Beneficiary {
     public var isLinkedToContact: Bool
     public var createdAt: Date
     public var updatedAt: Date
-    
+
     @Relationship(inverse: \LTCUser.beneficiaries) public var user: LTCUser?
     @Relationship(deleteRule: .cascade) public var itemLinks: [ItemBeneficiary] = []
-    
+
     public init(
         beneficiaryId: UUID = UUID(),
         name: String,
@@ -302,20 +310,20 @@ public final class ItemBeneficiary {
     public var notificationStatusRaw: String
     public var createdAt: Date
     public var updatedAt: Date
-    
+
     @Relationship(inverse: \LTCItem.itemBeneficiaries) public var item: LTCItem?
     @Relationship(inverse: \Beneficiary.itemLinks) public var beneficiary: Beneficiary?
-    
+
     public var accessPermission: AccessPermission {
         get { AccessPermission(rawValue: accessPermissionRaw) ?? .immediate }
         set { accessPermissionRaw = newValue.rawValue }
     }
-    
+
     public var notificationStatus: NotificationStatus {
         get { NotificationStatus(rawValue: notificationStatusRaw) ?? .notSent }
         set { notificationStatusRaw = newValue.rawValue }
     }
-    
+
     public init(
         itemBeneficiaryId: UUID = UUID(),
         accessPermission: AccessPermission,

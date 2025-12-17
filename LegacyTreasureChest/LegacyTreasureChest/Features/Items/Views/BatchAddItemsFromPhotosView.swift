@@ -154,6 +154,10 @@ struct BatchAddItemsFromPhotosView: View {
                                     .foregroundStyle(Theme.textSecondary)
                             }
                         }
+
+                        Text("Quantity: 1")
+                            .font(Theme.secondaryFont)
+                            .foregroundStyle(Theme.textSecondary)
                     } else if draft.isAnalyzing {
                         HStack(spacing: Theme.spacing.small) {
                             ProgressView()
@@ -327,10 +331,11 @@ struct BatchAddItemsFromPhotosView: View {
             name: analysis.title,
             itemDescription: fullDescription,
             category: analysis.category,
-            value: 0
+            value: 0,
+            quantity: 1
         )
 
-        // Value handling + create ItemValuation if available.
+        // Value handling + create ItemValuation if available (unit valuation).
         if let hints = analysis.valueHints {
             let mid: Double? = {
                 if let est = hints.estimatedValue {

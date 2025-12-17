@@ -307,7 +307,11 @@ struct EstateDashboardView: View {
     }
 
     private func highValueItemRow(for item: LTCItem) -> some View {
-        HStack(spacing: Theme.spacing.medium) {
+        let qty = max(item.quantity, 1)
+        let unit = effectiveUnitValue(for: item)
+        let total = unit * Double(qty)
+
+        return HStack(spacing: Theme.spacing.medium) {
             if let firstImage = item.images.first,
                let uiImage = MediaStorage.loadImage(from: firstImage.filePath) {
                 Image(uiImage: uiImage)
@@ -331,16 +335,30 @@ struct EstateDashboardView: View {
                     .font(Theme.bodyFont)
                     .foregroundStyle(Theme.text)
 
-                Text(item.category)
-                    .font(Theme.secondaryFont)
-                    .foregroundStyle(Theme.textSecondary)
+                if qty > 1 {
+                    Text("\(item.category) • ×\(qty)")
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                } else {
+                    Text(item.category)
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                }
             }
 
             Spacer()
 
-            Text(effectiveValue(for: item), format: .currency(code: currencyCode))
-                .font(Theme.bodyFont.weight(.semibold))
-                .foregroundStyle(Theme.text)
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(total, format: .currency(code: currencyCode))
+                    .font(Theme.bodyFont.weight(.semibold))
+                    .foregroundStyle(Theme.text)
+
+                if qty > 1 {
+                    Text("\(unit, format: .currency(code: currencyCode)) each")
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                }
+            }
         }
         .padding(.vertical, 4)
     }
@@ -429,11 +447,16 @@ struct EstateDashboardView: View {
 
     // MARK: - Helpers
 
-    private func effectiveValue(for item: LTCItem) -> Double {
+    private func effectiveUnitValue(for item: LTCItem) -> Double {
         if let estimated = item.valuation?.estimatedValue, estimated > 0 {
             return estimated
         }
         return max(item.value, 0)
+    }
+
+    private func effectiveTotalValue(for item: LTCItem) -> Double {
+        let qty = max(item.quantity, 1)
+        return effectiveUnitValue(for: item) * Double(qty)
     }
 
     private func isLegacy(_ item: LTCItem) -> Bool {
@@ -447,7 +470,7 @@ struct EstateDashboardView: View {
     private var totalItems: Int { items.count }
 
     private var totalEstateValue: Double {
-        items.reduce(0) { $0 + effectiveValue(for: $1) }
+        items.reduce(0) { $0 + effectiveTotalValue(for: $1) }
     }
 
     private var legacyItems: [LTCItem] { items.filter(isLegacy) }
@@ -457,11 +480,11 @@ struct EstateDashboardView: View {
     private var liquidateItemCount: Int { liquidateItems.count }
 
     private var legacyValue: Double {
-        legacyItems.reduce(0) { $0 + effectiveValue(for: $1) }
+        legacyItems.reduce(0) { $0 + effectiveTotalValue(for: $1) }
     }
 
     private var liquidateValue: Double {
-        liquidateItems.reduce(0) { $0 + effectiveValue(for: $1) }
+        liquidateItems.reduce(0) { $0 + effectiveTotalValue(for: $1) }
     }
 
     private var totalEstateValueNonZero: Double { max(totalEstateValue, 0.01) }
@@ -470,7 +493,7 @@ struct EstateDashboardView: View {
     private var liquidateValueShare: Double { liquidateValue / totalEstateValueNonZero }
 
     private func hasValuation(_ item: LTCItem) -> Bool {
-        effectiveValue(for: item) > 0
+        effectiveUnitValue(for: item) > 0
     }
 
     private var valuedItemsCount: Int {
@@ -498,7 +521,7 @@ struct EstateDashboardView: View {
     private var categorySummaries: [CategorySummary] {
         let grouped = Dictionary(grouping: items, by: { $0.category })
         return grouped.map { (category, itemsInCategory) in
-            let totalValue = itemsInCategory.reduce(0) { $0 + effectiveValue(for: $1) }
+            let totalValue = itemsInCategory.reduce(0) { $0 + effectiveTotalValue(for: $1) }
             return CategorySummary(
                 name: category,
                 itemCount: itemsInCategory.count,
@@ -511,7 +534,7 @@ struct EstateDashboardView: View {
     private var highValueLiquidateItems: [LTCItem] {
         liquidateItems
             .filter(hasValuation)
-            .sorted { effectiveValue(for: $0) > effectiveValue(for: $1) }
+            .sorted { effectiveTotalValue(for: $0) > effectiveTotalValue(for: $1) }
             .prefix(5)
             .map { $0 }
     }

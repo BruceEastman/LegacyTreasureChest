@@ -1,4 +1,97 @@
 # Legacy Treasure Chest
+### Summary (what I’m going to give you)December 15, 2025
+## 📱 UI Issue Resolved: Keyboard Obscuring Text Fields in AI Sheets
+
+**Status:** ✅ Resolved
+**Affected Screens:**
+
+* `ItemAIAnalysisSheet` (More Details for AI Expert)
+* Earlier iterations of `ItemDetailView` (now stable)
+
+---
+
+### Problem Summary
+
+While testing real-world usage on a physical iPhone, a critical usability issue was identified:
+
+* When editing multi-line text fields (e.g., **“More Details for AI Expert”**),
+* The **software keyboard appeared and covered the active text input**,
+* The user **could not see existing text or what they were typing**,
+* Tapping outside the field **did not dismiss the keyboard**,
+* The issue was most visible inside **sheet-presented views**.
+
+This made the AI-assisted refinement workflow effectively unusable.
+
+---
+
+### Symptoms Observed
+
+* Text editor initially renders correctly.
+* Once the keyboard appears:
+
+  * The editor is pushed behind the keyboard.
+  * Only predictive text suggestions are visible.
+  * Typed content is hidden until editing is complete.
+* “Done” commits text, but **editing occurs blind**.
+* Issue reproduced consistently on device (not simulator-only).
+
+---
+
+### Root Cause
+
+This was **not an AI issue** and **not a keyboard dismissal issue alone**.
+
+The root cause was a **layout interaction between**:
+
+* `ScrollView` inside a **modal sheet**
+* `TextEditor` without keyboard-aware layout behavior
+* Custom card-style UI not automatically adjusting for keyboard safe areas
+
+In this configuration, SwiftUI **does not automatically move content above the keyboard**.
+
+---
+
+### Resolution
+
+The issue was resolved by adjusting layout and presentation behavior so that:
+
+* The sheet content **respects keyboard safe areas**
+* The active text editor **remains visible while typing**
+* The keyboard no longer obscures editable content
+
+Once applied:
+
+* Text fields remain fully visible during editing
+* Existing content and new input are readable
+* The UX behaves as expected for long-form text entry
+
+This fix has been verified on a physical iPhone.
+
+---
+
+### Guidance for Future Development
+
+To avoid regressions:
+
+* ⚠️ Be cautious when combining:
+
+  * `ScrollView`
+  * `TextEditor`
+  * `.sheet` presentation
+* Always test **text-heavy screens on device**, not simulator only
+* Treat “keyboard covers content” as a **blocking UX issue**, not cosmetic
+* When adding new AI refinement or note-entry screens:
+
+  * Verify the editor remains visible while typing
+  * Verify dismissal and safe-area behavior
+
+---
+
+### Files Involved
+
+* `ItemAIAnalysisSheet.swift`
+* `ItemDetailView.swift`
+
 ## Current Status (Milestone: Physical Device Run)
 
 **As of December 2025**

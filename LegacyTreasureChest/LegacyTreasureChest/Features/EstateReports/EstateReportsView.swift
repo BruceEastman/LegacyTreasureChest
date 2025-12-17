@@ -6,6 +6,10 @@
 //  - Lets user generate Snapshot or Detailed Inventory PDF
 //  - Writes PDF Data to a temporary .pdf file and shares the file URL
 //
+//  Quantity Support (v1):
+//  - Reports now reflect total values (unit × quantity) where applicable.
+//  - The Detailed Inventory PDF includes quantity, unit value, and total value.
+//
 
 import SwiftUI
 import SwiftData
@@ -69,6 +73,10 @@ struct EstateReportsView: View {
             Text("Generate PDF reports for estate planning, beneficiaries, or your executor.")
                 .font(Theme.bodyFont)
                 .foregroundStyle(Theme.textSecondary)
+
+            Text("Values are conservative resale estimates. For sets, totals are calculated as unit value × quantity.")
+                .font(Theme.secondaryFont)
+                .foregroundStyle(Theme.textSecondary)
         }
     }
 
@@ -91,7 +99,7 @@ struct EstateReportsView: View {
                 .ltcSectionHeaderStyle()
 
             VStack(alignment: .leading, spacing: Theme.spacing.medium) {
-                Text("A high-level summary of your estate value, Legacy items, Liquidate items, categories, and top-valued items.")
+                Text("A high-level summary of your estate value, Legacy items, Liquidate items, categories, and top-valued items. Totals reflect quantity where applicable.")
                     .font(Theme.secondaryFont)
                     .foregroundStyle(Theme.textSecondary)
 
@@ -121,7 +129,7 @@ struct EstateReportsView: View {
                 .ltcSectionHeaderStyle()
 
             VStack(alignment: .leading, spacing: Theme.spacing.medium) {
-                Text("A complete list of all items, including category, estate path (Legacy or Liquidate), beneficiary (if any), and conservative sale value.")
+                Text("A complete list of all items including category, estate path (Legacy or Liquidate), beneficiary (if any), quantity, unit value, and total value.")
                     .font(Theme.secondaryFont)
                     .foregroundStyle(Theme.textSecondary)
 

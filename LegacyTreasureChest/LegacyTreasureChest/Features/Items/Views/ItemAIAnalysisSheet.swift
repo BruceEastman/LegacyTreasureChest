@@ -102,7 +102,11 @@ struct ItemAIAnalysisSheet: View {
                     title: "More Details",
                     prompt: extraDetailsHelpText,
                     placeholder: extraDetailsPlaceholderText,
-                    text: $extraDetailsText
+                    text: $extraDetailsText,
+                    onSaveAndDismiss: {
+                        // ✅ Persist immediately when leaving the editor
+                        saveExtraDetailsToValuation()
+                    }
                 )
             }
             .onAppear {
@@ -713,6 +717,9 @@ private struct ExtraDetailsEditorView: View {
 
     @Binding var text: String
 
+    /// Called when the user leaves the editor (Done or back gesture) to persist changes upstream.
+    let onSaveAndDismiss: () -> Void
+
     @Environment(\.dismiss) private var dismiss
     @FocusState private var isFocused: Bool
 
@@ -731,7 +738,7 @@ private struct ExtraDetailsEditorView: View {
                         TextEditor(text: $text)
                             .font(Theme.bodyFont)
                             .focused($isFocused)
-                            .frame(minHeight: 220) // 👈 guarantees visible typing area
+                            .frame(minHeight: 220) // guarantees visible typing area
                             .padding(12)
 
                         if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -763,22 +770,28 @@ private struct ExtraDetailsEditorView: View {
             // Nav Done = save + dismiss screen
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Done") {
+                    onSaveAndDismiss()
                     dismiss()
                 }
                 .fontWeight(.semibold)
             }
 
-            // Keyboard Done = dismiss keyboard only
+            // Keyboard button = dismiss keyboard only (avoid double "Done" confusion)
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
-                Button("Done") {
+                Button("Hide Keyboard") {
                     isFocused = false
                 }
             }
         }
 
-        // 🔑 Critical line: stop SwiftUI from resizing for keyboard
+        // stop SwiftUI from resizing for keyboard
         .ignoresSafeArea(.keyboard)
+
+        // ✅ If user leaves via back swipe / back button, still save.
+        .onDisappear {
+            onSaveAndDismiss()
+        }
 
         .onAppear {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
@@ -787,4 +800,3 @@ private struct ExtraDetailsEditorView: View {
         }
     }
 }
-

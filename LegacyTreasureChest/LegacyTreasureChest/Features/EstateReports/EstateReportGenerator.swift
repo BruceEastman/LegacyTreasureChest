@@ -40,7 +40,7 @@ enum EstateReportGenerator {
             let aggregates = EstateAggregates(items: items, beneficiaries: beneficiaries)
 
             // Estate Summary
-            cursorY = ensureSpace(for: 120, in: pageRect, context: context, currentY: cursorY)
+            cursorY = ensureSpace(for: 140, in: pageRect, context: context, currentY: cursorY)
             cursorY = drawSectionHeader("Estate Summary", in: pageRect, y: cursorY)
             cursorY += 4
 
@@ -57,7 +57,7 @@ enum EstateReportGenerator {
 
             cursorY += 8
             cursorY = drawCaptionText(
-                "Items without a named beneficiary are treated as Liquidate items—sold, with proceeds handled by the will or estate plan.",
+                "Totals reflect quantity (unit value × quantity). Items without a named beneficiary are treated as Liquidate items—sold, with proceeds handled by the will or estate plan.",
                 in: pageRect,
                 y: cursorY
             )
@@ -102,12 +102,17 @@ enum EstateReportGenerator {
                                       in: pageRect,
                                       context: context,
                                       currentY: cursorY)
-                cursorY = drawSectionHeader("Top Legacy Items by Value", in: pageRect, y: cursorY)
+                cursorY = drawSectionHeader("Top Legacy Items by Total Value", in: pageRect, y: cursorY)
                 cursorY += 4
 
                 for item in aggregates.topLegacyItems {
-                    let value = currencyString(aggregates.effectiveValue(for: item))
-                    let line = "• \(item.name) (\(item.category)) – \(value)"
+                    let qty = max(item.quantity, 1)
+                    let unit = aggregates.effectiveUnitValue(for: item)
+                    let total = aggregates.effectiveTotalValue(for: item)
+                    let totalStr = currencyString(total)
+
+                    let unitSuffix = qty > 1 ? " (\(currencyString(unit)) each ×\(qty))" : ""
+                    let line = "• \(item.name) (\(item.category)) – \(totalStr)\(unitSuffix)"
                     cursorY = drawBodyText(line, in: pageRect, y: cursorY)
                 }
             }
@@ -119,12 +124,17 @@ enum EstateReportGenerator {
                                       in: pageRect,
                                       context: context,
                                       currentY: cursorY)
-                cursorY = drawSectionHeader("Top Liquidate Items by Value", in: pageRect, y: cursorY)
+                cursorY = drawSectionHeader("Top Liquidate Items by Total Value", in: pageRect, y: cursorY)
                 cursorY += 4
 
                 for item in aggregates.topLiquidateItems {
-                    let value = currencyString(aggregates.effectiveValue(for: item))
-                    let line = "• \(item.name) (\(item.category)) – \(value)"
+                    let qty = max(item.quantity, 1)
+                    let unit = aggregates.effectiveUnitValue(for: item)
+                    let total = aggregates.effectiveTotalValue(for: item)
+                    let totalStr = currencyString(total)
+
+                    let unitSuffix = qty > 1 ? " (\(currencyString(unit)) each ×\(qty))" : ""
+                    let line = "• \(item.name) (\(item.category)) – \(totalStr)\(unitSuffix)"
                     cursorY = drawBodyText(line, in: pageRect, y: cursorY)
                 }
             }
@@ -152,7 +162,7 @@ enum EstateReportGenerator {
             cursorY += 16
 
             cursorY = drawCaptionText(
-                "This report lists all cataloged items with their category, estate path (Legacy or Liquidate), first beneficiary (if any), and conservative sale value.",
+                "This report lists all cataloged items with category, estate path (Legacy or Liquidate), first beneficiary (if any), quantity, unit value, and total value (unit × quantity).",
                 in: pageRect,
                 y: cursorY
             )
@@ -166,7 +176,9 @@ enum EstateReportGenerator {
                     category: "Category",
                     path: "Path",
                     beneficiary: "Beneficiary",
-                    value: "Value",
+                    quantity: "Qty",
+                    unitValue: "Each",
+                    totalValue: "Total",
                     in: pageRect,
                     y: rowY,
                     isHeader: true
@@ -188,19 +200,24 @@ enum EstateReportGenerator {
                 // New page if needed
                 cursorY = ensureSpace(for: 22, in: pageRect, context: context, currentY: cursorY) { newY in
                     // On new page, redraw table header
-                    drawTableHeader(at: newY)
+                    _ = drawTableHeader(at: newY)
                 }
 
                 let path = aggregates.isLegacy(item) ? "Legacy" : "Liquidate"
                 let beneficiaryName = item.itemBeneficiaries.first?.beneficiary?.name ?? ""
-                let value = currencyString(aggregates.effectiveValue(for: item))
+
+                let qty = max(item.quantity, 1)
+                let unit = aggregates.effectiveUnitValue(for: item)
+                let total = aggregates.effectiveTotalValue(for: item)
 
                 drawTableRow(
                     name: item.name,
                     category: item.category,
                     path: path,
                     beneficiary: beneficiaryName,
-                    value: value,
+                    quantity: "\(qty)",
+                    unitValue: currencyString(unit),
+                    totalValue: currencyString(total),
                     in: pageRect,
                     y: cursorY,
                     isHeader: false
@@ -254,7 +271,7 @@ enum EstateReportGenerator {
             self.beneficiaries = beneficiaries
 
             self.totalItems = items.count
-            self.totalEstateValue = items.reduce(0) { $0 + Self.effectiveValueStatic(for: $1) }
+            self.totalEstateValue = items.reduce(0) { $0 + Self.effectiveTotalValueStatic(for: $1) }
 
             self.legacyItems = items.filter { !$0.itemBeneficiaries.isEmpty }
             self.liquidateItems = items.filter { $0.itemBeneficiaries.isEmpty }
@@ -262,8 +279,8 @@ enum EstateReportGenerator {
             self.legacyItemCount = legacyItems.count
             self.liquidateItemCount = liquidateItems.count
 
-            self.legacyValue = legacyItems.reduce(0) { $0 + Self.effectiveValueStatic(for: $1) }
-            self.liquidateValue = liquidateItems.reduce(0) { $0 + Self.effectiveValueStatic(for: $1) }
+            self.legacyValue = legacyItems.reduce(0) { $0 + Self.effectiveTotalValueStatic(for: $1) }
+            self.liquidateValue = liquidateItems.reduce(0) { $0 + Self.effectiveTotalValueStatic(for: $1) }
 
             let denominator = max(totalEstateValue, 0.01)
             self.legacyValueShare = legacyValue / denominator
@@ -276,7 +293,7 @@ enum EstateReportGenerator {
                 }
                 guard !ownedLegacyItems.isEmpty else { return nil }
 
-                let value = ownedLegacyItems.reduce(0) { $0 + Self.effectiveValueStatic(for: $1) }
+                let value = ownedLegacyItems.reduce(0) { $0 + Self.effectiveTotalValueStatic(for: $1) }
                 return BeneficiarySummary(
                     name: beneficiary.name.isEmpty ? "Unnamed Beneficiary" : beneficiary.name,
                     itemCount: ownedLegacyItems.count,
@@ -288,7 +305,7 @@ enum EstateReportGenerator {
             // Category summaries
             let grouped = Dictionary(grouping: items, by: { $0.category })
             self.categorySummaries = grouped.map { (category, itemsInCategory) in
-                let totalValue = itemsInCategory.reduce(0) { $0 + Self.effectiveValueStatic(for: $1) }
+                let totalValue = itemsInCategory.reduce(0) { $0 + Self.effectiveTotalValueStatic(for: $1) }
                 return CategorySummary(
                     name: category,
                     itemCount: itemsInCategory.count,
@@ -297,28 +314,37 @@ enum EstateReportGenerator {
             }
             .sorted { $0.totalValue > $1.totalValue }
 
-            // Top items by value
-            let sortedByValue = items.sorted {
-                Self.effectiveValueStatic(for: $0) > Self.effectiveValueStatic(for: $1)
+            // Top items by TOTAL value
+            let sortedByTotalValue = items.sorted {
+                Self.effectiveTotalValueStatic(for: $0) > Self.effectiveTotalValueStatic(for: $1)
             }
 
-            self.topLegacyItems = Array(sortedByValue.filter { !$0.itemBeneficiaries.isEmpty }.prefix(5))
-            self.topLiquidateItems = Array(sortedByValue.filter { $0.itemBeneficiaries.isEmpty }.prefix(5))
+            self.topLegacyItems = Array(sortedByTotalValue.filter { !$0.itemBeneficiaries.isEmpty }.prefix(5))
+            self.topLiquidateItems = Array(sortedByTotalValue.filter { $0.itemBeneficiaries.isEmpty }.prefix(5))
         }
 
-        func effectiveValue(for item: LTCItem) -> Double {
-            Self.effectiveValueStatic(for: item)
+        func effectiveUnitValue(for item: LTCItem) -> Double {
+            Self.effectiveUnitValueStatic(for: item)
+        }
+
+        func effectiveTotalValue(for item: LTCItem) -> Double {
+            Self.effectiveTotalValueStatic(for: item)
         }
 
         func isLegacy(_ item: LTCItem) -> Bool {
             !item.itemBeneficiaries.isEmpty
         }
 
-        private static func effectiveValueStatic(for item: LTCItem) -> Double {
+        private static func effectiveUnitValueStatic(for item: LTCItem) -> Double {
             if let estimated = item.valuation?.estimatedValue, estimated > 0 {
                 return estimated
             }
             return max(item.value, 0)
+        }
+
+        private static func effectiveTotalValueStatic(for item: LTCItem) -> Double {
+            let qty = max(item.quantity, 1)
+            return effectiveUnitValueStatic(for: item) * Double(qty)
         }
     }
 
@@ -417,12 +443,14 @@ enum EstateReportGenerator {
         category: String,
         path: String,
         beneficiary: String,
-        value: String,
+        quantity: String,
+        unitValue: String,
+        totalValue: String,
         in rect: CGRect,
         y: CGFloat,
         isHeader: Bool
     ) {
-        let font = UIFont.systemFont(ofSize: 11, weight: isHeader ? .semibold : .regular)
+        let font = UIFont.systemFont(ofSize: 10.5, weight: isHeader ? .semibold : .regular)
         let headerColor = UIColor.black
         let textColor = isHeader ? headerColor : UIColor.darkGray
 
@@ -446,17 +474,21 @@ enum EstateReportGenerator {
             )
         }
 
-        let xName: CGFloat = rect.minX + 32
-        let xCategory: CGFloat = rect.minX + 220
-        let xPath: CGFloat = rect.minX + 320
-        let xBeneficiary: CGFloat = rect.minX + 400
-        let xValue: CGFloat = rect.minX + 520
+        let xName: CGFloat = rect.minX + 20
+        let xCategory: CGFloat = rect.minX + 210
+        let xPath: CGFloat = rect.minX + 305
+        let xBeneficiary: CGFloat = rect.minX + 375
+        let xQty: CGFloat = rect.minX + 470
+        let xUnit: CGFloat = rect.minX + 505
+        let xTotal: CGFloat = rect.minX + 555
 
-        draw(name, x: xName, maxChars: 22)
-        draw(category, x: xCategory, maxChars: 14)
+        draw(name, x: xName, maxChars: 24)
+        draw(category, x: xCategory, maxChars: 12)
         draw(path, x: xPath, maxChars: 9)
         draw(beneficiary, x: xBeneficiary, maxChars: 14)
-        draw(value, x: xValue, maxChars: 12)
+        draw(quantity, x: xQty, maxChars: 4)
+        draw(unitValue, x: xUnit, maxChars: 10)
+        draw(totalValue, x: xTotal, maxChars: 10)
     }
 
     // MARK: - Formatting Helpers

@@ -24,6 +24,9 @@ struct AddItemView: View {
     // Use a Double? so the field can start empty, with currency formatting
     @State private var value: Double? = nil
 
+    // NEW: quantity
+    @State private var quantity: Int = 1
+
     // Simple validation: require a name
     private var canSave: Bool {
         !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -32,6 +35,14 @@ struct AddItemView: View {
     // Currency code based on current locale, defaulting to USD
     private var currencyCode: String {
         Locale.current.currency?.identifier ?? "USD"
+    }
+
+    private var unitValue: Double {
+        max(value ?? 0, 0)
+    }
+
+    private var totalValue: Double {
+        unitValue * Double(max(quantity, 1))
     }
 
     var body: some View {
@@ -51,12 +62,27 @@ struct AddItemView: View {
                     }
                 }
 
+                Stepper(value: $quantity, in: 1...999) {
+                    HStack {
+                        Text("Quantity")
+                        Spacer()
+                        Text("\(quantity)")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
                 TextField(
-                    "Estimated Value",
+                    "Estimated Value (each)",
                     value: $value,
                     format: .currency(code: currencyCode)
                 )
                 .keyboardType(.decimalPad)
+
+                if quantity > 1, unitValue > 0 {
+                    Text("Total: \(totalValue, format: .currency(code: currencyCode)) (\(unitValue, format: .currency(code: currencyCode)) each)")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section(
@@ -93,7 +119,8 @@ struct AddItemView: View {
             name: trimmedName,
             itemDescription: trimmedDescription,
             category: selectedCategory,
-            value: value ?? 0
+            value: value ?? 0,
+            quantity: quantity
         )
 
         modelContext.insert(item)
