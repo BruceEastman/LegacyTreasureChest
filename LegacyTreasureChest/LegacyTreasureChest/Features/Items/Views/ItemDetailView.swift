@@ -54,6 +54,10 @@ struct ItemDetailView: View {
     // AI analysis sheet
     @State private var isAIAnalysisPresented: Bool = false
 
+    // NEW: surface save failures (prevents “disappearing” edits)
+    @State private var saveErrorMessage: String?
+    @State private var showSaveErrorAlert: Bool = false
+
     // Base category options (centralized via LTCItem.baseCategories)
     private let defaultCategories: [String] = LTCItem.baseCategories
 
@@ -71,24 +75,6 @@ struct ItemDetailView: View {
         Locale.current.currency?.identifier ?? "USD"
     }
 
-    // MARK: - Quantity + Value Helpers (Unit vs Total)
-
-    private var safeQuantity: Int {
-        max(item.quantity, 1)
-    }
-
-    /// Unit value (per item): prefer AI valuation estimatedValue when present, else item.value.
-    private var unitValue: Double {
-        if let est = item.valuation?.estimatedValue, est > 0 {
-            return est
-        }
-        return max(item.value, 0)
-    }
-
-    private var totalValue: Double {
-        unitValue * Double(safeQuantity)
-    }
-
     var body: some View {
         Form {
             // MARK: - Basic Info
@@ -99,8 +85,6 @@ struct ItemDetailView: View {
                     .font(Theme.bodyFont)
 
                 TextField("Description", text: $item.itemDescription, axis: .vertical)
-                    // Removed .lineLimit(3, reservesSpace: true) so the field can
-                    // grow vertically to show the full description with no hidden scrolling.
                     .font(Theme.bodyFont)
             } header: {
                 Text("Basic Info")
@@ -118,39 +102,35 @@ struct ItemDetailView: View {
                     }
                 }
 
-                // Quantity (v1)
-                Stepper(value: $item.quantity, in: 1...999, step: 1) {
+                // Quantity
+                Stepper(value: $item.quantity, in: 1...999) {
                     HStack {
                         Text("Quantity")
-                            .font(Theme.bodyFont)
                         Spacer()
-                        Text("\(safeQuantity)")
-                            .font(Theme.bodyFont.weight(.semibold))
-                            .foregroundStyle(Theme.text)
+                        Text("×\(max(item.quantity, 1))")
+                            .foregroundStyle(Theme.textSecondary)
                     }
                 }
 
                 TextField(
-                    "Estimated Value (Each)",
+                    "Estimated Unit Value",
                     value: $item.value,
                     format: .currency(code: currencyCode)
                 )
                 .keyboardType(.decimalPad)
                 .font(Theme.bodyFont)
 
-            } header: {
-                Text("Details")
-                    .ltcSectionHeaderStyle()
-            } footer: {
-                if safeQuantity > 1 {
-                    Text("Total: \(totalValue, format: .currency(code: currencyCode)) (\(unitValue, format: .currency(code: currencyCode)) each)")
-                        .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.textSecondary)
-                } else {
-                    Text("Estimated Value is a per-item value. Use Quantity for sets (e.g., 8 glasses).")
+                if max(item.quantity, 1) > 1 {
+                    let qty = Double(max(item.quantity, 1))
+                    let unit = max(item.valuation?.estimatedValue ?? item.value, 0)
+                    let total = unit * qty
+                    Text("Total: \(total, format: .currency(code: currencyCode)) (\(unit, format: .currency(code: currencyCode)) each)")
                         .font(Theme.secondaryFont)
                         .foregroundStyle(Theme.textSecondary)
                 }
+            } header: {
+                Text("Details")
+                    .ltcSectionHeaderStyle()
             }
 
             // MARK: - AI Assistance
@@ -175,7 +155,7 @@ struct ItemDetailView: View {
                         .font(Theme.secondaryFont)
                         .foregroundStyle(Theme.textSecondary)
                 } else {
-                    Text("Use AI to refine the item’s title, description, category, and estimated value using your photos and added details.")
+                    Text("Use AI to Refine the item's title, description, category, and estimated value using your photos and added details.")
                         .font(Theme.secondaryFont)
                         .foregroundStyle(Theme.textSecondary)
                 }
@@ -183,14 +163,12 @@ struct ItemDetailView: View {
 
             // MARK: - Photos
 
-            // Photos section reports taps back to this parent view.
             ItemPhotosSection(item: item) { image in
                 photoPreviewItem = PhotoPreviewItem(filePath: image.filePath)
             }
 
             // MARK: - Documents
 
-            // Documents section also reports taps back to this parent view.
             ItemDocumentsSection(item: item) { document in
                 documentPreviewItem = DocumentPreviewItem(document: document)
             }
@@ -225,30 +203,34 @@ struct ItemDetailView: View {
                     .padding(.top, Theme.spacing.small)
             }
         }
-        .scrollContentBackground(.hidden)              // hide default gray background
-        .background(Theme.background)                  // use branded background
+        .scrollContentBackground(.hidden)
+        .background(Theme.background)
         .navigationTitle("Item Details")
         .navigationBarTitleDisplayMode(.inline)
-        .tint(Theme.accent)                            // branded accent for controls
-        // Single sheet at the parent level hosts the zoomable photo preview.
+        .tint(Theme.accent)
         .sheet(item: $photoPreviewItem) { preview in
             photoPreviewSheet(for: preview.filePath)
         }
-        // Separate sheet for document preview (with share support).
         .sheet(item: $documentPreviewItem) { preview in
             documentPreviewSheet(for: preview.document)
         }
-        // Beneficiary picker / creator sheet.
         .sheet(isPresented: $isBeneficiaryPickerPresented) {
             BeneficiaryPickerSheet(item: item, user: item.user)
         }
-        // Beneficiary link editor sheet.
         .sheet(item: $editingLinkItem) { editItem in
             ItemBeneficiaryEditSheet(link: editItem.link)
         }
-        // AI analysis sheet.
         .sheet(isPresented: $isAIAnalysisPresented) {
             ItemAIAnalysisSheet(item: item)
+        }
+        // NEW: Force-commit edits when leaving this screen
+        .onDisappear {
+            saveContextIfNeeded()
+        }
+        .alert("Could not save changes", isPresented: $showSaveErrorAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(saveErrorMessage ?? "Unknown error.")
         }
     }
 
@@ -310,22 +292,27 @@ struct ItemDetailView: View {
     // MARK: - Helpers – Beneficiaries
 
     private func removeItemBeneficiary(_ link: ItemBeneficiary) {
-        // Remove from the item's collection
         if let index = item.itemBeneficiaries.firstIndex(where: { $0 === link }) {
             item.itemBeneficiaries.remove(at: index)
         }
-        // Also delete the link object from the context
         modelContext.delete(link)
+        saveContextIfNeeded()
+    }
+
+    // MARK: - Helpers – Save
+
+    private func saveContextIfNeeded() {
+        do {
+            try modelContext.save()
+        } catch {
+            saveErrorMessage = error.localizedDescription
+            showSaveErrorAlert = true
+        }
     }
 }
 
 // MARK: - Document Preview Screen
 
-/// Full-screen document preview with:
-/// - Image viewer for "IMAGE" documents (in Documents section)
-/// - QuickLook for PDFs/others
-/// - "Done" and "Share" controls
-/// - Extra overlay Share button for image docs to ensure visibility
 private struct DocumentPreviewScreen: View {
     let document: Document
     let url: URL
@@ -361,7 +348,6 @@ private struct DocumentPreviewScreen: View {
                     }
                 }
 
-                // Explicit overlay Share button for image docs
                 if isImageDoc {
                     Button {
                         isSharePresented = true
@@ -380,16 +366,11 @@ private struct DocumentPreviewScreen: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Done") {
-                        onDone()
-                    }
+                    Button("Done") { onDone() }
                 }
-                // Keep toolbar Share for non-image docs (PDFs, etc.)
                 ToolbarItem(placement: .topBarTrailing) {
                     if !isImageDoc {
-                        Button {
-                            isSharePresented = true
-                        } label: {
+                        Button { isSharePresented = true } label: {
                             Image(systemName: "square.and.arrow.up")
                         }
                     }
@@ -409,8 +390,6 @@ private struct DocumentPreviewScreen: View {
 
 // MARK: - Zoomable Image View
 
-/// A standalone zoom + pan image view used in the photo and document preview sheets.
-/// All gesture state is local to this view to avoid interfering with navigation/sheets.
 private struct ZoomableImageView: View {
     let image: UIImage
 
@@ -441,7 +420,6 @@ private struct ZoomableImageView: View {
         }
     }
 
-    // Pinch to zoom
     private func magnificationGesture() -> some Gesture {
         MagnificationGesture()
             .onChanged { value in
@@ -453,13 +431,10 @@ private struct ZoomableImageView: View {
             }
             .onEnded { _ in
                 lastScale = 1.0
-                if scale < minScale {
-                    scale = minScale
-                }
+                if scale < minScale { scale = minScale }
             }
     }
 
-    // Drag to pan
     private func dragGesture() -> some Gesture {
         DragGesture()
             .onChanged { value in
@@ -474,7 +449,7 @@ private struct ZoomableImageView: View {
     }
 }
 
-// MARK: - QuickLook wrapper for PDFs and other docs
+// MARK: - QuickLook wrapper
 
 private struct QuickLookPreview: UIViewControllerRepresentable {
     let url: URL
@@ -489,80 +464,24 @@ private struct QuickLookPreview: UIViewControllerRepresentable {
         return controller
     }
 
-    func updateUIViewController(_ controller: QLPreviewController, context: Context) {
-        // No-op; single static URL.
-    }
+    func updateUIViewController(_ controller: QLPreviewController, context: Context) { }
 
     final class Coordinator: NSObject, QLPreviewControllerDataSource {
         let url: URL
-
-        // ✅ FIXED: correct initializer signature
-        init(url: URL) {
-            self.url = url
-        }
-
-        func numberOfPreviewItems(in controller: QLPreviewController) -> Int {
-            1
-        }
-
+        init(url: URL) { self.url = url }
+        func numberOfPreviewItems(in controller: QLPreviewController) -> Int { 1 }
         func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem {
             url as NSURL
         }
     }
 }
 
-// MARK: - Activity View (Share Sheet)
+// MARK: - Activity View
 
-/// Simple wrapper around UIActivityViewController to present
-/// the system share sheet from SwiftUI.
 private struct ActivityView: UIViewControllerRepresentable {
     let activityItems: [Any]
-
     func makeUIViewController(context: Context) -> UIActivityViewController {
         UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
     }
-
-    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {
-        // No update needed.
-    }
-}
-
-// MARK: - Preview
-
-private let itemDetailPreviewContainer: ModelContainer = {
-    let container = try! ModelContainer(
-        for: LTCItem.self,
-        configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-    )
-
-    let context = ModelContext(container)
-
-    let sample = LTCItem(
-        name: "Vintage Camera",
-        itemDescription: "A family heirloom camera passed down from my grandfather.",
-        category: "Collectibles",
-        value: 250,
-        quantity: 2
-    )
-
-    context.insert(sample)
-
-    return container
-}()
-
-#Preview {
-    let container = itemDetailPreviewContainer
-    let context = ModelContext(container)
-
-    let descriptor = FetchDescriptor<LTCItem>()
-    let items = (try? context.fetch(descriptor)) ?? []
-
-    return NavigationStack {
-        if let first = items.first {
-            ItemDetailView(item: first)
-        } else {
-            Text("No preview item")
-        }
-    }
-    .modelContainer(container)
+    func updateUIViewController(_ controller: UIActivityViewController, context: Context) { }
 }

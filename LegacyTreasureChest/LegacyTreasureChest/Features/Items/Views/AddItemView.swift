@@ -18,14 +18,17 @@ struct AddItemView: View {
 
     // Category options for new items (centralized via LTCItem.baseCategories)
     private let defaultCategories: [String] = LTCItem.baseCategories
-
     @State private var selectedCategory: String = "Uncategorized"
+
+    // Quantity (sets / identical units)
+    @State private var quantity: Int = 1
 
     // Use a Double? so the field can start empty, with currency formatting
     @State private var value: Double? = nil
 
-    // NEW: quantity
-    @State private var quantity: Int = 1
+    // UX feedback
+    @State private var errorMessage: String?
+    @State private var didSave: Bool = false
 
     // Simple validation: require a name
     private var canSave: Bool {
@@ -37,16 +40,24 @@ struct AddItemView: View {
         Locale.current.currency?.identifier ?? "USD"
     }
 
-    private var unitValue: Double {
-        max(value ?? 0, 0)
-    }
-
-    private var totalValue: Double {
-        unitValue * Double(max(quantity, 1))
-    }
-
     var body: some View {
         Form {
+            if let errorMessage {
+                Section {
+                    Text(errorMessage)
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.destructive)
+                }
+            }
+
+            if didSave {
+                Section {
+                    Text("Saved.")
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                }
+            }
+
             Section(header: Text("Basic Info")) {
                 TextField("Name", text: $name)
                     .textInputAutocapitalization(.words)
@@ -66,22 +77,24 @@ struct AddItemView: View {
                     HStack {
                         Text("Quantity")
                         Spacer()
-                        Text("\(quantity)")
-                            .foregroundStyle(.secondary)
+                        Text("×\(quantity)")
+                            .foregroundStyle(Theme.textSecondary)
                     }
                 }
 
                 TextField(
-                    "Estimated Value (each)",
+                    "Estimated Unit Value",
                     value: $value,
                     format: .currency(code: currencyCode)
                 )
                 .keyboardType(.decimalPad)
 
-                if quantity > 1, unitValue > 0 {
-                    Text("Total: \(totalValue, format: .currency(code: currencyCode)) (\(unitValue, format: .currency(code: currencyCode)) each)")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                if quantity > 1 {
+                    let unit = max(value ?? 0, 0)
+                    let total = unit * Double(quantity)
+                    Text("Total: \(total, format: .currency(code: currencyCode)) (\(unit, format: .currency(code: currencyCode)) each)")
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
                 }
             }
 
@@ -95,16 +108,12 @@ struct AddItemView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") {
-                    dismiss()
-                }
+                Button("Cancel") { dismiss() }
             }
 
             ToolbarItem(placement: .confirmationAction) {
-                Button("Save") {
-                    saveItem()
-                }
-                .disabled(!canSave)
+                Button("Save") { saveItem() }
+                    .disabled(!canSave)
             }
         }
     }
@@ -112,6 +121,9 @@ struct AddItemView: View {
     // MARK: - Save
 
     private func saveItem() {
+        errorMessage = nil
+        didSave = false
+
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedDescription = itemDescription.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -119,12 +131,22 @@ struct AddItemView: View {
             name: trimmedName,
             itemDescription: trimmedDescription,
             category: selectedCategory,
-            value: value ?? 0,
-            quantity: quantity
+            value: value ?? 0
         )
 
+        // Ensure quantity is always valid.
+        item.quantity = max(quantity, 1)
+
         modelContext.insert(item)
-        dismiss()
+
+        do {
+            try modelContext.save()
+            didSave = true
+            dismiss()
+        } catch {
+            // If save fails, keep the view open and show the error
+            errorMessage = "Could not save item: \(error.localizedDescription)"
+        }
     }
 }
 

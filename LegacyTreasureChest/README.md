@@ -1,6 +1,86 @@
 # Legacy Treasure Chest
+
+## 📌 Current Status — Quantity v1 Complete (Dec 17 2025)
+
+**Legacy Treasure Chest** now supports **set-based items** (e.g. china, glassware, flatware, collectibles) with clear **unit vs total valuation** across the app.
+
+### ✅ What’s Implemented
+
+#### Core Data Model
+
+* `LTCItem.quantity` added (default = `1`)
+* Quantity represents **number of identical units in a set**
+* Backward compatible with existing items
+
+#### Item Creation & Editing
+
+* **Manual Add Item**: quantity supported
+* **AI-Assisted Add Item**: quantity supported
+* **Batch Add from Photos**: quantity supported
+* **Item Detail View**:
+
+  * Stepper-based quantity control
+  * Clear distinction between **unit value** and **total value**
+  * Footer shows total calculation when quantity > 1
+
+#### AI Valuation Integration
+
+* Unit value derived from:
+
+  * AI valuation (`ItemValuation.estimatedValue`) when available
+  * Fallback to manual `item.value`
+* Total value = unit × quantity
+* Valuation records remain **unit-based** (intentional, conservative)
+
+#### Estate Dashboard
+
+* All aggregates use **total values**:
+
+  * Total estate value
+  * Legacy vs Liquidate totals and percentages
+  * Value by category
+* **High-Value Liquidate Items**:
+
+  * Sorted by total value
+  * Displays quantity, total value, and “each” price when applicable
+
+#### Estate Reports (PDF)
+
+* **Estate Snapshot Report**
+
+  * Totals reflect quantity
+  * Legacy vs Liquidate summaries accurate for sets
+* **Detailed Inventory Report**
+
+  * Quantity-aware totals
+  * Designed to be executor- and attorney-friendly
+
+#### UX & Design
+
+* Quantity behavior is **guided, not forced**
+* Single-item flows remain frictionless
+* Sets feel natural without adding complexity for simple items
+
+---
+
+### 🧭 Design Principles Reinforced
+
+* **Conservative valuation** (unit-first, totals derived)
+* **Clarity for non-technical users**
+* **Estate-first thinking** (executor, attorney, beneficiary use cases)
+* **AI-native**: AI assists, user remains in control
+
+---
+
+### 🚀 Next Likely Enhancements (Not Yet Started)
+
+* AI prompts that explicitly account for quantity (e.g. “8 identical pieces”)
+* Category-aware quantity presets (China, Glassware, Flatware)
+* Inventory report layout polish (explicit Qty | Each | Total columns)
+* Optional dashboard micro-copy explaining totals
+
 ### Summary (what I’m going to give you)December 15, 2025
-## 📱 UI Issue Resolved: Keyboard Obscuring Text Fields in AI Sheets
+## 📱 UI Issue Resolved: Keyboard Obscuring Text Fields in AI Sheets plus Dual Done buttons Fixed in More Details Text Input
 
 **Status:** ✅ Resolved
 **Affected Screens:**
