@@ -54,12 +54,21 @@ struct ItemDetailView: View {
     // AI analysis sheet
     @State private var isAIAnalysisPresented: Bool = false
 
-    // NEW: surface save failures (prevents “disappearing” edits)
+    // surface save failures (prevents “disappearing” edits)
     @State private var saveErrorMessage: String?
     @State private var showSaveErrorAlert: Bool = false
 
     // Base category options (centralized via LTCItem.baseCategories)
     private let defaultCategories: [String] = LTCItem.baseCategories
+
+    // Progressive disclosure persistence (shared across screens)
+    @AppStorage("ltc_fieldGuidanceCollapsed") private var fieldGuidanceCollapsed: Bool = false
+    @AppStorage("ltc_fieldGuidanceUserOverride") private var fieldGuidanceUserOverride: Bool = false
+    @AppStorage("ltc_aiGuidanceCollapsed") private var aiGuidanceCollapsed: Bool = false
+    @AppStorage("ltc_aiGuidanceUserOverride") private var aiGuidanceUserOverride: Bool = false
+    @AppStorage("ltc_itemCreationCount") private var itemCreationCount: Int = 0
+
+    private let autoCollapseThreshold: Int = 5
 
     // Include the item's current category if it's not in the defaults
     private var categoryOptions: [String] {
@@ -83,6 +92,27 @@ struct ItemDetailView: View {
                 TextField("Name", text: $item.name)
                     .textInputAutocapitalization(.words)
                     .font(Theme.bodyFont)
+
+                FieldGuidanceDisclosure(
+                    title: "Field Guidance",
+                    collapsed: $fieldGuidanceCollapsed,
+                    onToggle: {
+                        fieldGuidanceUserOverride = true
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            fieldGuidanceCollapsed.toggle()
+                        }
+                    },
+                    content: {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("• **Title**: brand + item type + key detail (3–7 words).")
+                            Text("  Example: “Waterford Lismore Vase”.")
+                            Text("• **Description**: what it is + traits + story.")
+                            Text("  Save hard facts (stamps, size, condition, quantity) for AI details.")
+                        }
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                    }
+                )
 
                 TextField("Description", text: $item.itemDescription, axis: .vertical)
                     .font(Theme.bodyFont)
@@ -136,6 +166,26 @@ struct ItemDetailView: View {
             // MARK: - AI Assistance
 
             Section {
+                FieldGuidanceDisclosure(
+                    title: "AI Guidance",
+                    collapsed: $aiGuidanceCollapsed,
+                    onToggle: {
+                        aiGuidanceUserOverride = true
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            aiGuidanceCollapsed.toggle()
+                        }
+                    },
+                    content: {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("• **Most impact**: a clear photo + hard facts.")
+                            Text("• Add: brand/model, stamps/labels, materials, measurements, condition, quantity.")
+                            Text("• Title helps; description adds context.")
+                        }
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                    }
+                )
+
                 Button {
                     isAIAnalysisPresented = true
                 } label: {
@@ -155,7 +205,7 @@ struct ItemDetailView: View {
                         .font(Theme.secondaryFont)
                         .foregroundStyle(Theme.textSecondary)
                 } else {
-                    Text("Use AI to Refine the item's title, description, category, and estimated value using your photos and added details.")
+                    Text("Use AI to refine the title, description, category, and estimated value using your photos and added details.")
                         .font(Theme.secondaryFont)
                         .foregroundStyle(Theme.textSecondary)
                 }
@@ -223,7 +273,15 @@ struct ItemDetailView: View {
         .sheet(isPresented: $isAIAnalysisPresented) {
             ItemAIAnalysisSheet(item: item)
         }
-        // NEW: Force-commit edits when leaving this screen
+        .onAppear {
+            // Auto-collapse after threshold unless the user has explicitly overridden.
+            if !fieldGuidanceUserOverride {
+                fieldGuidanceCollapsed = itemCreationCount >= autoCollapseThreshold
+            }
+            if !aiGuidanceUserOverride {
+                aiGuidanceCollapsed = itemCreationCount >= autoCollapseThreshold
+            }
+        }
         .onDisappear {
             saveContextIfNeeded()
         }
@@ -308,6 +366,46 @@ struct ItemDetailView: View {
             saveErrorMessage = error.localizedDescription
             showSaveErrorAlert = true
         }
+    }
+}
+
+// MARK: - Collapsible Guidance (local)
+
+private struct FieldGuidanceDisclosure<Content: View>: View {
+    let title: String
+    @Binding var collapsed: Bool
+    let onToggle: () -> Void
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Button(action: onToggle) {
+                HStack(spacing: 10) {
+                    Image(systemName: "lightbulb")
+                        .foregroundStyle(Theme.accent)
+
+                    Text(title)
+                        .font(Theme.secondaryFont.weight(.semibold))
+                        .foregroundStyle(Theme.textSecondary)
+
+                    Spacer()
+
+                    Image(systemName: collapsed ? "chevron.forward" : "chevron.down")
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if !collapsed {
+                content
+                    .padding(.vertical, Theme.spacing.small)
+                    .padding(.horizontal, Theme.spacing.medium)
+                    .background(.thinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+        }
+        .padding(.top, 4)
     }
 }
 

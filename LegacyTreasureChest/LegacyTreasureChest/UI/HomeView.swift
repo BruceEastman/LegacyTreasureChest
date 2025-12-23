@@ -23,11 +23,11 @@ struct HomeView: View {
         ScrollView {
             VStack(spacing: Theme.spacing.large) {
                 // App icon / visual anchor
-                Image(systemName: "shippingbox.circle.fill")
-                    .font(.system(size: 72))
-                    .foregroundStyle(Theme.accent)
+                Image("app-logo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 220, height: 220)
                     .padding(.top, Theme.spacing.xl)
-
                 // Headline
                 Text("Welcome to Legacy Treasure Chest")
                     .font(Theme.titleFont)
@@ -120,6 +120,25 @@ struct HomeView: View {
                         .ltcCardBackground()
                     }
 
+                    #if DEBUG
+                    // Liquidate Sandbox (debug)
+                    NavigationLink {
+                        LiquidateSandboxView()
+                    } label: {
+                        VStack(alignment: .leading, spacing: Theme.spacing.small) {
+                            Text("Liquidate Sandbox")
+                                .font(Theme.bodyFont.weight(.semibold))
+                                .foregroundStyle(Theme.text)
+
+                            Text("End-to-end liquidation flow: seed brief → choose path → plan → checklist.")
+                                .font(Theme.secondaryFont)
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .ltcCardBackground()
+                    }
+                    #endif
+
                     // Developer-only reset tool
                     VStack(alignment: .leading, spacing: Theme.spacing.small) {
                         Button {
@@ -200,6 +219,12 @@ struct HomeView: View {
             try deleteAll(of: Document.self)
             try deleteAll(of: LTCItem.self)
             try deleteAll(of: Beneficiary.self)
+
+            // Liquidate models (new)
+            try deleteAll(of: LiquidationPlan.self)
+            try deleteAll(of: LiquidationBrief.self)
+            try deleteAll(of: LTCSet.self)
+            try deleteAll(of: TriageEntry.self)
 
             resetErrorMessage = nil
         } catch {

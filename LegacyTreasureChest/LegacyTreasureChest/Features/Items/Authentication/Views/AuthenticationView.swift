@@ -29,12 +29,13 @@ struct AuthenticationView: View {
             VStack(spacing: 24) {
                 Spacer()
                 
-                Image(systemName: "shippingbox.fill")
-                    .font(.system(size: 72))
-                    .foregroundStyle(.tint)
+                Image("app-logo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 220, height: 220)
                 
                 Text("Legacy Treasure Chest")
-                    .font(.largeTitle.bold())
+                    .font(.title.bold())
                     .multilineTextAlignment(.center)
                 
                 Text("Sign in to start capturing your items and stories.")

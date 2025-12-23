@@ -37,7 +37,7 @@ struct AddItemWithAIView: View {
     @State private var name: String = ""
     @State private var itemDescription: String = ""
 
-    // NEW: quantity
+    // quantity
     @State private var quantity: Int = 1
 
     // Category options (centralized via LTCItem.baseCategories)
@@ -47,6 +47,13 @@ struct AddItemWithAIView: View {
     @State private var selectedCategory: String = "Uncategorized"
 
     @State private var value: Double? = nil
+
+    // Progressive disclosure persistence
+    @AppStorage("ltc_fieldGuidanceCollapsed") private var fieldGuidanceCollapsed: Bool = false
+    @AppStorage("ltc_fieldGuidanceUserOverride") private var fieldGuidanceUserOverride: Bool = false
+    @AppStorage("ltc_itemCreationCount") private var itemCreationCount: Int = 0
+
+    private let autoCollapseThreshold: Int = 5
 
     // Currency code based on current locale, defaulting to USD
     private var currencyCode: String {
@@ -65,12 +72,6 @@ struct AddItemWithAIView: View {
     private var canSave: Bool {
         !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         analysisResult != nil
-    }
-
-    // MARK: - Init
-
-    init() {
-        // categoryOptions is initialized in .onAppear so we can use @State
     }
 
     // MARK: - View
@@ -116,7 +117,12 @@ struct AddItemWithAIView: View {
             // Optional hints
             Section(
                 header: Text("Optional Hints for AI"),
-                footer: Text("These hints are only used to guide AI. You can still edit the final item details after analysis.")
+                footer: Text(
+                    "💡 Hard facts help AI most: brand/model, stamps or labels, materials, measurements, condition, and quantity.\n\n" +
+                    "These hints are only used to guide AI. You can still edit the final item details after analysis."
+                )
+                .font(Theme.secondaryFont)
+                .foregroundStyle(Theme.textSecondary)
             ) {
                 TextField("Working Title (optional)", text: $hintTitle)
                 TextField("Short Description (optional)", text: $hintDescription)
@@ -128,6 +134,26 @@ struct AddItemWithAIView: View {
             Section(header: Text("Review Item Details")) {
                 TextField("Name", text: $name)
                     .textInputAutocapitalization(.words)
+
+                FieldGuidanceDisclosure(
+                    title: "Field Guidance",
+                    collapsed: $fieldGuidanceCollapsed,
+                    onToggle: {
+                        fieldGuidanceUserOverride = true
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            fieldGuidanceCollapsed.toggle()
+                        }
+                    },
+                    content: {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("• **Title**: brand + item type + key detail (3–7 words).")
+                            Text("• **Description**: what it is + traits + story.")
+                            Text("• **Best AI results**: add hard facts (stamps, size, condition, quantity).")
+                        }
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                    }
+                )
 
                 TextField("Description", text: $itemDescription, axis: .vertical)
                     .lineLimit(3, reservesSpace: true)
@@ -197,6 +223,11 @@ struct AddItemWithAIView: View {
             if categoryOptions.isEmpty {
                 categoryOptions = baseCategories
                 selectedCategory = "Uncategorized"
+            }
+
+            // Auto-collapse after threshold unless the user has explicitly overridden.
+            if !fieldGuidanceUserOverride {
+                fieldGuidanceCollapsed = itemCreationCount >= autoCollapseThreshold
             }
         }
         .onChange(of: selectedPhoto) { _, newValue in
@@ -347,6 +378,10 @@ struct AddItemWithAIView: View {
         }
 
         modelContext.insert(item)
+
+        // Progressive disclosure: track creation count
+        itemCreationCount += 1
+
         dismiss()
     }
 
@@ -354,6 +389,46 @@ struct AddItemWithAIView: View {
     private func parseISO8601Date(_ string: String) -> Date? {
         let formatter = ISO8601DateFormatter()
         return formatter.date(from: string)
+    }
+}
+
+// MARK: - Collapsible Field Guidance (local)
+
+private struct FieldGuidanceDisclosure<Content: View>: View {
+    let title: String
+    @Binding var collapsed: Bool
+    let onToggle: () -> Void
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Button(action: onToggle) {
+                HStack(spacing: 10) {
+                    Image(systemName: "lightbulb")
+                        .foregroundStyle(Theme.accent)
+
+                    Text(title)
+                        .font(Theme.secondaryFont.weight(.semibold))
+                        .foregroundStyle(Theme.textSecondary)
+
+                    Spacer()
+
+                    Image(systemName: collapsed ? "chevron.forward" : "chevron.down")
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if !collapsed {
+                content
+                    .padding(.vertical, Theme.spacing.small)
+                    .padding(.horizontal, Theme.spacing.medium)
+                    .background(.thinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+        }
+        .padding(.top, 4)
     }
 }
 

@@ -1,5 +1,81 @@
 # Legacy Treasure Chest
+**README addendum — Liquidate Module (Pattern A foundation complete)**
 
+* Implemented **Pattern A** liquidation persistence:
+
+  * `LiquidationState` hub owned by `LTCItem` (cascade)
+  * `LiquidationBriefRecord` (immutable, versioned JSON, active flag)
+  * `LiquidationPlanRecord` (mutable execution plan, versioned JSON, active flag)
+* Implemented **LiquidateSandboxView** to validate:
+
+  * Generate brief → create plan → execute checklist
+  * Multiple briefs/plans persisted per item
+  * Active brief/plan selection works
+  * State persists when switching between items
+* Implemented **local heuristic brief generator** (`LocalLiquidationBriefGenerator`) + DTO persistence:
+
+  * DTOs encoded into SwiftData payload JSON
+  * UI renders recommended path, reasoning, and path options
+* Current status:
+
+  * Builds and runs on device
+  * Backend integration is the next milestone (swap brief generation to backend-first w/ local fallback)
+
+*(Optional: add “Known follow-ups”)*
+
+* Add backend endpoint + `BackendAIProvider.generateLiquidationBrief(...)`
+* Add FeatureFlag to force local vs backend during rollout
+* Add migration for legacy liquidation fields (if any remain)
+
+
+
+## 📌 Project Status Update — Liquidate Module (Architecture Spike Complete)
+
+**Date:** *(12-22-2025)*
+
+We have completed a successful **architecture and feasibility spike** for the new **Liquidate Module**. This work focused on validating the *decision-support model* and end-to-end workflow rather than shipping a production MVP.
+
+### ✅ What’s Working
+
+* Liquidate operates on the existing unified `LTCItem` model (no parallel item entities).
+* Liquidation **Briefs** and **Plans** are implemented as structured artifacts:
+
+  * Briefs capture AI/heuristic analysis and recommendations.
+  * Plans generate actionable checklists based on the selected liquidation path.
+* The full UI flow works end-to-end in a **sandbox/debug context**:
+
+  * Item selection
+  * Brief generation
+  * Path selection (A / B / C / Donate)
+  * Plan creation and display
+* Liquidation analysis is **photo-optional by design** (text-only supported).
+* Build is green; app runs successfully on device.
+
+### ⚠️ Known Limitations (Intentional at This Stage)
+
+* Liquidation analysis currently uses a **local heuristic generator**.
+* Briefs and plans may appear similar across items — this is expected and temporary.
+* Liquidate is **not yet connected to the backend AI service**.
+* Heuristics, DTOs, and UI are considered **prototype-level**, not final.
+
+### 🎯 Key Outcome
+
+This spike validated the **Liquidation Advisor concept**:
+
+> Medium / High-value items benefit most from AI-assisted comparison of
+> **Net Proceeds vs Effort**, followed by a user-chosen execution plan.
+
+The system architecture is sound and ready to be refined into its final form.
+
+### 🧭 Next Phase (Planned)
+
+* Tighten final data model boundaries (SwiftData vs JSON artifacts).
+* Make briefs and plans meaningfully **item-specific and path-specific**.
+* Introduce set-aware liquidation logic.
+* Define (but not yet implement) backend AI endpoints for liquidation.
+
+**No commit was made at this stage by design.**
+The next development phase will proceed from a clean architectural baseline.
 ## 📌 Current Status — Quantity v1 Complete (Dec 17 2025)
 
 **Legacy Treasure Chest** now supports **set-based items** (e.g. china, glassware, flatware, collectibles) with clear **unit vs total valuation** across the app.

@@ -59,6 +59,17 @@ struct BackendAIProvider: AIProvider {
 
         return response
     }
+    // MARK: - Liquidation
+    
+    func generateLiquidationBrief(
+        request: LiquidationBriefRequest
+    ) async throws -> LiquidationBriefDTO {
+        let response: LiquidationBriefDTO = try await postJSON(
+            path: "/ai/generate-liquidation-brief",
+            body: request
+        )
+        return response
+    }
 
     func estimateValue(
         for item: ItemValueInput

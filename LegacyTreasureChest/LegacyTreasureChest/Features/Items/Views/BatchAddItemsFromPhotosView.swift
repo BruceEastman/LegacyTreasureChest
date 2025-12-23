@@ -59,6 +59,13 @@ struct BatchAddItemsFromPhotosView: View {
                 .padding(.horizontal, Theme.spacing.large)
                 .padding(.top, Theme.spacing.medium)
 
+                // Tip (kept lightweight to avoid clutter)
+                Text("💡 Batch works best when the photo clearly shows what it is (brand/model/pattern). For valuable or ambiguous items (jewelry hallmarks, china patterns), add manually first.")
+                    .font(Theme.secondaryFont)
+                    .foregroundStyle(Theme.textSecondary)
+                    .padding(.horizontal, Theme.spacing.large)
+                    .multilineTextAlignment(.center)
+
                 // Draft list
                 if drafts.isEmpty {
                     Text("Select photos to generate draft items using AI.")

@@ -30,6 +30,13 @@ struct AddItemView: View {
     @State private var errorMessage: String?
     @State private var didSave: Bool = false
 
+    // Progressive disclosure persistence
+    @AppStorage("ltc_fieldGuidanceCollapsed") private var fieldGuidanceCollapsed: Bool = false
+    @AppStorage("ltc_fieldGuidanceUserOverride") private var fieldGuidanceUserOverride: Bool = false
+    @AppStorage("ltc_itemCreationCount") private var itemCreationCount: Int = 0
+
+    private let autoCollapseThreshold: Int = 5
+
     // Simple validation: require a name
     private var canSave: Bool {
         !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -58,13 +65,38 @@ struct AddItemView: View {
                 }
             }
 
+            // MARK: - Basic Info
+
             Section(header: Text("Basic Info")) {
                 TextField("Name", text: $name)
                     .textInputAutocapitalization(.words)
 
+                FieldGuidanceDisclosure(
+                    title: "Field Guidance",
+                    collapsed: $fieldGuidanceCollapsed,
+                    onToggle: {
+                        fieldGuidanceUserOverride = true
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            fieldGuidanceCollapsed.toggle()
+                        }
+                    },
+                    content: {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("• **Title**: brand + item type + key detail (3–7 words).")
+                            Text("  Example: “Waterford Lismore Vase”.")
+                            Text("• **Description**: what it is + notable traits + story.")
+                            Text("  Save hard facts (stamps, size, condition) for AI details.")
+                        }
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                    }
+                )
+
                 TextField("Description", text: $itemDescription, axis: .vertical)
                     .lineLimit(3, reservesSpace: true)
             }
+
+            // MARK: - Details
 
             Section(header: Text("Details")) {
                 Picker("Category", selection: $selectedCategory) {
@@ -98,8 +130,20 @@ struct AddItemView: View {
                 }
             }
 
+            // MARK: - Footer Guidance
+
+            Section(
+                footer: Text("💡 Best AI results: add key details first → add a photo → tap Improve with AI on the item details screen.")
+                    .font(Theme.secondaryFont)
+                    .foregroundStyle(Theme.textSecondary)
+            ) {
+                EmptyView()
+            }
+
             Section(
                 footer: Text("You can add photos, documents, audio stories, and beneficiaries from the item details screen.")
+                    .font(Theme.secondaryFont)
+                    .foregroundStyle(Theme.textSecondary)
             ) {
                 EmptyView()
             }
@@ -114,6 +158,12 @@ struct AddItemView: View {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save") { saveItem() }
                     .disabled(!canSave)
+            }
+        }
+        .onAppear {
+            // Auto-collapse after threshold unless the user has explicitly overridden.
+            if !fieldGuidanceUserOverride {
+                fieldGuidanceCollapsed = itemCreationCount >= autoCollapseThreshold
             }
         }
     }
@@ -142,11 +192,55 @@ struct AddItemView: View {
         do {
             try modelContext.save()
             didSave = true
+
+            // Progressive disclosure: track creation count
+            itemCreationCount += 1
+
             dismiss()
         } catch {
             // If save fails, keep the view open and show the error
             errorMessage = "Could not save item: \(error.localizedDescription)"
         }
+    }
+}
+
+// MARK: - Collapsible Field Guidance (local)
+
+private struct FieldGuidanceDisclosure<Content: View>: View {
+    let title: String
+    @Binding var collapsed: Bool
+    let onToggle: () -> Void
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Button(action: onToggle) {
+                HStack(spacing: 10) {
+                    Image(systemName: "lightbulb")
+                        .foregroundStyle(Theme.accent)
+
+                    Text(title)
+                        .font(Theme.secondaryFont.weight(.semibold))
+                        .foregroundStyle(Theme.textSecondary)
+
+                    Spacer()
+
+                    Image(systemName: collapsed ? "chevron.forward" : "chevron.down")
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if !collapsed {
+                content
+                    .padding(.vertical, Theme.spacing.small)
+                    .padding(.horizontal, Theme.spacing.medium)
+                    .background(.thinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+        }
+        .padding(.top, 4)
     }
 }
 
