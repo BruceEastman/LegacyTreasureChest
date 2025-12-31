@@ -174,8 +174,6 @@ public struct LiquidationConstraintsDTO: Codable, Sendable {
 public struct LiquidationPlanChecklistDTO: Codable, Sendable {
     public var schemaVersion: Int
     public var createdAt: Date
-
-    /// The steps the user is executing (seeded from brief).
     public var items: [LiquidationChecklistItemDTO]
 
     public init(schemaVersion: Int = 1, createdAt: Date = .now, items: [LiquidationChecklistItemDTO]) {
@@ -208,7 +206,80 @@ public struct LiquidationChecklistItemDTO: Codable, Sendable, Identifiable {
         self.completedAt = completedAt
         self.userNotes = userNotes
     }
+
+    // Backend may omit "id" — generate one if missing.
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case order
+        case text
+        case isCompleted
+        case completedAt
+        case userNotes
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+
+        self.id = (try? c.decode(UUID.self, forKey: .id)) ?? UUID()
+        self.order = try c.decode(Int.self, forKey: .order)
+        self.text = try c.decode(String.self, forKey: .text)
+        self.isCompleted = (try? c.decode(Bool.self, forKey: .isCompleted)) ?? false
+        self.completedAt = try? c.decode(Date.self, forKey: .completedAt)
+        self.userNotes = try? c.decode(String.self, forKey: .userNotes)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(order, forKey: .order)
+        try c.encode(text, forKey: .text)
+        try c.encode(isCompleted, forKey: .isCompleted)
+        try c.encodeIfPresent(completedAt, forKey: .completedAt)
+        try c.encodeIfPresent(userNotes, forKey: .userNotes)
+    }
 }
+
+// MARK: - Plan Request DTO
+
+/// Request payload sent from iOS to backend: /ai/generate-liquidation-plan
+/// Matches backend LiquidationPlanRequest (Pydantic).
+public struct LiquidationPlanRequest: Codable, Sendable {
+
+    /// Schema version for forward compatibility.
+    public var schemaVersion: Int
+
+    /// Scope of liquidation (item or set).
+    public var scope: LiquidationScopeDTO
+
+    /// Path chosen by the user.
+    public var chosenPath: LiquidationPathDTO
+
+    /// The previously generated liquidation brief.
+    public var brief: LiquidationBriefDTO
+
+    /// Display title (used for checklist phrasing).
+    public var title: String
+
+    /// Category context.
+    public var category: String
+
+    public init(
+        schemaVersion: Int = 1,
+        scope: LiquidationScopeDTO,
+        chosenPath: LiquidationPathDTO,
+        brief: LiquidationBriefDTO,
+        title: String,
+        category: String
+    ) {
+        self.schemaVersion = schemaVersion
+        self.scope = scope
+        self.chosenPath = chosenPath
+        self.brief = brief
+        self.title = title
+        self.category = category
+    }
+}
+
 
 // MARK: - Text-only Triage DTO
 
@@ -221,7 +292,6 @@ public struct TextTriageResultDTO: Codable, Sendable {
     public var netProceeds: MoneyRangeDTO?
     public var effort: EffortLevelDTO?
 
-    /// Only when recommendation == researchNeeded
     public var followUpQuestions: [String]?
     public var suggestedSearchTerms: [String]?
 

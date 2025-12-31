@@ -1,4 +1,198 @@
 # Legacy Treasure Chest
+## 🔄 Current Development Status (Snapshot)
+
+**Date:** 2025-12-31  
+**Milestone:** Liquidation Engine – Backend + Sandbox Complete, UI Wiring Next
+
+### Overall State
+Legacy Treasure Chest is now past core inventory and valuation and has entered the **Disposition / Liquidation phase**. The system is transitioning from “What do I have?” to “What should I do with it?” using an AI-native, backend-first architecture.
+
+This is not an MVP rush. Development is proceeding deliberately toward a **production-quality, long-lived app**, with the developer as the sole user until fully proven.
+
+---
+
+### ✅ What Is Working
+
+#### Backend (LTC AI Gateway – FastAPI)
+- AI endpoints implemented and validated via `curl`:
+  - `POST /ai/generate-liquidation-brief`
+  - `POST /ai/generate-liquidation-plan`
+- Gemini responses are:
+  - Strictly JSON
+  - Schema-validated with Pydantic
+  - Repaired once automatically if malformed
+- Liquidation models implemented:
+  - `LiquidationBriefDTO`
+  - `LiquidationPlanChecklistDTO`
+  - `LiquidationPlanRequest`
+- Backend successfully generates:
+  - Strategic liquidation briefs
+  - Operational, step-by-step liquidation plans
+
+#### iOS App (SwiftUI + SwiftData, iOS 18+)
+- `BackendAIProvider` now supports:
+  - `generateLiquidationBrief(request:)`
+  - `generateLiquidationPlan(request:)`
+- Liquidation DTOs are centralized in `LiquidationDTOs.swift` and aligned with backend schemas.
+- `LiquidateSandboxView`:
+  - Can generate a Brief and Plan end-to-end
+  - Persists AI outputs as JSON into SwiftData records
+  - Confirms backend + decoding + persistence all work
+- App compiles cleanly after resolving legacy/local method name mismatches.
+
+---
+
+### 🚧 What Is Not Done Yet (Intentional)
+
+- Liquidation is **not yet accessible from normal app flows**.
+  - No entry point from `ItemDetailView`
+  - Currently only reachable via the Sandbox
+- No user-facing “Liquidate” section in the main UI
+- No finalized UX for:
+  - Choosing a liquidation path
+  - Viewing an active brief/plan from Item Detail
+- Local heuristic liquidation logic exists only as a fallback and is not the primary path.
+
+---
+
+### 🎯 Next Milestone (Immediate Focus)
+
+**Wire Liquidation into the normal app UI**
+
+Specifically:
+- Add a **bottom “Liquidate” section** to `ItemDetailView`
+  - Positioned as a *next step*, not core metadata
+- Navigate into `LiquidationSectionView`
+- Support backend-first:
+  - Generate Brief
+  - Choose Path
+  - Generate Plan
+- Persist results to SwiftData and reflect state on the item
+
+This work will touch multiple files and is being done in a **new, clean conversation** with a focused Bootstrap prompt to avoid drift.
+
+---
+
+### 🧭 Architectural Intent (Reaffirmed)
+
+- AI handles analysis, strategy, and repetitive reasoning
+- The app acts as an **advisor**, not a marketplace operator
+- No direct eBay/Craigslist/etc. integrations
+- Clear separation between:
+  - Inventory
+  - Valuation
+  - Disposition
+- Design favors clarity and trust for Boomer-age users
+
+### 🔄 Project Status Update — Liquidation AI Backend & Plans (Dec 2025)
+
+This update captures the current, **stable foundation** for the Liquidation module and clarifies what is complete, what is intentionally deferred, and what we will tackle next.
+
+#### ✅ What Is Working (Verified)
+
+**AI Gateway (FastAPI)**
+
+* Single consolidated routes file: `app/routes/analyze_item_photo.py`
+* Gemini-backed AI analysis is live and stable
+* Supports:
+
+  * **Photo-based item analysis**
+  * **Text-only item analysis** (no photo required)
+  * **Liquidation Brief generation (AI-native)**
+
+**Item AI Analysis**
+
+* Always returns a valuation (`ValueHints`)
+* Category-aware valuation ranges
+* Low-confidence + wide range when details are insufficient
+* Explicit `missingDetails` list returned for user improvement
+* Backend enforces valuation consistency (no silent nulls)
+
+**Liquidation Briefs**
+
+* Generated via AI (Gemini)
+* DTO parity with Swift models confirmed
+* Validated end-to-end via curl
+* Supports:
+
+  * scope: `item` or `set`
+  * A/B/C paths + donate / needsInfo
+  * Reasoning, confidence, assumptions, missing details
+* Backend stamping:
+
+  * `generatedAt`
+  * `aiProvider`
+  * `aiModel`
+
+**iOS App (SwiftUI + SwiftData)**
+
+* AI Analysis UI restored and improved
+* Valuation narrative + range now displays correctly
+* “Improve with AI” works for both photo and text-only items
+* Local `LiquidationPlanFactory` still active and stable
+* Plans currently generated locally by design (not a bug)
+
+---
+
+#### 🧠 Architectural Decisions (Locked In)
+
+* **AI-first, not MVP-first**
+
+  * No rush to ship
+  * App is being built as the *final system*
+  * User = developer until fully proven
+
+* **Single routes file**
+
+  * Intentional choice to enforce consistency
+  * Easier reasoning about prompts, validation, and repairs
+  * Avoids divergence between similar AI behaviors
+
+* **AI-native progression**
+
+  * Item Analysis → Liquidation Brief → Liquidation Plan
+  * Local logic remains as fallback only
+
+---
+
+#### 🚧 Known Gaps (Intentional)
+
+* Liquidation Plans are **still local on iOS**
+* `/ai/generate-liquidation-plan` endpoint exists conceptually but is not yet wired end-to-end
+* iOS does not yet call backend when selecting a liquidation path
+* No UI yet for batch / estate-sale liquidation (sets)
+
+---
+
+#### ▶️ What We Will Do Next
+
+1. **Stabilize Liquidation Brief generation**
+
+   * Ensure Gemini never wraps responses (`{"item": {...}}`)
+   * Harden normalization + repair logic
+
+2. **Promote Plans to AI**
+
+   * Implement backend-generated plans (`LiquidationPlanChecklistDTO`)
+   * Keep local plan factory as fallback
+
+3. **Wire iOS to AI Plans**
+
+   * On “Choose Path”:
+
+     * Call backend
+     * Persist returned checklist JSON
+     * Fall back locally on failure
+
+4. **Extend to Sets / Estate Sale**
+
+   * Multiple items → one brief
+   * Shared plan + batch execution
+
+---
+
+
+
 **README addendum — Liquidate Module (Pattern A foundation complete)**
 
 * Implemented **Pattern A** liquidation persistence:

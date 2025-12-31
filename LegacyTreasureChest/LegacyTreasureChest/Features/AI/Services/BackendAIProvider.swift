@@ -59,13 +59,24 @@ struct BackendAIProvider: AIProvider {
 
         return response
     }
+
     // MARK: - Liquidation
-    
+
     func generateLiquidationBrief(
         request: LiquidationBriefRequest
     ) async throws -> LiquidationBriefDTO {
         let response: LiquidationBriefDTO = try await postJSON(
             path: "/ai/generate-liquidation-brief",
+            body: request
+        )
+        return response
+    }
+
+    func generateLiquidationPlan(
+        request: LiquidationPlanRequest
+    ) async throws -> LiquidationPlanChecklistDTO {
+        let response: LiquidationPlanChecklistDTO = try await postJSON(
+            path: "/ai/generate-liquidation-plan",
             body: request
         )
         return response
@@ -109,8 +120,7 @@ struct BackendAIProvider: AIProvider {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let encoder = JSONEncoder()
-        // If you want snake_case over the wire, uncomment:
-        // encoder.keyEncodingStrategy = .convertToSnakeCase
+        encoder.dateEncodingStrategy = .iso8601
         request.httpBody = try encoder.encode(body)
 
         let (data, response) = try await urlSession.data(for: request)
@@ -126,17 +136,53 @@ struct BackendAIProvider: AIProvider {
             )
         }
 
-        let decoder = JSONDecoder()
-        // Match strategies if you change the encoder.
-        // decoder.keyDecodingStrategy = .convertFromSnakeCase
+        // Helpful for the “missing data” decoder case
+        if data.isEmpty {
+            throw AIError.invalidResponse(
+                "Backend returned HTTP \(httpResponse.statusCode) with EMPTY body for \(path)."
+            )
+        }
+
+        let decoder = makeLenientISO8601Decoder()
 
         do {
             return try decoder.decode(ResponseBody.self, from: data)
         } catch {
+            let bodyPreview = String(data: data, encoding: .utf8) ?? "<non-UTF8 body>"
             throw AIError.decodingFailed(
-                "Failed to decode backend AI response into \(ResponseBody.self): \(error.localizedDescription)"
+                "Failed to decode backend AI response into \(ResponseBody.self): \(error.localizedDescription). Body: \(bodyPreview)"
             )
         }
+    }
+
+    /// Decoder that accepts ISO8601 with or without fractional seconds and with Z / timezone offsets.
+    private func makeLenientISO8601Decoder() -> JSONDecoder {
+        let decoder = JSONDecoder()
+
+        // Use a custom date decoding strategy:
+        // - Tries ISO8601 with fractional seconds
+        // - Falls back to ISO8601 without fractional seconds
+        decoder.dateDecodingStrategy = .custom { dec -> Date in
+            let container = try dec.singleValueContainer()
+            let str = try container.decode(String.self)
+
+            // 1) ISO8601 with fractional seconds
+            let fmtFrac = ISO8601DateFormatter()
+            fmtFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let d = fmtFrac.date(from: str) { return d }
+
+            // 2) ISO8601 without fractional seconds
+            let fmt = ISO8601DateFormatter()
+            fmt.formatOptions = [.withInternetDateTime]
+            if let d = fmt.date(from: str) { return d }
+
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Invalid ISO8601 date: \(str)"
+            )
+        }
+
+        return decoder
     }
 }
 

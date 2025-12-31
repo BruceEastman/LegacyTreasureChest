@@ -4,7 +4,7 @@
 //
 //  Debug/Sandbox view to validate Liquidate workflow end-to-end using Pattern A:
 //
-//  Generate Brief (local heuristic, photo-optional)
+//  Generate Brief (backend-first, photo-optional)
 //    -> Choose Path -> Create Plan -> Execute checklist.
 //
 //  This is intentionally dev-only and is linked from HomeView under #if DEBUG.
@@ -23,6 +23,7 @@ struct LiquidateSandboxView: View {
     @State private var message: String?
     @State private var errorMessage: String?
     @State private var isGeneratingBrief: Bool = false
+    @State private var isGeneratingPlan: Bool = false
 
     private let liquidationAI = LiquidationAIService()
 
@@ -68,7 +69,7 @@ struct LiquidateSandboxView: View {
                             Task { await generateBriefLocal(for: selectedItem) }
                         } label: {
                             Label(
-                                isGeneratingBrief ? "Generating…" : "Generate Brief (Local Heuristic)",
+                                isGeneratingBrief ? "Generating…" : "Generate Brief (Backend-first, fallback local)",
                                 systemImage: "sparkles"
                             )
                         }
@@ -163,7 +164,7 @@ struct LiquidateSandboxView: View {
         return state.plans.sorted(by: { $0.createdAt > $1.createdAt }).first
     }
 
-    // MARK: - Brief generation (local)
+    // MARK: - Brief generation (backend-first via service)
 
     @MainActor
     private func generateBriefLocal(for item: LTCItem) async {
@@ -213,15 +214,7 @@ struct LiquidateSandboxView: View {
 
             try modelContext.save()
 
-            // 🔍 Pattern A persistence check
-            print("✅ Pattern A check — item: \(item.name)")
-            print("LiquidationState exists? \(item.liquidationState != nil)")
-            print("Brief records: \(item.liquidationState?.briefs.count ?? -1)")
-            print("Plan records: \(item.liquidationState?.plans.count ?? -1)")
-            print("Active brief? \(item.liquidationState?.activeBrief != nil)")
-            print("Active plan? \(item.liquidationState?.activePlan != nil)")
-
-            message = "Generated liquidation brief (local) for “\(item.name)”."
+            message = "Generated liquidation brief for “\(item.name)”."
 
         } catch {
             errorMessage = "Failed to generate brief: \(error.localizedDescription)"
@@ -320,24 +313,31 @@ struct LiquidateSandboxView: View {
                 .foregroundStyle(.secondary)
 
             HStack {
-                Button("Path A") { createOrReplacePlan(item: item, briefRecord: briefRecord, chosen: .pathA) }
-                Button("Path B") { createOrReplacePlan(item: item, briefRecord: briefRecord, chosen: .pathB) }
-                Button("Path C") { createOrReplacePlan(item: item, briefRecord: briefRecord, chosen: .pathC) }
-                Button("Donate") { createOrReplacePlan(item: item, briefRecord: briefRecord, chosen: .donate) }
+                Button("Path A") { Task { await createOrReplacePlan(item: item, briefRecord: briefRecord, chosen: .pathA) } }
+                Button("Path B") { Task { await createOrReplacePlan(item: item, briefRecord: briefRecord, chosen: .pathB) } }
+                Button("Path C") { Task { await createOrReplacePlan(item: item, briefRecord: briefRecord, chosen: .pathC) } }
+                Button("Donate") { Task { await createOrReplacePlan(item: item, briefRecord: briefRecord, chosen: .donate) } }
             }
             .buttonStyle(.bordered)
+            .disabled(isGeneratingPlan)
+
+            if isGeneratingPlan {
+                Text("Generating plan…")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
     @MainActor
-    private func createOrReplacePlan(item: LTCItem, briefRecord: LiquidationBriefRecord, chosen: LiquidationPath) {
+    private func createOrReplacePlan(item: LTCItem, briefRecord: LiquidationBriefRecord, chosen: LiquidationPath) async {
         message = nil
         errorMessage = nil
+        isGeneratingPlan = true
 
         let state = ensureItemState(item)
 
         do {
-            // Decode brief DTO (required for plan creation)
             guard let briefDTO = LiquidationJSONCoding.tryDecode(LiquidationBriefDTO.self, from: briefRecord.payloadJSON) else {
                 throw NSError(
                     domain: "LiquidateSandbox",
@@ -351,24 +351,34 @@ struct LiquidateSandboxView: View {
                 state.plans[i].isActive = false
             }
 
-            // Build checklist steps (same logic as factory, kept local for sandbox safety)
-            let checklistItems = buildChecklistItems(
-                itemTitle: item.name,
-                category: item.category,
-                scopeIsSet: false,
-                chosenPath: chosen,
-                briefDTO: briefDTO
-            )
+            // 1) Try backend plan generation first
+            let checklist: LiquidationPlanChecklistDTO
+            do {
+                checklist = try await liquidationAI.generatePlanChecklistDTO(
+                    for: item,
+                    chosenPath: chosen,
+                    briefDTO: briefDTO
+                )
 
-            let checklist = LiquidationPlanChecklistDTO(
-                schemaVersion: 1,
-                createdAt: .now,
-                items: checklistItems
-            )
+            } catch {
+                // 2) Local fallback (existing sandbox logic)
+                let fallbackItems = buildChecklistItems(
+                    itemTitle: item.name,
+                    category: item.category,
+                    scopeIsSet: false,
+                    chosenPath: chosen,
+                    briefDTO: briefDTO
+                )
+                checklist = LiquidationPlanChecklistDTO(
+                    schemaVersion: 1,
+                    createdAt: .now,
+                    items: fallbackItems
+                )
+                message = "⚠️ Backend plan failed; used local fallback. (\(error.localizedDescription))"
+            }
 
             let checklistData = try LiquidationJSONCoding.encode(checklist)
 
-            // Create plan record
             let planRecord = LiquidationPlanRecord(
                 createdAt: .now,
                 updatedAt: .now,
@@ -383,7 +393,6 @@ struct LiquidateSandboxView: View {
             modelContext.insert(planRecord)
             state.plans.append(planRecord)
 
-            // Update item workflow flags
             item.selectedLiquidationPath = chosen
             item.liquidationStatus = .inProgress
             item.disposition = .liquidate
@@ -393,10 +402,16 @@ struct LiquidateSandboxView: View {
             state.updatedAt = .now
 
             try modelContext.save()
-            message = "Created plan record for “\(item.name)” with chosen path: \(chosen.rawValue)"
+
+            if message == nil {
+                message = "Created AI plan for “\(item.name)” with chosen path: \(chosen.rawValue)"
+            }
+
         } catch {
             errorMessage = "Failed to create plan: \(error.localizedDescription)"
         }
+
+        isGeneratingPlan = false
     }
 
     @MainActor
@@ -410,7 +425,6 @@ struct LiquidateSandboxView: View {
             modelContext.delete(plan)
             state.plans.removeAll(where: { $0.persistentModelID == plan.persistentModelID })
 
-            // Reset selection if no active plan remains
             item.selectedLiquidationPath = nil
             item.liquidationStatus = (latestActiveBriefRecord(for: item) == nil) ? .notStarted : .hasBrief
             item.updatedAt = .now
@@ -528,7 +542,7 @@ struct LiquidateSandboxView: View {
         return Double(completed) / Double(checklist.items.count)
     }
 
-    // MARK: - Checklist steps builder (sandbox-local)
+    // MARK: - Checklist steps builder (sandbox-local fallback)
 
     private func buildChecklistItems(
         itemTitle: String,
@@ -577,7 +591,7 @@ struct LiquidateSandboxView: View {
                 "Pick donation destination (Goodwill, Habitat Restore, library, specialty charity).",
                 "Take 1–2 photos for your records (optional).",
                 "Drop off and request a receipt if useful for taxes.",
-                "Record donation location + date in notes, mark completed."
+                "Record donation details and mark completed."
             ]
         case .needsInfo:
             steps += [
@@ -616,5 +630,19 @@ struct LiquidateSandboxView: View {
         if parts.isEmpty { return "—" }
         if parts.count == 1 { return parts[0] }
         return "\(parts.first!) – \(parts.last!)"
+    }
+}
+
+// MARK: - Local → Backend path mapping
+
+private extension LiquidationPath {
+    func toBackendPathDTO() -> LiquidationPathDTO {
+        switch self {
+        case .pathA: return .pathA_maximizePrice
+        case .pathB: return .pathB_delegateConsign
+        case .pathC: return .pathC_quickExit
+        case .donate: return .donate
+        case .needsInfo: return .needsInfo
+        }
     }
 }
