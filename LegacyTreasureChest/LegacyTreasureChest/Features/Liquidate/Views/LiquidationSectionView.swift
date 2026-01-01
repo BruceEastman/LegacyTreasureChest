@@ -27,68 +27,75 @@ struct LiquidationSectionView: View {
     private let liquidationAI = LiquidationAIService()
 
     var body: some View {
-        Section {
-            headerRow()
+        Form {
+            Section {
+                headerRow()
 
-            Button {
-                Task { await generateBrief(for: item) }
-            } label: {
-                Label(isGeneratingBrief ? "Generating Brief…" : "Generate / Update Brief", systemImage: "sparkles")
-            }
-            .disabled(isGeneratingBrief || isGeneratingPlan)
-
-            if let brief = latestActiveBriefRecord(for: item) {
-                briefSummaryCard(briefRecord: brief)
-
-                Divider().padding(.vertical, 4)
-
-                if shouldBlockPlanCreation(from: brief) {
-                    needsInfoCard(from: brief)
-                } else {
-                    pathButtonsRow(item: item, briefRecord: brief)
-                }
-            } else {
-                Text("No liquidation brief yet.")
-                    .foregroundStyle(.secondary)
-            }
-
-            if let plan = latestActivePlanRecord(for: item) {
-                Divider().padding(.vertical, 4)
-                planChecklistEditor(planRecord: plan, item: item)
-                    .id(plan.persistentModelID)
-
-                Button(role: .destructive) {
-                    deletePlan(plan, from: item)
+                Button {
+                    Task { await generateBrief(for: item) }
                 } label: {
-                    Label("Delete Plan (Debug)", systemImage: "trash")
+                    Label(isGeneratingBrief ? "Generating Brief…" : "Generate / Update Brief", systemImage: "sparkles")
                 }
-                .padding(.top, 6)
-            } else {
-                Text("No plan yet. Generate a brief, then choose a path.")
-                    .foregroundStyle(.secondary)
-            }
+                .disabled(isGeneratingBrief || isGeneratingPlan)
 
-            if let message {
-                Text(message)
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 4)
-            }
+                if let brief = latestActiveBriefRecord(for: item) {
+                    briefSummaryCard(briefRecord: brief)
 
-            if let errorMessage {
-                Text(errorMessage)
-                    .foregroundStyle(.red)
-                    .padding(.top, 4)
-            }
+                    Divider().padding(.vertical, 4)
 
-        } header: {
-            Text("Liquidation")
-                .ltcSectionHeaderStyle()
-        } footer: {
-            Text("Liquidation is a workflow: generate a brief, choose a path, then execute a checklist plan.")
-                .font(Theme.secondaryFont)
-                .foregroundStyle(Theme.textSecondary)
+                    if shouldBlockPlanCreation(from: brief) {
+                        needsInfoCard(from: brief)
+                    } else {
+                        pathButtonsRow(item: item, briefRecord: brief)
+                    }
+                } else {
+                    Text("No liquidation brief yet.")
+                        .foregroundStyle(.secondary)
+                }
+
+                if let plan = latestActivePlanRecord(for: item) {
+                    Divider().padding(.vertical, 4)
+                    planChecklistEditor(planRecord: plan, item: item)
+                        .id(plan.persistentModelID)
+
+                    Button(role: .destructive) {
+                        deletePlan(plan, from: item)
+                    } label: {
+                        Label("Delete Plan (Debug)", systemImage: "trash")
+                    }
+                    .padding(.top, 6)
+                } else {
+                    Text("No plan yet. Generate a brief, then choose a path.")
+                        .foregroundStyle(.secondary)
+                }
+
+                if let message {
+                    Text(message)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 4)
+                }
+
+                if let errorMessage {
+                    Text(errorMessage)
+                        .foregroundStyle(.red)
+                        .padding(.top, 4)
+                }
+
+            } header: {
+                Text("Liquidation")
+                    .ltcSectionHeaderStyle()
+            } footer: {
+                Text("Liquidation is a workflow: generate a brief, choose a path, then execute a checklist plan.")
+                    .font(Theme.secondaryFont)
+                    .foregroundStyle(Theme.textSecondary)
+            }
         }
+        .scrollContentBackground(.hidden)
+        .background(Theme.background)
+        .navigationTitle("Liquidate")
+        .navigationBarTitleDisplayMode(.inline)
     }
+
 
     // MARK: - Header
 

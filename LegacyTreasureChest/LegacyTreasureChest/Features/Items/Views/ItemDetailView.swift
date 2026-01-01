@@ -84,6 +84,19 @@ struct ItemDetailView: View {
         Locale.current.currency?.identifier ?? "USD"
     }
 
+    // MARK: - Liquidate (optional gating)
+
+    /// Set to `true` if you want to hide Liquidate unless Market AI is enabled.
+    /// For now, default is `false` so Liquidate is always reachable and can fall back locally.
+    private var gateLiquidateOnMarketAI: Bool { false }
+
+    private var shouldShowLiquidate: Bool {
+        if gateLiquidateOnMarketAI {
+            return FeatureFlags().enableMarketAI
+        }
+        return true
+    }
+
     var body: some View {
         Form {
             // MARK: - Basic Info
@@ -241,6 +254,45 @@ struct ItemDetailView: View {
                     removeItemBeneficiary(link)
                 }
             )
+
+            // MARK: - Liquidate (Next Step)
+
+            if shouldShowLiquidate {
+                Section {
+                    NavigationLink {
+                        LiquidationSectionView(item: item)
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "shippingbox.and.arrow.backward")
+                                .foregroundStyle(Theme.accent)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Liquidate")
+                                    .font(Theme.bodyFont.weight(.semibold))
+                                    .foregroundStyle(Theme.text)
+
+                                Text("Generate a brief, choose a path, and follow a checklist plan.")
+                                    .font(Theme.secondaryFont)
+                                    .foregroundStyle(Theme.textSecondary)
+                            }
+
+                            Spacer()
+
+                            Image(systemName: "chevron.right")
+                                .font(.footnote)
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                } header: {
+                    Text("Next Step")
+                        .ltcSectionHeaderStyle()
+                } footer: {
+                    Text("Liquidation uses backend-first AI for both Brief and Plan, with local fallback only when the backend fails.")
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                }
+            }
 
             // MARK: - Footer
 

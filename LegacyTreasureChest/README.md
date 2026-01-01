@@ -1,6 +1,28 @@
 # Legacy Treasure Chest
 ## 🔄 Current Development Status (Snapshot)
 
+**Date:** 2026-01-01  
+**Milestone:** Liquidation — Main UI Wired (ItemDetail → Liquidate Workflow)
+
+### ✅ What’s Now Working (New Since Last Snapshot)
+
+#### iOS App (SwiftUI + SwiftData)
+- Liquidation is now **accessible from the normal app UI**:
+  - `ItemDetailView` includes a bottom **“Next Step → Liquidate”** section.
+  - Tapping navigates to `LiquidationSectionView` for the current item.
+- `LiquidationSectionView` is now wrapped in a `Form`, making it **fully scrollable and usable as a production screen**.
+- Liquidation workflow in the main UI:
+  - Generate Brief (**backend-first**, local fallback only on failure)
+  - Choose Path
+  - Generate Plan (**backend-first**, local fallback only on failure)
+  - Persist brief/plan records to SwiftData
+- Theme alignment: primary text uses `Theme.text` (no `Theme.textPrimary` token exists).
+
+### Notes
+- UI copy / path label polish intentionally deferred until multi-item and estate workflows clarify the final UX structure.
+
+## 🔄 Current Development Status (Snapshot)
+
 **Date:** 2025-12-31  
 **Milestone:** Liquidation Engine – Backend + Sandbox Complete, UI Wiring Next
 
