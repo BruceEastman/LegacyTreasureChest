@@ -11,6 +11,7 @@
 //
 
 import Foundation
+import SwiftData
 
 // MARK: - Service
 
@@ -54,17 +55,18 @@ struct LiquidationAIService {
         return try await generateBriefBackendFirst(from: req)
     }
 
-    // MARK: - Brief (Set)
+    // MARK: - Brief (Set) — NEW (LTCItemSet)
 
+    /// Generate a liquidation brief for an Item Set (text-only v1; photos later).
     func generateBriefDTO(
-        for set: LTCSet,
+        for itemSet: LTCItemSet,
         goal: LiquidationGoalDTO = .balanced,
         constraints: LiquidationConstraintsDTO? = nil,
         locationHint: String? = nil
     ) async throws -> LiquidationBriefDTO {
 
         let req = LiquidationRequestBuilder.buildRequest(
-            for: set,
+            for: itemSet,
             goal: goal,
             constraints: constraints,
             locationHint: locationHint
@@ -73,7 +75,7 @@ struct LiquidationAIService {
         return try await generateBriefBackendFirst(from: req)
     }
 
-    // MARK: - Plan (UI-friendly overload)
+    // MARK: - Plan (Item) — UI-friendly overload
 
     /// ✅ This is the method your LiquidationSectionView is calling.
     /// It bridges your app’s LiquidationPath -> DTO expected by the backend.
@@ -97,6 +99,28 @@ struct LiquidationAIService {
         return try await generatePlanBackendFirst(from: req)
     }
 
+    // MARK: - Plan (Set) — NEW (LTCItemSet)
+
+    func generatePlanChecklistDTO(
+        for itemSet: LTCItemSet,
+        chosenPath: LiquidationPath,
+        briefDTO: LiquidationBriefDTO
+    ) async throws -> LiquidationPlanChecklistDTO {
+
+        let dtoPath = chosenPath.asDTO
+
+        let req = LiquidationPlanRequest(
+            schemaVersion: 1,
+            scope: .set,
+            chosenPath: dtoPath,
+            brief: briefDTO,
+            title: itemSet.name,
+            category: itemSet.setType.rawValue
+        )
+
+        return try await generatePlanBackendFirst(from: req)
+    }
+
     // MARK: - Backend-first with fallback (Brief)
 
     private func generateBriefBackendFirst(from req: LiquidationBriefRequest) async throws -> LiquidationBriefDTO {
@@ -114,12 +138,14 @@ struct LiquidationAIService {
                 return dto
             } catch {
                 debugLog("⚠️ Backend liquidation brief failed; using local fallback. Error: \(error)")
+                // ✅ IMPORTANT: propagate the backend error into the local fallback DTO
+                return localBrief.generate(from: req, backendError: error)
             }
         } else {
             debugLog("ℹ️ Backend liquidation brief skipped (FeatureFlags.enableMarketAI == false). Using local.")
         }
 
-        return localBrief.generate(from: req)
+        return localBrief.generate(from: req, backendError: nil)
     }
 
     // MARK: - Backend-first with fallback (Plan)
@@ -202,6 +228,62 @@ enum LiquidationRequestBuilder {
         )
     }
 
+    /// NEW: build request for LTCItemSet (Sets v1).
+    static func buildRequest(
+        for itemSet: LTCItemSet,
+        goal: LiquidationGoalDTO,
+        constraints: LiquidationConstraintsDTO?,
+        locationHint: String?
+    ) -> LiquidationBriefRequest {
+
+        // Text-only v1: summarize members.
+        let memberItems: [LTCItem] = itemSet.memberships.compactMap { $0.item }
+
+        // Total “quantity” concept for set: sum of per-item quantities (membership override if present).
+        let totalQty: Int = memberItems.reduce(0) { partial, item in
+            let m = itemSet.memberships.first(where: { $0.item?.persistentModelID == item.persistentModelID })
+            let q = m?.quantityInSet ?? item.quantity
+            return partial + max(1, q)
+        }
+
+        let summaries: [LiquidationMemberSummary] = itemSet.memberships.compactMap { membership in
+            guard let item = membership.item else { return nil }
+            return LiquidationMemberSummary(
+                title: item.name,
+                category: item.category,
+                quantity: membership.quantityInSet ?? item.quantity,
+                unitValue: item.value
+            )
+        }
+
+        let context = LiquidationSetContext(
+            setName: itemSet.name,
+            setType: itemSet.setType.rawValue,
+            story: itemSet.story,
+            sellTogetherPreference: itemSet.sellTogetherPreference.rawValue,
+            completeness: itemSet.completeness.rawValue,
+            memberSummaries: summaries
+        )
+
+        return LiquidationBriefRequest(
+            schemaVersion: 1,
+            scope: .set,
+            title: itemSet.name,
+            description: itemSet.story ?? itemSet.notes,
+            category: itemSet.setType.rawValue,
+            quantity: max(1, totalQty == 0 ? memberItems.count : totalQty),
+            unitValue: nil,
+            currencyCode: "USD",
+            valuationLow: nil,
+            valuationLikely: nil,
+            valuationHigh: nil,
+            photoJpegBase64: nil,
+            setContext: context,
+            inputs: LiquidationInputsDTO(goal: goal, constraints: constraints, locationHint: locationHint)
+        )
+    }
+
+    // LEGACY: build request for LTCSet (kept for transition)
     static func buildRequest(
         for set: LTCSet,
         goal: LiquidationGoalDTO,
@@ -248,14 +330,26 @@ enum LiquidationRequestBuilder {
 /// (You can delete this later once backend is always-on.)
 struct LocalLiquidationBriefGenerator {
 
-    func generate(from req: LiquidationBriefRequest) -> LiquidationBriefDTO {
+    func generate(from req: LiquidationBriefRequest, backendError: Error? = nil) -> LiquidationBriefDTO {
 
         let title = (req.title ?? "Untitled").trimmingCharacters(in: .whitespacesAndNewlines)
         let category = (req.category ?? "Uncategorized").trimmingCharacters(in: .whitespacesAndNewlines)
         let qty = max(1, req.quantity ?? 1)
 
-        let likelyUnit = req.valuationLikely ?? req.unitValue ?? 0
-        let likelyTotal = max(0, likelyUnit) * Double(qty)
+        let likelyTotal: Double = {
+            // If this is a SET request, compute totals from member summaries when available.
+            if req.scope == .set, let ctx = req.setContext, !ctx.memberSummaries.isEmpty {
+                return ctx.memberSummaries.reduce(0) { partial, m in
+                    let q = Double(max(1, m.quantity ?? 1))
+                    let v = max(0, m.unitValue ?? 0)
+                    return partial + (q * v)
+                }
+            }
+
+            // Otherwise, compute from unit value / valuation.
+            let likelyUnit = req.valuationLikely ?? req.unitValue ?? 0
+            return max(0, likelyUnit) * Double(qty)
+        }()
 
         // Conservative bounds if none provided
         let low = req.valuationLow ?? (likelyTotal * 0.75)
@@ -306,7 +400,13 @@ struct LocalLiquidationBriefGenerator {
             pathOptions: options,
             actionSteps: steps,
             missingDetails: [],
-            assumptions: ["Local fallback used"],
+            assumptions: {
+                var a = ["Local fallback used"]
+                if let backendError {
+                    a.append("Backend error: \(backendError.localizedDescription)")
+                }
+                return a
+            }(),
             confidence: 0.60,
             inputs: req.inputs
         )

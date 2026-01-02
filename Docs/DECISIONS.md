@@ -1,3 +1,22 @@
+
+## 🧭 Liquidate Roadmap (Do Not Wander)
+
+This is the authoritative ordering for Liquidate development. It matches our current implementation reality:
+- **Single-item Liquidate works end-to-end** (Brief → Plan → Checklist execution), including items with **no photo**.
+- **Sets / batch liquidation** are **not implemented** yet.
+- **Formal triage** is **not implemented** yet.
+
+### Milestones
+- ✅ **M1 — Single-item Liquidate vertical slice** (Brief + Plan + Checklist + persistence + main UI entry)
+- 🟡 **M2 — Harden UX & observability** (timing logs, retries, avoid duplicates, active state clarity)
+- ⛔ **M3 — Disposition Engine v1 (“Local Help”)** (partners search + outreach pack + plan UI section)
+- ⛔ **M4 — Sets & batch liquidation** (lots/sets, batch events, batch export)
+- ⛔ **M5 — Formal triage** (prioritize work across many items)
+
+See:
+- `LIQUIDATION_STRATEGY.md` for the implementation guide
+- `DISPOSITION_ENGINE.md` for the Local Help capability spec
+
 Last updated 12/11/2025
 Here’s the Estate Dashboard spec rewritten around **Legacy** and **Liquidate**.
 

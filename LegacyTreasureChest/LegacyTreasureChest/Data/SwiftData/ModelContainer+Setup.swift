@@ -9,18 +9,37 @@ import Foundation
 import SwiftData
 
 extension ModelContainer {
+
     static func makeContainer() throws -> ModelContainer {
+
         let schema = Schema([
+
+            // MARK: - Core User & Inventory
             LTCUser.self,
             LTCItem.self,
             ItemImage.self,
             AudioRecording.self,
             Document.self,
-            Beneficiary.self,
-            ItemBeneficiary.self,
             ItemValuation.self,
 
-            // Liquidate module models
+            // MARK: - Beneficiaries
+            Beneficiary.self,
+            ItemBeneficiary.self,
+
+            // MARK: - Sets v1 (NEW, primary path)
+            LTCItemSet.self,
+            LTCItemSetMembership.self,
+
+            // MARK: - Liquidation (Pattern A – unified state)
+            LiquidationState.self,
+            LiquidationBriefRecord.self,
+            LiquidationPlanRecord.self,
+
+            // MARK: - Liquidation Batches (future, referenced by models)
+            LiquidationBatch.self,
+            BatchItem.self,
+
+            // MARK: - LEGACY Liquidation (kept for transition)
             LTCSet.self,
             LiquidationBrief.self,
             LiquidationPlan.self,

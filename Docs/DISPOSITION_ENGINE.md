@@ -1,3 +1,11 @@
+# Disposition Engine — Local Help (Planned Capability)
+
+**Status (as of 2026-01-01):** Planned / not implemented yet.  
+**Depends on:** Stable single-item Liquidation Plan UX and persistence (Liquidate Milestone 2).  
+**Role:** Advisor-only. The app prepares recommendations and outreach materials; the user performs contact and execution.
+
+---
+
 ### Summary of how this fits your current plan
 
 * **Conceptually, this “Disposition Engine” fits perfectly** with the Liquidate module as an *Advisor* (not an operator). It becomes the “last mile” that turns a liquidation recommendation into **real-world next steps** without you integrating with marketplaces.
@@ -208,3 +216,38 @@ Given how often you’ll refine this, **Option 1 is the better fit**.
 ---
 
 If you say “go,” the next thing I’ll produce is a tight spec for the backend-side **Disposition Matrix JSON** (schemas for query templates, trust gates, ranking weights) that cleanly plugs into your existing AI gateway style—without committing you to any specific vendor API yet.
+
+---
+
+## Implementation milestones (v1)
+
+### Milestone DE-1 — Partner Discovery (backend)
+**Endpoint:** `POST /liquidate/partners/search`  
+**DoD**
+- Accepts scenario inputs (category, value band, bulkiness, user goal, constraints, coarse location).
+- Returns 3–7 ranked partners with:
+  - partner type
+  - why selected
+  - trust signals found (trust gates)
+  - confidence score
+  - questions to ask
+
+### Milestone DE-2 — Outreach Pack Builder (backend)
+**Endpoint:** `POST /liquidate/outreach/compose`  
+**DoD**
+- Generates a subject + email body + attachment list
+- Supports scope: single item (v1), set/batch (future)
+
+### Milestone DE-3 — iOS “Local Help” section inside Liquidation Plan
+**DoD**
+- “Find local options” button
+- Ranked cards
+- Actions: Call, Website, Compose Email (prefilled)
+- Copy clearly states: “Verify details; businesses change.”
+
+---
+
+## Explicit non-goals (v1)
+- No hard-coded local businesses
+- No auto-contacting or messaging on the user’s behalf
+- No marketplace integrations

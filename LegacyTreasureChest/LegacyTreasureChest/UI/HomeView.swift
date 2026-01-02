@@ -28,6 +28,7 @@ struct HomeView: View {
                     .scaledToFit()
                     .frame(width: 220, height: 220)
                     .padding(.top, Theme.spacing.xl)
+
                 // Headline
                 Text("Welcome to Legacy Treasure Chest")
                     .font(Theme.titleFont)
@@ -75,6 +76,22 @@ struct HomeView: View {
                         .padding()
                         .background(Theme.primary)
                         .foregroundStyle(Color.white)
+                        .cornerRadius(16)
+                }
+                .padding(.horizontal, Theme.spacing.xl)
+                .padding(.top, Theme.spacing.small)
+
+                // MARK: – Sets (NEW)
+
+                NavigationLink {
+                    SetsListView()
+                } label: {
+                    Text("Sets")
+                        .font(Theme.bodyFont.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color(.systemGray5))
+                        .foregroundStyle(Theme.text)
                         .cornerRadius(16)
                 }
                 .padding(.horizontal, Theme.spacing.xl)
@@ -131,6 +148,23 @@ struct HomeView: View {
                                 .foregroundStyle(Theme.text)
 
                             Text("End-to-end liquidation flow: seed brief → choose path → plan → checklist.")
+                                .font(Theme.secondaryFont)
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .ltcCardBackground()
+                    }
+
+                    // Developer Settings (debug)
+                    NavigationLink {
+                        DeveloperSettingsView()
+                    } label: {
+                        VStack(alignment: .leading, spacing: Theme.spacing.small) {
+                            Text("Developer Settings")
+                                .font(Theme.bodyFont.weight(.semibold))
+                                .foregroundStyle(Theme.text)
+
+                            Text("Toggle backend AI and debug logging without resetting data.")
                                 .font(Theme.secondaryFont)
                                 .foregroundStyle(Theme.textSecondary)
                         }
@@ -213,14 +247,33 @@ struct HomeView: View {
 
     private func resetAllData() {
         do {
+            // Beneficiaries + links
             try deleteAll(of: ItemBeneficiary.self)
+            try deleteAll(of: Beneficiary.self)
+
+            // Media
             try deleteAll(of: ItemImage.self)
             try deleteAll(of: AudioRecording.self)
             try deleteAll(of: Document.self)
-            try deleteAll(of: LTCItem.self)
-            try deleteAll(of: Beneficiary.self)
 
-            // Liquidate models (new)
+            // Sets v1
+            try deleteAll(of: LTCItemSetMembership.self)
+            try deleteAll(of: LTCItemSet.self)
+
+            // Liquidation Pattern A (hub + records)
+            try deleteAll(of: LiquidationPlanRecord.self)
+            try deleteAll(of: LiquidationBriefRecord.self)
+            try deleteAll(of: LiquidationState.self)
+
+            // Batches (future)
+            try deleteAll(of: BatchItem.self)
+            try deleteAll(of: LiquidationBatch.self)
+
+            // Items + valuations
+            try deleteAll(of: ItemValuation.self)
+            try deleteAll(of: LTCItem.self)
+
+            // Legacy Liquidate (kept)
             try deleteAll(of: LiquidationPlan.self)
             try deleteAll(of: LiquidationBrief.self)
             try deleteAll(of: LTCSet.self)
