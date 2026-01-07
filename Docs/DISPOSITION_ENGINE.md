@@ -1,3 +1,32 @@
+Smoke test: Disposition Engine — Local Help (Planned Capability)
+curl -s http://127.0.0.1:8000/ai/disposition/partners/search \
+  -H "Content-Type: application/json" \
+  -d '{
+    "schemaVersion": 1,
+    "scope": "item",
+    "chosenPath": "B",
+    "scenario": {
+      "category": "Furniture",
+      "valueBand": "MED",
+      "bulky": true,
+      "goal": "balanced",
+      "constraints": ["pickup_required"]
+    },
+    "location": {
+      "city": "Boise",
+      "region": "ID",
+      "countryCode": "US",
+      "radiusMiles": 25,
+      "latitude": 43.6150,
+      "longitude": -116.2023
+    },
+    "hints": {
+      "keywords": ["Thomasville"],
+      "notes": "Dining chair"
+    }
+  }' | python3 -m json.tool
+
+
 # Disposition Engine — Local Help (Planned Capability)
 
 **Status (as of 2026-01-01):** Planned / not implemented yet.  

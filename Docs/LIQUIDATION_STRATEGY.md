@@ -94,7 +94,7 @@ This roadmap is the authoritative ordering. If a task appears “fun” but is o
 
 **Status:** ✅ Done
 
-### Milestone 2 — Harden single-item UX and observability (IN PROGRESS / NEXT)
+### Milestone 2 — Harden single-item UX and observability (Completed)
 **DoD**
 - Timing logs (iOS + backend) for Brief and Plan
 - Clear retry UX and prevention of double-submit duplicates
@@ -102,7 +102,7 @@ This roadmap is the authoritative ordering. If a task appears “fun” but is o
 
 **Status:** 🟡 Next
 
-### Milestone 3 — Disposition Engine v1 (PLANNED)
+### Milestone 3 — Disposition Engine v1 (in progress)
 Add “Local Help” inside the Plan:
 - partner discovery results (ranked + trust signals)
 - outreach packet (email copy + attachments list)

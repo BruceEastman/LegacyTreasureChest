@@ -3,7 +3,7 @@
 # ================================
 DerivedData/
 build/
-*.xcworkspace
+*.xcworkspace/
 *.xcuserstate
 *.xcodeproj/xcuserdata/
 *.xcodeproj/project.xcuserdatad/
@@ -19,9 +19,15 @@ build/
 .DS_Store
 
 # ================================
-# Python / FastAPI Backend (ignore everything)
+# Python / FastAPI Backend (ignore venv/cache/secrets)
 # ================================
-LTC_AI_Gateway/
+# --- LTC AI Gateway (backend) ---
+LTC_AI_Gateway/.venv/
+LTC_AI_Gateway/__pycache__/
+LTC_AI_Gateway/**/__pycache__/
+LTC_AI_Gateway/**/*.pyc
+LTC_AI_Gateway/.env
+
 .venv/
 __pycache__/
 *.pyc

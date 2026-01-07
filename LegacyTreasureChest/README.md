@@ -11,8 +11,56 @@ This is the authoritative ordering for Liquidate development. It matches our cur
 - ✅ **M1 — Single-item Liquidate vertical slice** (Brief + Plan + Checklist + persistence + main UI entry)
 - 🟡 **M2 — Harden UX & observability** (timing logs, retries, avoid duplicates, active state clarity)
 - ⛔ **M3 — Disposition Engine v1 (“Local Help”)** (partners search + outreach pack + plan UI section)
-- ⛔ **M4 — Sets & batch liquidation** (lots/sets, batch events, batch export)
+- ⛔ **M4 — Sets & batch liquidation** (lots/sets, batch events, batch export)We started on Sets (read above)
 - ⛔ **M5 — Formal triage** (prioritize work across many items)
+Below is a **ready-to-paste README update** you can append to the **top** of the file. It’s concise, accurate, and sets clear context for future work without over-promising.
+
+## 📌 Project Status Update — Sets v1 & Backend Stabilization
+
+**Date:** January 2, 2026
+
+### Summary
+
+This checkpoint stabilizes the **Sets v1** experience and hardens the backend AI integration for liquidation workflows. The system now reliably supports liquidation analysis for both **Items** and **Sets**, with improved tolerance to LLM variability and no required changes on the iOS client.
+
+### What’s Complete
+
+* **Sets v1 (End-to-End)**
+
+  * Create and edit Sets
+  * Select Sets for liquidation
+  * Generate AI-powered liquidation briefs and plans
+  * UI and data model are sufficient for a first usable version
+
+* **Backend AI Hardening**
+
+  * Liquidation brief and plan endpoints are now resilient to Gemini JSON variability (e.g., wrapped responses, missing fields).
+  * Server-side normalization ensures DTO contract compliance before validation.
+  * Required fields (`scope`, `generatedAt`, `pathOptions[].id`, etc.) are safely stamped when missing.
+  * iOS app remains unchanged and continues to fall back locally only on true backend failures.
+
+* **Location-Aware Foundations**
+
+  * Liquidation briefs now preserve `inputs` (goal, constraints, location).
+  * This explicitly supports upcoming **Disposition Engine** work that relies on location to identify local and trusted entities.
+
+* **Documentation Updates**
+
+  * Updated: `LIQUIDATION_STRATEGY.md`, `DISPOSITION_ENGINE.md`, `DECISIONS.md`
+  * Added: `ROADMAP.md`
+  * Removed obsolete development notes.
+
+### What This Release Is (and Is Not)
+
+* ✅ This is a **stable functional baseline** for Sets.
+* ❌ This is **not** the final design for Sets or the Disposition Engine.
+* The focus here was correctness, resilience, and learnings from real use—not feature completeness.
+
+### Next Planned Focus (Deferred)
+
+* Refining Set semantics (valuation dynamics, sell-together heuristics)
+* Disposition Engine implementation (location → trusted local entities → execution guidance)
+* UX refinements based on real household usage
 
 See:
 - `LIQUIDATION_STRATEGY.md` for the implementation guide
