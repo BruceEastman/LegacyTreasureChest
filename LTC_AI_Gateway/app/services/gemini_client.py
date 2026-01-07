@@ -1,0 +1,131 @@
+from __future__ import annotations
+
+import os
+from typing import Any, Dict, Optional
+
+import httpx
+from dotenv import load_dotenv
+
+from app.utils.json_cleaner import clean_llm_json
+
+load_dotenv()
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+# Allow overriding the model via environment, default to a stable flash model.
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-exp")
+
+if not GEMINI_API_KEY:
+    raise RuntimeError("GEMINI_API_KEY is not set in environment (.env)")
+
+
+def _gemini_url() -> str:
+    return (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
+    )
+
+
+async def _post_gemini(payload: Dict[str, Any]) -> str:
+    url = _gemini_url()
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        resp = await client.post(url, json=payload)
+
+    if resp.status_code >= 400:
+        snippet = resp.text[:800]
+        raise RuntimeError(f"Gemini error {resp.status_code}: {snippet}")
+
+    data: Dict[str, Any] = resp.json()
+
+    try:
+        candidate = data["candidates"][0]
+        parts = candidate["content"]["parts"]
+        raw_text = next(p["text"] for p in parts if "text" in p)
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError("Gemini response missing expected text field.") from exc
+
+    # Strip code fences / markdown noise, keep raw JSON string.
+    return clean_llm_json(raw_text)
+
+
+async def call_gemini_for_item_analysis(*, prompt: str, image_base64: str) -> str:
+    """Call Gemini with an image + prompt and return cleaned JSON text."""
+    payload: Dict[str, Any] = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt},
+                    {
+                        "inline_data": {
+                            "mime_type": "image/jpeg",
+                            "data": image_base64,
+                        }
+                    },
+                ]
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.2,
+            "topP": 0.8,
+            "topK": 40,
+            "maxOutputTokens": 2048,
+        },
+    }
+
+    return await _post_gemini(payload)
+
+
+async def call_gemini_for_item_text_analysis(*, prompt: str) -> str:
+    """Call Gemini with text-only prompt and return cleaned JSON text."""
+    payload: Dict[str, Any] = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt},
+                ]
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.2,
+            "topP": 0.8,
+            "topK": 40,
+            "maxOutputTokens": 2048,
+        },
+    }
+
+    return await _post_gemini(payload)
+
+
+# ---------------------------------------------------------------------------
+# Liquidation calls (keep these here so routes can import consistently)
+# ---------------------------------------------------------------------------
+
+async def call_gemini_for_liquidation_brief(*, prompt: str, photo_base64: Optional[str] = None) -> str:
+    """Liquidation brief. Optional photo."""
+    parts = [{"text": prompt}]
+    if photo_base64:
+        parts.append(
+            {
+                "inline_data": {
+                    "mime_type": "image/jpeg",
+                    "data": photo_base64,
+                }
+            }
+        )
+
+    payload: Dict[str, Any] = {
+        "contents": [{"parts": parts}],
+        "generationConfig": {
+            "temperature": 0.2,
+            "topP": 0.8,
+            "topK": 40,
+            "maxOutputTokens": 2048,
+        },
+    }
+
+    return await _post_gemini(payload)
+
+
+async def call_gemini_for_liquidation_plan(*, prompt: str) -> str:
+    """Liquidation plan. Text-only prompt."""
+    return await call_gemini_for_item_text_analysis(prompt=prompt)

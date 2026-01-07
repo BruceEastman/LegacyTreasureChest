@@ -1,0 +1,157 @@
+{
+  "schemaVersion": 1,
+  "defaultRadiusMiles": 25,
+  "maxRadiusMiles": 100,
+  "minResults": 6,
+  "maxResultsPerType": 8,
+  "maxResultsTotal": 15,
+  "recommendedRefreshDays": 30,
+  "defaultScenarioId": "default_any",
+
+  "scenarios": [
+    {
+      "id": "furniture_bulky_med_balanced",
+      "priority": 100,
+      "when": {
+        "categories": ["Furniture"],
+        "valueBand": ["MED", "HIGH", "*"],
+        "bulky": true,
+        "goals": ["balanced", "min_effort"],
+        "chosenPaths": ["B", "C"]
+      },
+      "partnerTypes": [
+        {
+          "type": "consignment",
+          "queries": [
+            { "q": "{city} {region} furniture consignment", "weight": 1.0 },
+            { "q": "{city} {region} home consignment store", "weight": 0.7 },
+            { "q": "{city} {region} vintage consignment furniture", "weight": 0.5 }
+          ],
+          "trustGates": [
+            "required:consignment_language",
+            "established_language",
+            "quality_curation_language"
+          ],
+          "rankWeights": {
+            "trustScore": 0.35,
+            "relevanceScore": 0.30,
+            "distanceScore": 0.25,
+            "reviewScore": 0.10
+          }
+        },
+        {
+          "type": "estate_sale",
+          "queries": [
+            { "q": "{city} {region} estate sale company", "weight": 1.0 },
+            { "q": "{city} {region} estate liquidation services", "weight": 0.8 }
+          ],
+          "trustGates": [
+            "required:estate_experience_language",
+            "professional_services_language",
+            "established_language"
+          ],
+          "rankWeights": {
+            "trustScore": 0.40,
+            "relevanceScore": 0.25,
+            "distanceScore": 0.25,
+            "reviewScore": 0.10
+          }
+        }
+      ]
+    },
+
+    {
+      "id": "default_any",
+      "priority": 1,
+      "when": {
+        "categories": "*"
+      },
+      "partnerTypes": [
+        {
+          "type": "consignment",
+          "queries": [
+            { "q": "{city} {region} consignment store", "weight": 1.0 }
+          ],
+          "trustGates": [
+            "required:consignment_language",
+            "established_language"
+          ],
+          "rankWeights": {
+            "trustScore": 0.35,
+            "relevanceScore": 0.30,
+            "distanceScore": 0.25,
+            "reviewScore": 0.10
+          }
+        },
+        {
+          "type": "donation",
+          "queries": [
+            { "q": "{city} {region} donation center", "weight": 1.0 },
+            { "q": "{city} {region} thrift donation", "weight": 0.7 }
+          ],
+          "trustGates": [
+            "required:donation_language",
+            "receipt_language"
+          ],
+          "rankWeights": {
+            "trustScore": 0.40,
+            "relevanceScore": 0.25,
+            "distanceScore": 0.25,
+            "reviewScore": 0.10
+          }
+        }
+      ]
+    }
+  ],
+
+  "trustGateDefinitions": {
+    "consignment_language": {
+      "type": "keyword_any",
+      "keywords": ["consignment", "consign"],
+      "sources": ["website_snippet", "place_details", "reviews_snippet"],
+      "sourceWeights": { "website_snippet": 1.0, "place_details": 0.7, "reviews_snippet": 0.5 }
+    },
+
+    "estate_experience_language": {
+      "type": "keyword_any",
+      "keywords": ["estate sale", "estate liquidation", "downsizing", "executor"],
+      "sources": ["website_snippet", "place_details", "reviews_snippet"],
+      "sourceWeights": { "website_snippet": 1.0, "place_details": 0.7, "reviews_snippet": 0.5 }
+    },
+
+    "established_language": {
+      "type": "keyword_any",
+      "keywords": ["since", "established", "serving", "years", "family-owned", "locally owned", "in business"],
+      "sources": ["website_snippet", "place_details", "reviews_snippet"],
+      "sourceWeights": { "website_snippet": 1.0, "place_details": 0.7, "reviews_snippet": 0.5 }
+    },
+
+    "quality_curation_language": {
+      "type": "keyword_any",
+      "keywords": ["curated", "quality", "high-end", "fine", "premium", "designer", "vintage", "antique"],
+      "sources": ["website_snippet", "place_details", "reviews_snippet"],
+      "sourceWeights": { "website_snippet": 1.0, "place_details": 0.7, "reviews_snippet": 0.5 }
+    },
+
+    "professional_services_language": {
+      "type": "keyword_any",
+      "keywords": ["consultation", "appointment", "appraisal", "full service", "staging", "pricing", "liquidation"],
+      "sources": ["website_snippet", "place_details", "reviews_snippet"],
+      "sourceWeights": { "website_snippet": 1.0, "place_details": 0.7, "reviews_snippet": 0.5 }
+    },
+
+    "donation_language": {
+      "type": "keyword_any",
+      "keywords": ["donation", "donate", "thrift"],
+      "sources": ["website_snippet", "place_details", "reviews_snippet"],
+      "sourceWeights": { "website_snippet": 1.0, "place_details": 0.7, "reviews_snippet": 0.5 }
+    },
+
+    "receipt_language": {
+      "type": "keyword_any",
+      "keywords": ["receipt", "tax receipt", "donation receipt", "itemized"],
+      "sources": ["website_snippet", "place_details", "reviews_snippet"],
+      "sourceWeights": { "website_snippet": 1.0, "place_details": 0.7, "reviews_snippet": 0.5 }
+    }
+  }
+}
