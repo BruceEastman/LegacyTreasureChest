@@ -9,6 +9,11 @@
 
 import Foundation
 
+/// Local-only keys for feature flags that are not part of AppConstants.StorageKeys.
+private enum FeatureFlagKeys {
+    static let dispositionEngineUI = "ltc_feature_dispositionEngineUI"
+}
+
 /// Central storage for feature toggles used throughout the app.
 /// Values are persisted in UserDefaults using keys from `AppConstants.StorageKeys`.
 final class FeatureFlags {
@@ -34,7 +39,8 @@ final class FeatureFlags {
             AppConstants.StorageKeys.enableMarketAI: true,   // 🔥 AI ON by default
             AppConstants.StorageKeys.enableCloudKit: false,
             AppConstants.StorageKeys.enableHouseholds: false,
-            AppConstants.StorageKeys.showDebugInfo: debugDefault
+            AppConstants.StorageKeys.showDebugInfo: debugDefault,
+            FeatureFlagKeys.dispositionEngineUI: debugDefault   // ✅ ON in DEBUG, OFF in Release
         ]
 
         defaults.register(defaults: defaultsToRegister)
@@ -73,6 +79,13 @@ final class FeatureFlags {
         set { defaults.set(newValue, forKey: AppConstants.StorageKeys.showDebugInfo) }
     }
 
+    /// Enables Disposition Engine UI (Local Help / Find Partners).
+    /// Default: ON in DEBUG builds, OFF in Release.
+    var dispositionEngineUI: Bool {
+        get { defaults.bool(forKey: FeatureFlagKeys.dispositionEngineUI) }
+        set { defaults.set(newValue, forKey: FeatureFlagKeys.dispositionEngineUI) }
+    }
+
     // MARK: - Logging
 
     private func logCurrentValues() {
@@ -81,5 +94,6 @@ final class FeatureFlags {
         print("   • CloudKit      = \(enableCloudKit)")
         print("   • Households    = \(enableHouseholds)")
         print("   • Debug         = \(showDebugInfo)")
+        print("   • DispositionUI = \(dispositionEngineUI)")
     }
 }

@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 import math
+import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Protocol
 
 import httpx
-
 
 PartnerCandidate = Dict[str, Any]
 
@@ -134,7 +134,6 @@ class GooglePlacesNewProvider:
                 }
             }
 
-        # NOTE: rating + userRatingCount are valid Places (New) fields. :contentReference[oaicite:2]{index=2}
         field_mask = ",".join(
             [
                 "places.id",
@@ -150,10 +149,55 @@ class GooglePlacesNewProvider:
             ]
         )
 
+        headers = dict(self._headers(field_mask))  # fresh dict per call (avoids shared mutation bugs)
+
+        # Intermittent 400s and other transient failures happen in practice.
+        # We'll retry a few times with small backoff. If it keeps failing, we raise.
+        last_exc: Optional[Exception] = None
+        max_attempts = 3
+
         with httpx.Client(timeout=self._timeout) as client:
-            resp = client.post(self.SEARCH_TEXT_URL, headers=self._headers(field_mask), json=body)
-            resp.raise_for_status()
-            data = resp.json()
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    resp = client.post(self.SEARCH_TEXT_URL, headers=headers, json=body)
+
+                    if resp.status_code >= 400:
+                        # IMPORTANT: log the outgoing inputs so we can reproduce the 400
+                        print("\n=== GOOGLE PLACES ERROR DEBUG ===")
+                        print("Attempt:", attempt, "/", max_attempts)
+                        print("Status:", resp.status_code)
+                        print("FieldMask:", headers.get("X-Goog-FieldMask"))
+                        # If you include your API key in headers, do NOT print it.
+                        # print("ApiKey:", headers.get("X-Goog-Api-Key"))  # <-- leave commented
+                        print("RequestBody:", body)
+                        print("ResponseText:", resp.text)
+                        print("=== END GOOGLE PLACES ERROR DEBUG ===\n")
+
+                    # Retry on common transient classes.
+                    # - 429: rate limited
+                    # - 5xx: server errors
+                    # - 408: timeout
+                    # - Some intermittent 400s are transient; we retry once or twice.
+                    if resp.status_code in (408, 429) or 500 <= resp.status_code <= 599 or resp.status_code == 400:
+                        if attempt < max_attempts:
+                            time.sleep(0.4 * attempt)
+                            continue
+
+                    resp.raise_for_status()
+                    data = resp.json()
+                    break  # success
+
+                except (httpx.TimeoutException, httpx.NetworkError, httpx.HTTPStatusError) as exc:
+                    last_exc = exc
+                    if attempt < max_attempts:
+                        time.sleep(0.4 * attempt)
+                        continue
+                    raise
+            else:
+                # Should never happen due to break/raise above, but keep as guardrail.
+                if last_exc:
+                    raise last_exc
+                raise httpx.HTTPError("Google Places searchText failed without exception detail.")
 
         raw_places = data.get("places", []) or []
         normalized: List[Dict[str, Any]] = []
@@ -170,7 +214,6 @@ class GooglePlacesNewProvider:
                     "formattedAddress": pl.get("formattedAddress"),
                     "location": pl.get("location"),
                     "rating": pl.get("rating"),
-                    # Keep the raw Google name internally...
                     "userRatingCount": pl.get("userRatingCount"),
                     "googleMapsUri": pl.get("googleMapsUri"),
                     "websiteUri": pl.get("websiteUri"),
@@ -279,11 +322,8 @@ class GooglePlacesNewProvider:
             "partnerType": q.partner_type,
             "contact": contact,
             "distanceMiles": float(dist_mi),
-
-            # What you said you want to return:
             "rating": float(rating) if rating is not None else None,
             "userRatingsTotal": int(user_ratings_total) if isinstance(user_ratings_total, int) else None,
-
             "sources": {
                 "website_snippet": website_snippet,
                 "place_details": place_details,

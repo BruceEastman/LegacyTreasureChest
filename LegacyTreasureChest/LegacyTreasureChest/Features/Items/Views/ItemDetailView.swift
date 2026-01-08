@@ -259,6 +259,8 @@ struct ItemDetailView: View {
 
             if shouldShowLiquidate {
                 Section {
+
+                    // Row 1: Liquidate
                     NavigationLink {
                         LiquidationSectionView(item: item)
                     } label: {
@@ -278,12 +280,38 @@ struct ItemDetailView: View {
 
                             Spacer()
 
-                            Image(systemName: "chevron.right")
-                                .font(.footnote)
-                                .foregroundStyle(Theme.textSecondary)
+                            
                         }
                         .padding(.vertical, 4)
                     }
+
+                    // Row 2: Local Help (Disposition Engine)
+                    if FeatureFlags().dispositionEngineUI {
+                        NavigationLink {
+                            DispositionPartnersView(item: item)
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: "person.2.wave.2")
+                                    .foregroundStyle(Theme.accent)
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Local Help")
+                                        .font(Theme.bodyFont.weight(.semibold))
+                                        .foregroundStyle(Theme.text)
+
+                                    Text("Find nearby services for this item (advisor mode).")
+                                        .font(Theme.secondaryFont)
+                                        .foregroundStyle(Theme.textSecondary)
+                                }
+
+                                Spacer()
+
+                            
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+
                 } header: {
                     Text("Next Step")
                         .ltcSectionHeaderStyle()

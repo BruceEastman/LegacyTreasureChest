@@ -82,6 +82,18 @@ struct BackendAIProvider: AIProvider {
         return response
     }
 
+    // MARK: - Disposition Engine v1
+
+    func dispositionPartnersSearch(
+        request: DispositionPartnersSearchRequest
+    ) async throws -> DispositionPartnersSearchResponse {
+        let response: DispositionPartnersSearchResponse = try await postJSON(
+            path: "/ai/disposition/partners/search",
+            body: request
+        )
+        return response
+    }
+
     func estimateValue(
         for item: ItemValueInput
     ) async throws -> ValueRange {

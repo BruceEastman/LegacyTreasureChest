@@ -1,4 +1,59 @@
 # Legacy Treasure Chest
+## Project Status — January 2026
+
+Legacy Treasure Chest has reached an important milestone:  
+**the transition from inventory to action.**
+
+### What’s New
+
+The app now includes a fully functional **Disposition Engine (v1)** that helps users answer:
+
+> *“What should I do with this item, and who locally can help me?”*
+
+Key capabilities now live on the backend:
+
+- Intelligent partner discovery for:
+  - Consignment
+  - Estate sales
+  - Auctions
+  - Donation
+  - Junk/haul services
+- Uses real local businesses (via Google Places New)
+- Returns consumer-friendly signals:
+  - ⭐ Ratings
+  - Number of reviews
+  - Distance
+- Adds estate-aware guidance:
+  - Trust scoring (independent of Google)
+  - Reasons for recommendation
+  - Questions to ask before proceeding
+
+The system is designed specifically for:
+- Downsizing households
+- Executors settling estates
+- Older adults who need clarity, not complexity
+
+### Current Focus
+
+The backend foundation for disposition planning is now in place.
+
+The next major phase is **UI integration**:
+- Making these capabilities visible, understandable, and usable in the iOS app
+- Determining where partner discovery lives:
+  - Item detail view
+  - Liquidation flow
+  - Estate dashboard
+- Designing a flow that supports *advice first*, not transactions
+
+### What’s Next
+
+Planned near-term work includes:
+- SwiftUI screens for disposition recommendations
+- Partner comparison and selection
+- Guided outreach (email, website, phone)
+- Expanding from single-item to **sets / estate-level** disposition
+
+Legacy Treasure Chest is evolving from a catalog into an **active planning assistant**.
 
 ## 🧭 Liquidate Roadmap (Do Not Wander)
 

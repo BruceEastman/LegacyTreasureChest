@@ -61,6 +61,156 @@
     },
 
     {
+      "id": "collectibles_cards_toys_balanced",
+      "priority": 60,
+      "when": {
+        "categories": ["Collectibles"],
+        "valueBand": ["LOW", "MED", "HIGH", "*"],
+        "bulky": false,
+        "goals": ["balanced", "maximize_price", "min_effort", "*"],
+        "chosenPaths": ["A", "B", "C", "*"]
+      },
+      "partnerTypes": [
+        {
+          "type": "dealer",
+          "queries": [
+            { "q": "{city} {region} collectibles dealer", "weight": 1.0 },
+            { "q": "{city} {region} sports card shop", "weight": 0.9 },
+            { "q": "{city} {region} comic and collectibles shop", "weight": 0.6 }
+          ],
+          "trustGates": [
+            "required:dealer_language",
+            "established_language"
+          ],
+          "rankWeights": {
+            "trustScore": 0.40,
+            "relevanceScore": 0.35,
+            "distanceScore": 0.20,
+            "reviewScore": 0.05
+          }
+        },
+        {
+          "type": "auction",
+          "queries": [
+            { "q": "{city} {region} auction house", "weight": 1.0 },
+            { "q": "{city} {region} estate auction", "weight": 0.7 }
+          ],
+          "trustGates": [
+            "required:auction_language",
+            "professional_services_language",
+            "established_language"
+          ],
+          "rankWeights": {
+            "trustScore": 0.40,
+            "relevanceScore": 0.30,
+            "distanceScore": 0.20,
+            "reviewScore": 0.10
+          }
+        }
+      ]
+    },
+
+    {
+      "id": "jewelry_luxury_high_value",
+      "priority": 70,
+      "when": {
+        "categories": ["Jewelry", "Luxury Personal Items"],
+        "valueBand": ["MED", "HIGH", "*"],
+        "bulky": false,
+        "goals": ["maximize_price", "balanced", "*"],
+        "chosenPaths": ["A", "B", "*"]
+      },
+      "partnerTypes": [
+        {
+          "type": "estate_jeweler",
+          "queries": [
+            { "q": "{city} {region} estate jeweler", "weight": 1.0 },
+            { "q": "{city} {region} jewelry appraiser", "weight": 0.7 },
+            { "q": "{city} {region} jewelry consignment", "weight": 0.6 }
+          ],
+          "trustGates": [
+            "required:jewelry_language",
+            "professional_services_language",
+            "established_language"
+          ],
+          "rankWeights": {
+            "trustScore": 0.45,
+            "relevanceScore": 0.30,
+            "distanceScore": 0.15,
+            "reviewScore": 0.10
+          }
+        },
+        {
+          "type": "auction",
+          "queries": [
+            { "q": "{city} {region} jewelry auction", "weight": 0.8 },
+            { "q": "{city} {region} auction house", "weight": 0.6 }
+          ],
+          "trustGates": [
+            "required:auction_language",
+            "professional_services_language",
+            "established_language"
+          ],
+          "rankWeights": {
+            "trustScore": 0.40,
+            "relevanceScore": 0.30,
+            "distanceScore": 0.20,
+            "reviewScore": 0.10
+          }
+        }
+      ]
+    },
+
+    {
+      "id": "electronics_small_to_mid",
+      "priority": 40,
+      "when": {
+        "categories": ["Electronics"],
+        "valueBand": ["LOW", "MED", "*"],
+        "bulky": false,
+        "goals": ["min_effort", "balanced", "*"],
+        "chosenPaths": ["B", "C", "*"]
+      },
+      "partnerTypes": [
+        {
+          "type": "electronics_resale",
+          "queries": [
+            { "q": "{city} {region} used electronics store", "weight": 1.0 },
+            { "q": "{city} {region} electronics resale", "weight": 0.8 },
+            { "q": "{city} {region} computer store used", "weight": 0.5 }
+          ],
+          "trustGates": [
+            "required:electronics_language",
+            "established_language"
+          ],
+          "rankWeights": {
+            "trustScore": 0.40,
+            "relevanceScore": 0.30,
+            "distanceScore": 0.25,
+            "reviewScore": 0.05
+          }
+        },
+        {
+          "type": "recycling",
+          "queries": [
+            { "q": "{city} {region} electronics recycling", "weight": 1.0 },
+            { "q": "{city} {region} e-waste recycling", "weight": 0.7 }
+          ],
+          "trustGates": [
+            "required:recycling_language",
+            "established_language"
+          ],
+          "rankWeights": {
+            "trustScore": 0.40,
+            "relevanceScore": 0.25,
+            "distanceScore": 0.25,
+            "reviewScore": 0.10
+          }
+        }
+      ]
+    },
+
+    {
       "id": "default_any",
       "priority": 1,
       "when": {
@@ -150,6 +300,41 @@
     "receipt_language": {
       "type": "keyword_any",
       "keywords": ["receipt", "tax receipt", "donation receipt", "itemized"],
+      "sources": ["website_snippet", "place_details", "reviews_snippet"],
+      "sourceWeights": { "website_snippet": 1.0, "place_details": 0.7, "reviews_snippet": 0.5 }
+    },
+
+    "dealer_language": {
+      "type": "keyword_any",
+      "keywords": ["dealer", "buy", "we buy", "collectibles", "sports cards", "trading cards", "comic"],
+      "sources": ["website_snippet", "place_details", "reviews_snippet"],
+      "sourceWeights": { "website_snippet": 1.0, "place_details": 0.7, "reviews_snippet": 0.5 }
+    },
+
+    "auction_language": {
+      "type": "keyword_any",
+      "keywords": ["auction", "auctioneer", "estate auction", "consignment auction"],
+      "sources": ["website_snippet", "place_details", "reviews_snippet"],
+      "sourceWeights": { "website_snippet": 1.0, "place_details": 0.7, "reviews_snippet": 0.5 }
+    },
+
+    "jewelry_language": {
+      "type": "keyword_any",
+      "keywords": ["jewelry", "jeweller", "jeweler", "estate jewelry", "appraisal", "appraiser"],
+      "sources": ["website_snippet", "place_details", "reviews_snippet"],
+      "sourceWeights": { "website_snippet": 1.0, "place_details": 0.7, "reviews_snippet": 0.5 }
+    },
+
+    "electronics_language": {
+      "type": "keyword_any",
+      "keywords": ["electronics", "computers", "laptop", "phone", "used", "resale", "repair"],
+      "sources": ["website_snippet", "place_details", "reviews_snippet"],
+      "sourceWeights": { "website_snippet": 1.0, "place_details": 0.7, "reviews_snippet": 0.5 }
+    },
+
+    "recycling_language": {
+      "type": "keyword_any",
+      "keywords": ["recycling", "e-waste", "electronics recycling", "ewaste", "responsible disposal"],
       "sources": ["website_snippet", "place_details", "reviews_snippet"],
       "sourceWeights": { "website_snippet": 1.0, "place_details": 0.7, "reviews_snippet": 0.5 }
     }

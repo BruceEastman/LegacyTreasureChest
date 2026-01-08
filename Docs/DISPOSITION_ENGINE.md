@@ -26,6 +26,74 @@ curl -s http://127.0.0.1:8000/ai/disposition/partners/search \
     }
   }' | python3 -m json.tool
 
+## Status Update — Disposition Engine v1 (Current State)
+
+**Date:** 2026-01-07 
+**Status:** Functional, backend-complete for v1 discovery & ranking
+
+### What Is Implemented
+
+The Disposition Engine v1 is now fully operational on the backend and provides **real, high-signal partner discovery** to support household item disposition (downsizing or estate settlement).
+
+Key capabilities now in place:
+
+- **Scenario-driven partner selection**
+  - Uses `disposition_matrix.v1.json`
+  - Matches on category, value band, bulky/fragile flags, and user goal
+  - Priority + wildcard + fallback logic implemented
+
+- **Provider abstraction**
+  - Explicit provider selection via `PARTNER_DISCOVERY_PROVIDER`
+  - Supports:
+    - Stub provider (deterministic, testable)
+    - Google Places *New* API (production-ready)
+
+- **Real-world partner discovery**
+  - Returns actual local businesses with:
+    - Name, phone, website, address
+    - Distance in miles (with optional lat/lng support)
+    - Google rating (⭐) and total number of reviews
+
+- **Trust evaluation (engine-owned, not Google-owned)**
+  - Required vs. boost trust gates
+  - Evidence-based keyword matching from:
+    - Website snippets
+    - Place details
+    - Review snippets
+  - Produces:
+    - `trustScore` (engine confidence)
+    - Explicit gate pass/fail results
+    - Signals for explainability
+
+- **Ranking and explainability**
+  - Composite score using trust, relevance, distance, and reviews
+  - Human-readable:
+    - `whyRecommended`
+    - `questionsToAsk` (category-aware, estate-safe)
+
+- **Performance & safety**
+  - Radius expansion (25 → 50 → 100 miles)
+  - In-memory caching to limit API calls
+  - Deterministic deduplication across queries
+
+### What v1 Explicitly Does NOT Do (By Design)
+
+- No automatic outreach or contacting partners
+- No assumptions about pickup, fees, insurance, or commissions
+- No coupling of Google ratings into trust logic
+- No UI-level decisions embedded in backend responses
+
+### Likely Next Steps
+
+- Surface Disposition Engine results in the iOS UI
+- Allow users to:
+  - Compare partners
+  - Save or shortlist candidates
+  - Launch outreach flows from a selected partner
+- Extend engine to support **sets / batches** (estate-level disposition)
+- Add persistence for partner interactions and outcomes
+
+This backend is considered **v1 complete** and ready for UI integration.
 
 # Disposition Engine — Local Help (Planned Capability)
 
