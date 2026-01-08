@@ -18,6 +18,12 @@ from app.models_liquidation import (
     LiquidationPlanChecklistDTO,
     LiquidationPlanRequest,
 )
+from app.ai.util.time_json import (
+    _now_iso_z,
+    _parse_llm_json_obj,
+    _unwrap_singleton_wrapper,
+    _utcnow,
+)
 
 from app.models_disposition import (
     DispositionOutreachComposeRequest,
@@ -189,10 +195,6 @@ _CATEGORY_MISSING_DETAILS: dict[str, List[str]] = {
 }
 
 
-def _now_iso_z() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-
-
 def _fallback_for_category(category: str | None) -> Tuple[float, float, float]:
     if not category:
         return (25.0, 125.0, 600.0)
@@ -288,44 +290,6 @@ def _apply_value_policy(analysis: ItemAnalysis) -> ItemAnalysis:
 # ---------------------------------------------------------------------------
 # Liquidation normalization + repair helpers
 # ---------------------------------------------------------------------------
-
-def _parse_llm_json_obj(raw_json: str) -> Any:
-    """
-    Parse cleaned LLM JSON into Python. Raises ValueError on failure.
-    Assumes clean_llm_json already stripped fences, etc.
-    """
-    return json.loads(raw_json)
-
-
-def _unwrap_singleton_wrapper(obj: Any) -> Any:
-    """
-    If obj is {"SomeWrapper": {...}} return the inner dict.
-    Handles the known wrapper case: {"LiquidationBriefDTO": {...}} etc.
-    """
-    if not isinstance(obj, dict):
-        return obj
-
-    if len(obj) != 1:
-        return obj
-
-    (k, v), = obj.items()
-    if isinstance(v, dict):
-        # Common wrappers we have seen from LLMs
-        known_wrappers = {
-            "LiquidationBriefDTO",
-            "LiquidationPlanChecklistDTO",
-            "LiquidationPlanDTO",
-            "brief",
-            "plan",
-            "data",
-            "result",
-            "response",
-            "output",
-        }
-        if k in known_wrappers or k.endswith("DTO"):
-            return v
-
-    return obj
 
 
 def _normalize_path_value(path: Any) -> Any:
@@ -599,9 +563,6 @@ _DISPOSITION_MATRIX_PATH = Path(__file__).resolve().parents[1] / "config" / "dis
 _DISPOSITION_CACHE: dict[str, tuple[float, dict]] = {}
 _DISPOSITION_CACHE_TTL_SECONDS = 24 * 60 * 60  # 24 hours
 
-
-def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 def _load_disposition_matrix() -> dict:
