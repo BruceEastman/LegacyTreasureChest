@@ -24,6 +24,11 @@ struct LiquidationSectionView: View {
     @State private var isGeneratingBrief: Bool = false
     @State private var isGeneratingPlan: Bool = false
 
+    // NEW: brief detail presentation
+    @State private var isBriefDetailPresented: Bool = false
+    @State private var briefDetailDTO: LiquidationBriefDTO?
+    @State private var briefDetailTimestamp: Date?
+
     private let liquidationAI = LiquidationAIService()
 
     var body: some View {
@@ -34,12 +39,41 @@ struct LiquidationSectionView: View {
                 Button {
                     Task { await generateBrief(for: item) }
                 } label: {
-                    Label(isGeneratingBrief ? "Generating Brief…" : "Generate / Update Brief", systemImage: "sparkles")
+                    HStack(spacing: 10) {
+                        if isGeneratingBrief {
+                            ProgressView()
+                        } else {
+                            Image(systemName: "sparkles")
+                        }
+                        Text(isGeneratingBrief ? "Generating Brief…" : "Generate / Update Brief")
+                    }
                 }
                 .disabled(isGeneratingBrief || isGeneratingPlan)
 
+                // NEW: clearer "work happening" feedback
+                if isGeneratingBrief {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                        Text("Working… this can take a few seconds.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .padding(.top, 6)
+                }
+
                 if let brief = latestActiveBriefRecord(for: item) {
                     briefSummaryCard(briefRecord: brief)
+
+                    // NEW: view full brief action
+                    Button {
+                        presentFullBrief(from: brief)
+                    } label: {
+                        Label("View Full Brief", systemImage: "doc.text.magnifyingglass")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isGeneratingBrief || isGeneratingPlan)
+                    .padding(.top, 6)
 
                     Divider().padding(.vertical, 4)
 
@@ -51,6 +85,18 @@ struct LiquidationSectionView: View {
                 } else {
                     Text("No liquidation brief yet.")
                         .foregroundStyle(.secondary)
+                }
+
+                // Optional: give plan generation similar feedback
+                if isGeneratingPlan {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                        Text("Generating plan…")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .padding(.top, 6)
                 }
 
                 if let plan = latestActivePlanRecord(for: item) {
@@ -94,8 +140,13 @@ struct LiquidationSectionView: View {
         .background(Theme.background)
         .navigationTitle("Liquidate")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $isBriefDetailPresented) {
+            LiquidationBriefDetailSheet(
+                dto: briefDetailDTO,
+                createdAt: briefDetailTimestamp
+            )
+        }
     }
-
 
     // MARK: - Header
 
@@ -208,6 +259,21 @@ struct LiquidationSectionView: View {
     }
 
     // MARK: - Brief UI
+
+    @MainActor
+    private func presentFullBrief(from briefRecord: LiquidationBriefRecord) {
+        message = nil
+        errorMessage = nil
+
+        guard let dto = LiquidationJSONCoding.tryDecode(LiquidationBriefDTO.self, from: briefRecord.payloadJSON) else {
+            errorMessage = "Could not decode brief payload JSON."
+            return
+        }
+
+        briefDetailDTO = dto
+        briefDetailTimestamp = briefRecord.createdAt
+        isBriefDetailPresented = true
+    }
 
     @ViewBuilder
     private func briefSummaryCard(briefRecord: LiquidationBriefRecord) -> some View {
@@ -484,6 +550,96 @@ struct LiquidationSectionView: View {
             message = "Deleted plan."
         } catch {
             errorMessage = "Failed to delete plan: \(error.localizedDescription)"
+        }
+    }
+}
+
+// MARK: - Full Brief Sheet (local)
+
+private struct LiquidationBriefDetailSheet: View {
+    let dto: LiquidationBriefDTO?
+    let createdAt: Date?
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if let dto {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 14) {
+                            HStack {
+                                Text("Recommended")
+                                    .font(.headline)
+                                Spacer()
+                                Text(dto.recommendedPath.rawValue)
+                                    .font(.headline.weight(.semibold))
+                            }
+
+                            if let createdAt {
+                                Text("Generated \(createdAt.formatted(date: .abbreviated, time: .shortened))")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            Divider()
+
+                            Text("Reasoning")
+                                .font(.subheadline.weight(.semibold))
+                            Text(dto.reasoning)
+                                .font(.body)
+                                .textSelection(.enabled)
+
+                            if !dto.missingDetails.isEmpty {
+                                Divider()
+                                Text("Missing Details")
+                                    .font(.subheadline.weight(.semibold))
+                                ForEach(dto.missingDetails, id: \.self) { s in
+                                    Text("• \(s)")
+                                        .foregroundStyle(.secondary)
+                                        .textSelection(.enabled)
+                                }
+                            }
+
+                            // Optional: surface provider info if present
+                            if (dto.aiProvider?.isEmpty == false) || (dto.aiModel?.isEmpty == false) {
+                                Divider()
+                                Text("AI Provider")
+                                    .font(.subheadline.weight(.semibold))
+                                VStack(alignment: .leading, spacing: 4) {
+                                    if let p = dto.aiProvider, !p.isEmpty {
+                                        Text("Provider: \(p)")
+                                            .font(.footnote)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    if let m = dto.aiModel, !m.isEmpty {
+                                        Text("Model: \(m)")
+                                            .font(.footnote)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                        .padding()
+                    }
+                } else {
+                    VStack(spacing: 10) {
+                        Text("Brief not available.")
+                            .font(.headline)
+                        Text("We couldn't load the brief details.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding()
+                }
+            }
+            .navigationTitle("Full Brief")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
         }
     }
 }
