@@ -1,6 +1,6 @@
 # Legacy Treasure Chest — Architecture
 
-**Last Updated:** 2026-01-02  
+**Last Updated:** 2026-01-09 
 **Status:** ACTIVE (single-user primary, production-quality build)  
 **Target:** iOS 18+ (Swift 6, SwiftUI, SwiftData)  
 **Core Principle:** Advisor, not operator (no marketplace automation)
@@ -59,6 +59,10 @@ LTC is a two-part system:
 - Holds model keys and configuration (Gemini primary)
 - Enforces DTO contracts (schema validation) and normalizes model variability
 - Provides endpoints for analysis/brief/plan generation
+- **Internal structure is now modular (while preserving the single gateway concept):**
+  - `app/ai/util/` — time + JSON parsing helpers used across routes/services
+  - `app/ai/prompts/` — prompt construction (strict JSON, no markdown)
+  - `app/ai/normalization/` — lightweight normalizers/repair helpers to reduce model variability
 
 ---
 
@@ -253,8 +257,10 @@ Important: triage exists in the model but is not currently the primary workflow.
 ### Cross-cutting
 - Data (SwiftData models)
 - Core utilities (Theme, FeatureFlags, MediaStorage)
-- AI façade + backend provider
+- - AI façade + backend provider
 - Backend AI Gateway (FastAPI + Gemini + schema enforcement)
+  - AI internals: `app/ai/{util,prompts,normalization}` (modularized; extract-only refactor underway)
+
 
 ---
 

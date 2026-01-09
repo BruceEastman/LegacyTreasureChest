@@ -1385,7 +1385,10 @@ async def analyze_item_text(payload: dict) -> ItemAnalysis:
       }
     """
     if call_gemini_for_item_text_analysis is None:
-        raise HTTPException(status_code=501, detail="Text-only item analysis is not enabled on this server build.")
+        raise HTTPException(
+            status_code=501,
+            detail="Text-only item analysis is not enabled on this server build.",
+        )
 
     title = payload.get("title")
     description = payload.get("description")
@@ -1399,7 +1402,17 @@ async def analyze_item_text(payload: dict) -> ItemAnalysis:
         except Exception:
             hints = None
 
-    prompt = build_item_analysis_prompt(hints) if hints else build_item_analysis_text_prompt(title, description, category)
+    # Always use the TEXT-ONLY prompt for this endpoint.
+    # If title/description/category are missing, fall back to hints.
+    effective_title = title or (hints.userWrittenTitle if hints else None)
+    effective_description = description or (hints.userWrittenDescription if hints else None)
+    effective_category = category or (hints.knownCategory if hints else None)
+
+    prompt = build_item_analysis_text_prompt(
+        effective_title,
+        effective_description,
+        effective_category,
+    )
 
     try:
         raw_json = await call_gemini_for_item_text_analysis(prompt=prompt)  # type: ignore[misc]

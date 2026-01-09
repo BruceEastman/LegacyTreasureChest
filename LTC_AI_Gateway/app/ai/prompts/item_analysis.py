@@ -55,18 +55,73 @@ Here are hints from the user (may be empty):
 {hints_block}
 """
 
-
 def build_item_analysis_text_prompt(title: str | None, description: str | None, category: str | None) -> str:
-    safe_title = title or "Untitled Item"
-    safe_desc = description or ""
-    safe_cat = category or "Uncategorized"
+    """
+    Text-only item analysis prompt (NO PHOTO).
+    Must return JSON matching backend ItemAnalysis schema:
+      - title (required)
+      - description (required)
+      - category (required)
+      - optional: tags, confidence, valueHints, brand, materials, style, origin, condition, dimensions, eraOrYear, features
+    """
+    safe_title = (title or "").strip()
+    safe_desc = (description or "").strip()
+    safe_cat = (category or "").strip()
 
-    hints = ItemAIHints(
-        userWrittenTitle=safe_title,
-        userWrittenDescription=safe_desc,
-        knownCategory=safe_cat,
-    )
-    return build_item_analysis_prompt(hints)
+    # Give the model something concrete even if user fields are sparse.
+    if not safe_title:
+        safe_title = "Untitled Item"
+    if not safe_cat:
+        safe_cat = "Uncategorized"
+
+    return f"""
+You are helping a family catalog household items for a legacy and estate planning app.
+
+IMPORTANT:
+- You will NOT receive a photo.
+- Use ONLY the text provided below.
+- Respond ONLY with valid JSON (no markdown, no code fences, no commentary).
+
+Return JSON that matches this schema EXACTLY:
+{{
+  "title": string,
+  "description": string,
+  "category": string,
+  "tags": [string] | null,
+  "confidence": number | null,
+  "valueHints": {{
+    "valueLow": number | null,
+    "estimatedValue": number | null,
+    "valueHigh": number | null,
+    "currencyCode": string,
+    "confidenceScore": number | null,
+    "aiProvider": string | null,
+    "aiNotes": string | null,
+    "missingDetails": [string] | null,
+    "valuationDate": string | null
+  }} | null,
+  "brand": string | null,
+  "materials": [string] | null,
+  "style": string | null,
+  "origin": string | null,
+  "condition": string | null,
+  "dimensions": string | null,
+  "eraOrYear": string | null,
+  "features": [string] | null
+}}
+
+Rules:
+- The top-level fields "title", "description", and "category" are REQUIRED and must be present.
+- If you are unsure about value from text alone, set "valueHints" to null.
+- If you provide valueHints, prefer a low/estimated/high range and include "currencyCode" (use "USD" unless user text implies otherwise).
+- Use "missingDetails" to list what would improve confidence (especially: add a clear photo, labels, stamps, measurements, condition).
+
+User text:
+Title: {safe_title}
+Category: {safe_cat}
+Description:
+{safe_desc}
+""".strip()
 
 
 def _build_item_analysis_repair_prompt(*, original_prompt: str, raw_json: str, validation_error: str) -> str:
