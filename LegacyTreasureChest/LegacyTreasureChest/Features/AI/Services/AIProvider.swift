@@ -7,10 +7,11 @@
 
 import Foundation
 
-/// Low-level AI provider interface. Concrete implementations (e.g., GeminiProvider)
+/// Low-level AI provider interface. Concrete implementations (e.g., BackendAIProvider)
 /// are responsible for performing network calls and translating to/from AIModels.
 protocol AIProvider: Sendable {
-    // MARK: - Item Photo Analysis
+
+    // MARK: - Item Analysis (Photo)
 
     /// Analyze an item given a photo and optional hints from the user.
     ///
@@ -20,6 +21,14 @@ protocol AIProvider: Sendable {
     func analyzeItemPhoto(
         imageData: Data,
         hints: ItemAIHints?
+    ) async throws -> ItemAnalysis
+
+    // MARK: - Item Analysis (Text-only)
+
+    /// Analyze an item using only text fields (title/description/category) and optional extra details.
+    /// Returns the same ItemAnalysis model used by photo analysis.
+    func analyzeItemText(
+        hints: ItemAIHints
     ) async throws -> ItemAnalysis
 
     // MARK: - Value Estimation

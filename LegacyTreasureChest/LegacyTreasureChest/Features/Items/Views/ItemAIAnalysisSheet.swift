@@ -2,9 +2,9 @@
 //  ItemAIAnalysisSheet.swift
 //  LegacyTreasureChest
 //
-//  Sheet for analyzing an existing LTCItem with AI using its photo.
-//  Uses the item's first image and current fields as hints,
-//  then allows applying suggestions back onto the item.
+//  Sheet for analyzing an existing LTCItem with AI.
+//  - If photo exists: uses photo-based analysis
+//  - If no photo: uses text-only analysis (title/description/category + extra details)
 //
 
 import SwiftUI
@@ -34,6 +34,15 @@ struct ItemAIAnalysisSheet: View {
         item.images.first?.filePath
     }
 
+    private var hasPhoto: Bool { previewImage != nil }
+
+    /// Require at least a title or a description for text-only.
+    private var hasEnoughTextForTextOnly: Bool {
+        let title = item.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let desc = item.itemDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !title.isEmpty || !desc.isEmpty
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -41,6 +50,9 @@ struct ItemAIAnalysisSheet: View {
 
                     // Current item summary
                     currentItemCard
+
+                    // Mode explanation (photo vs text-only)
+                    analysisModeCard
 
                     // Photo preview or guidance
                     photoSection
@@ -124,12 +136,16 @@ struct ItemAIAnalysisSheet: View {
                 .ltcSectionHeaderStyle()
 
             VStack(alignment: .leading, spacing: Theme.spacing.small) {
-                Text(item.name)
+                Text(item.name.isEmpty ? "Untitled Item" : item.name)
                     .font(Theme.bodyFont.weight(.semibold))
                     .foregroundStyle(Theme.text)
 
                 if !item.itemDescription.isEmpty {
                     Text(item.itemDescription)
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                } else {
+                    Text("Add a short description to improve text-only analysis.")
                         .font(Theme.secondaryFont)
                         .foregroundStyle(Theme.textSecondary)
                 }
@@ -151,6 +167,32 @@ struct ItemAIAnalysisSheet: View {
         }
     }
 
+    private var analysisModeCard: some View {
+        VStack(alignment: .leading, spacing: Theme.spacing.small) {
+            Text("How This Will Run")
+                .ltcSectionHeaderStyle()
+
+            VStack(alignment: .leading, spacing: Theme.spacing.small) {
+                if hasPhoto {
+                    Text("Photo-based analysis")
+                        .font(Theme.bodyFont.weight(.semibold))
+                        .foregroundStyle(Theme.text)
+                    Text("This uses your photo plus any details you’ve added. Best accuracy.")
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                } else {
+                    Text("Text-only analysis (no photo yet)")
+                        .font(Theme.bodyFont.weight(.semibold))
+                        .foregroundStyle(Theme.text)
+                    Text("You can run an estimate now using title/description/category. Add photos later to improve confidence.")
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                }
+            }
+            .ltcCardBackground()
+        }
+    }
+
     @ViewBuilder
     private var photoSection: some View {
         VStack(alignment: .leading, spacing: Theme.spacing.small) {
@@ -164,7 +206,7 @@ struct ItemAIAnalysisSheet: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                     .shadow(radius: 2)
             } else {
-                Text("No photo found for this item. Add at least one photo in the Photos section, then run analysis again.")
+                Text("No photo found for this item. You can still run text-only analysis now. Add a photo later for better accuracy.")
                     .font(Theme.secondaryFont)
                     .foregroundStyle(Theme.textSecondary)
                     .ltcCardBackground()
@@ -221,7 +263,7 @@ struct ItemAIAnalysisSheet: View {
             HStack {
                 if isAnalyzing { ProgressView() }
                 Image(systemName: "sparkles")
-                Text(isAnalyzing ? "Analyzing…" : "Run Analysis")
+                Text(isAnalyzing ? "Analyzing…" : (hasPhoto ? "Run Analysis" : "Run Text-Only Analysis"))
                     .font(Theme.bodyFont.weight(.semibold))
             }
             .frame(maxWidth: .infinity)
@@ -231,7 +273,7 @@ struct ItemAIAnalysisSheet: View {
             .cornerRadius(12)
         }
         .padding(.top, Theme.spacing.medium)
-        .disabled(previewImage == nil || isAnalyzing)
+        .disabled(isAnalyzing || (!hasPhoto && !hasEnoughTextForTextOnly))
     }
 
     @ViewBuilder
@@ -370,7 +412,7 @@ struct ItemAIAnalysisSheet: View {
                         .font(Theme.secondaryFont)
                         .foregroundStyle(Theme.textSecondary)
                 } else {
-                    Text("The AI based this estimate on similar items, materials, and visible condition in the photo.")
+                    Text("The AI based this estimate on similar items, materials, and visible condition (or your text details if no photo).")
                         .font(Theme.secondaryFont)
                         .foregroundStyle(Theme.textSecondary)
                 }
@@ -519,11 +561,6 @@ struct ItemAIAnalysisSheet: View {
     }
 
     private func runAnalysis() async {
-        guard let previewImage else {
-            errorMessage = "No photo available for analysis."
-            return
-        }
-
         // Persist extra details into ItemValuation.userNotes before running AI.
         saveExtraDetailsToValuation()
 
@@ -554,10 +591,22 @@ struct ItemAIAnalysisSheet: View {
         )
 
         do {
-            let result = try await AIService.shared.analyzeItemPhoto(previewImage, hints: hints)
-            analysisResult = result
+            if let previewImage {
+                // Photo path (existing behavior)
+                let result = try await AIService.shared.analyzeItemPhoto(previewImage, hints: hints)
+                analysisResult = result
+            } else {
+                // Text-only path (new)
+                let result = try await AIService.shared.analyzeItemText(hints: hints)
+                analysisResult = result
+            }
         } catch {
-            errorMessage = error.localizedDescription
+            let message = error.localizedDescription
+            if message.contains("/ai/analyze-item-text") || message.contains("404") {
+                errorMessage = "Text-only analysis isn’t enabled on the backend yet. Add the /ai/analyze-item-text endpoint, then try again. Photo analysis will continue to work."
+            } else {
+                errorMessage = message
+            }
         }
 
         isAnalyzing = false

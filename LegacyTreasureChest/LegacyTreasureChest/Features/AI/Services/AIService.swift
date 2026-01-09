@@ -35,28 +35,51 @@ final class AIService {
 
     /// Analyze an item photo using AI.
     ///
-    /// This is the primary function the AI-assisted views call.
+    /// This is the primary function the AI-assisted views call when a photo exists.
     func analyzeItemPhoto(
         _ image: UIImage,
         hints: ItemAIHints? = nil
     ) async throws -> ItemAnalysis {
 
-        // Feature flag check
         guard featureFlags.enableMarketAI else {
             throw AIError.featureDisabled("Market AI features are currently turned off.")
         }
 
-        // Convert UIImage → JPEG data
         guard let data = image.jpegData(compressionQuality: 0.85) else {
             throw AIError.imageEncodingFailed
         }
 
         do {
-            let result = try await provider.analyzeItemPhoto(
-                imageData: data,
-                hints: hints
-            )
-            return result
+            return try await provider.analyzeItemPhoto(imageData: data, hints: hints)
+        } catch let aiError as AIError {
+            throw aiError
+        } catch {
+            throw AIError.underlying(error)
+        }
+    }
+
+    /// Analyze an item using only text fields (title/description/category).
+    /// This is used when the user has no photo yet.
+    func analyzeItemText(
+        hints: ItemAIHints
+    ) async throws -> ItemAnalysis {
+
+        guard featureFlags.enableMarketAI else {
+            throw AIError.featureDisabled("Market AI features are currently turned off.")
+        }
+
+        // Require at least something meaningful, otherwise you get junk results.
+        let hasSomeText =
+            !(hints.userWrittenTitle ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            !(hints.userWrittenDescription ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            !(hints.knownCategory ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
+        guard hasSomeText else {
+            throw AIError.invalidResponse("Add at least a title or description before running text-only AI.")
+        }
+
+        do {
+            return try await provider.analyzeItemText(hints: hints)
         } catch let aiError as AIError {
             throw aiError
         } catch {

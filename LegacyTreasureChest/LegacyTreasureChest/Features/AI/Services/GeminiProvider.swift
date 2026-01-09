@@ -72,6 +72,58 @@ struct GeminiProvider: AIProvider {
             )
         )
 
+        return try await performRequest(url: url, requestBody: requestBody)
+    }
+
+    /// ✅ New required method: Text-only item analysis (no image).
+    func analyzeItemText(
+        hints: ItemAIHints
+    ) async throws -> ItemAnalysis {
+        guard let url = endpointURL else {
+            throw AIError.providerNotConfigured
+        }
+
+        let prompt = buildItemTextOnlyAnalysisPrompt(hints: hints)
+
+        let requestBody = GeminiGenerateContentRequest(
+            contents: [
+                .init(parts: [
+                    .init(text: prompt)
+                ])
+            ],
+            generationConfig: .init(
+                temperature: 0.2,
+                responseMimeType: "application/json"
+            )
+        )
+
+        return try await performRequest(url: url, requestBody: requestBody)
+    }
+
+    func estimateValue(
+        for item: ItemValueInput
+    ) async throws -> ValueRange {
+        throw AIError.notImplementedYet("Value estimation is not yet implemented.")
+    }
+
+    func draftPersonalMessage(
+        from input: MessageDraftInput
+    ) async throws -> DraftMessageResult {
+        throw AIError.notImplementedYet("Message drafting is not yet implemented.")
+    }
+
+    func suggestBeneficiaries(
+        from input: BeneficiarySuggestionInput
+    ) async throws -> [BeneficiarySuggestion] {
+        throw AIError.notImplementedYet("Beneficiary suggestions are not yet implemented.")
+    }
+
+    // MARK: - Shared request/response handling
+
+    private func performRequest(
+        url: URL,
+        requestBody: GeminiGenerateContentRequest
+    ) async throws -> ItemAnalysis {
         let encoder = JSONEncoder()
         let bodyData = try encoder.encode(requestBody)
 
@@ -110,31 +162,12 @@ struct GeminiProvider: AIProvider {
         let aiDecoder = JSONDecoder()
 
         do {
-            let analysis = try aiDecoder.decode(ItemAnalysis.self, from: jsonData)
-            return analysis
+            return try aiDecoder.decode(ItemAnalysis.self, from: jsonData)
         } catch {
             print("❌ Gemini ItemAnalysis decode error: \(error)")
             print("Raw Gemini JSON text:\n\(cleanedText)")
             throw AIError.decodingFailed("Failed to decode ItemAnalysis JSON: \(error.localizedDescription)")
         }
-    }
-
-    func estimateValue(
-        for item: ItemValueInput
-    ) async throws -> ValueRange {
-        throw AIError.notImplementedYet("Value estimation is not yet implemented.")
-    }
-
-    func draftPersonalMessage(
-        from input: MessageDraftInput
-    ) async throws -> DraftMessageResult {
-        throw AIError.notImplementedYet("Message drafting is not yet implemented.")
-    }
-
-    func suggestBeneficiaries(
-        from input: BeneficiarySuggestionInput
-    ) async throws -> [BeneficiarySuggestion] {
-        throw AIError.notImplementedYet("Beneficiary suggestions are not yet implemented.")
     }
 
     // MARK: - Prompt Construction
@@ -153,7 +186,50 @@ struct GeminiProvider: AIProvider {
         and roughly how valuable it might be.
         """)
 
+        lines.append(baseJSONSchemaInstructions())
+
+        if let hints {
+            lines.append(userHintsBlock(hints))
+        }
+
+        lines.append(commonGuidelines())
+
+        return lines.joined(separator: "\n\n")
+    }
+
+    /// Builds the system + user prompt for item analysis from TEXT ONLY (no photo).
+    private func buildItemTextOnlyAnalysisPrompt(hints: ItemAIHints) -> String {
+        var lines: [String] = []
+
         lines.append("""
+        You are helping a family catalog household items for a legacy and estate planning app.
+        You will NOT receive a photo.
+
+        Use ONLY the provided text (title/description/category and any extra owner details) to:
+        - Suggest a clearer marketplace-style title
+        - Suggest a better category
+        - Provide a concise summary
+        - Provide a reasonable resale value estimate range IF possible
+        - List missing details that would improve confidence (especially photos)
+        """)
+
+        lines.append(baseJSONSchemaInstructions())
+        lines.append(userHintsBlock(hints))
+
+        lines.append("""
+        Additional constraints for text-only mode:
+        - If you cannot estimate value from text alone, set valueHints to null.
+        - Confidence should generally be LOWER without a photo unless the text is very specific.
+        - In missingDetails, include photo-related requests (e.g., “Add a clear photo of labels/stamps/overall condition”).
+        """)
+
+        lines.append(commonGuidelines())
+
+        return lines.joined(separator: "\n\n")
+    }
+
+    private func baseJSONSchemaInstructions() -> String {
+        """
         Respond ONLY with valid JSON and NO extra commentary or explanation.
 
         The JSON must match this structure exactly (all fields other than title/summary/category may be null):
@@ -184,71 +260,46 @@ struct GeminiProvider: AIProvider {
           "eraOrYear": String | null,
           "features": [String] | null
         }
-        """)
+        """
+    }
 
-        if let hints {
-            var hintLines: [String] = []
-            if let title = hints.userWrittenTitle, !title.isEmpty {
-                hintLines.append("User-provided working title: \"\(title)\".")
-            }
-            if let description = hints.userWrittenDescription, !description.isEmpty {
-                hintLines.append("User description: \(description)")
-            }
-            if let category = hints.knownCategory, !category.isEmpty {
-                hintLines.append("Known category: \(category)")
-            }
-            if !hintLines.isEmpty {
-                lines.append("Additional context from the user:")
-                lines.append(hintLines.joined(separator: "\n"))
-            }
+    private func userHintsBlock(_ hints: ItemAIHints) -> String {
+        var hintLines: [String] = []
+
+        if let title = hints.userWrittenTitle, !title.isEmpty {
+            hintLines.append("User-provided working title: \"\(title)\".")
+        }
+        if let description = hints.userWrittenDescription, !description.isEmpty {
+            hintLines.append("User description:\n\(description)")
+        }
+        if let category = hints.knownCategory, !category.isEmpty {
+            hintLines.append("Known category: \(category)")
         }
 
-        lines.append("""
+        if hintLines.isEmpty {
+            return "No user text was provided."
+        }
+
+        return """
+        Additional context from the user:
+        \(hintLines.joined(separator: "\n"))
+        """
+    }
+
+    private func commonGuidelines() -> String {
+        """
         Guidelines:
 
-        - "title": short marketplace-style name (e.g., "TUMI Black Rolling Laptop Bag",
-          "Vintage Brown Leather Briefcase with Combination Lock", "Hand-knotted Red Oriental Rug",
-          "Four-poster Wood Bed with Floral Coverlet", "Centurion 2002 Heavy Duty Sewing Machine").
+        - "title": short marketplace-style name (brand + item + key detail).
         - "summary": 1–3 sentences with key details a family member would care about.
+        - "category": choose a reasonable household category (e.g., "Furniture", "Decor", "Rug", "Electronics", etc.).
+        - "tags": short keywords about style, use, brand, or pattern.
 
-        - "category": one of a small set such as "Luggage", "Rug", "Furniture", "Appliance",
-          "Sewing Machine", "Decor", "Collectible", "Artwork", "Electronics", etc.
-
-        - "tags": short keywords about style, use, brand, or pattern
-          (e.g., "TUMI", "nylon", "rolling bag", "Oriental rug", "hand-knotted", "vintage").
-
-        - "extractedText": include any visible printed or embossed text you can read from the image,
-          including brand names, model numbers, sewing stitch guides, gallery labels, signatures,
-          or handwritten notes. Plain text is fine.
-
-        - For branded modern items (e.g., TUMI bags, sewing machines):
-          - Fill in "brand", "modelNumber" (if readable), "features" (e.g., "rolling wheels", "laptop compartment",
-            "heavy duty", "multiple stitch patterns").
-
-        - For rugs:
-          - Use "materials" (e.g., "wool", "silk blend"), "origin" (e.g., "Persian", "Afghan", "Pakistan"),
-            "style" (e.g., "Bokhara pattern", "geometric", "floral medallion"), and "eraOrYear" if you can infer it
-            (e.g., "late 20th century").
-
-        - For furniture:
-          - Use "materials" (e.g., "solid wood", "mahogany"), "style" (e.g., "four-poster bed", "traditional"),
-            "condition" (e.g., "good with light wear", "shows scuffs"), "dimensions" (approximate, like
-            "queen size" or "about 8x10 feet" for rugs).
-
-        - For all items:
-          - "condition" should briefly describe visible wear (scratches, fading, patina, like-new).
-          - "materials" is an array of simple material names.
-          - "features" is an array of highlights such as "combination lock", "multiple pockets", "hand-knotted",
-            "heavy duty motor".
-
-        - "valueHints":
-          - If you are unsure about value, set valueHints to null.
+        - For "valueHints":
           - If you estimate value, use USD for "currencyCode" and return a reasonable low/high resale range
             based on typical used item markets (not new retail).
           - Use an ISO-8601-like string for "lastUpdated" (e.g., "2025-01-22T00:00:00Z").
-        """)
-
-        return lines.joined(separator: "\n\n")
+        """
     }
 
     /// Strip common Markdown fences and trim whitespace.

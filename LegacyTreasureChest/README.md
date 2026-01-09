@@ -1,4 +1,21 @@
 # Legacy Treasure Chest
+## Status Update (2026-01-09) — Text-Only AI Analysis Now Works
+
+**What’s new**
+- The iOS “Improve with AI” flow now supports **text-only analysis** (no photos required).
+- The app successfully calls the backend endpoint `POST /ai/analyze-item-text` and receives a valid `ItemAnalysis` response.
+
+**Why this matters**
+- The system is now practical for day-to-day household use: you can create items quickly and still get AI help immediately.
+- Photos remain recommended for higher confidence, but they are no longer a blocker.
+
+**Key implementation notes**
+- Backend: fixed text-only analysis to use a **true text-only prompt** and added minimal JSON normalization.
+- Backend model alignment: `ItemAnalysis` requires `title`, `description`, and `category`. The prompt explicitly enforces these keys.
+
+**Next focus**
+- **Local Help (Disposition Engine) UI gating:** prevent 422 errors by disabling Local Help until required prerequisites exist (Brief + Plan), and clearly message the user what to do next.
+
 ## Current Status (Jan 8, 2026)
 
 ### What’s working now

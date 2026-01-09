@@ -4,8 +4,6 @@
 //
 //  Concrete AIProvider implementation that talks to the Legacy Treasure Chest
 //  backend AI gateway instead of directly to Gemini.
-//  The backend holds the Gemini API key in an environment variable and exposes
-//  safe HTTP endpoints like /ai/analyze-item-photo.
 //
 
 import Foundation
@@ -17,9 +15,6 @@ struct BackendAIProvider: AIProvider {
     private let baseURL: URL
     private let urlSession: URLSession
 
-    /// Default backend base URL:
-    /// - Simulator: 127.0.0.1 points to your Mac host
-    /// - Physical iPhone: must use your Mac's LAN IP
     private static var defaultBaseURL: URL {
         #if targetEnvironment(simulator)
         return URL(string: "http://127.0.0.1:8000")!
@@ -29,9 +24,6 @@ struct BackendAIProvider: AIProvider {
     }
 
     init(
-        // For now, we hard-code a dev URL so we are not dependent on AppConfig.
-        // This should match your local FastAPI server:
-        //   uvicorn main:app --reload --host 0.0.0.0 --port 8000
         baseURL: URL = BackendAIProvider.defaultBaseURL,
         urlSession: URLSession = .shared
     ) {
@@ -54,6 +46,20 @@ struct BackendAIProvider: AIProvider {
 
         let response: ItemAnalysis = try await postJSON(
             path: "/ai/analyze-item-photo",
+            body: requestBody
+        )
+
+        return response
+    }
+
+    func analyzeItemText(
+        hints: ItemAIHints
+    ) async throws -> ItemAnalysis {
+        // New endpoint (additive; does not change existing behavior)
+        let requestBody = AnalyzeItemTextRequest(hints: hints)
+
+        let response: ItemAnalysis = try await postJSON(
+            path: "/ai/analyze-item-text",
             body: requestBody
         )
 
@@ -97,33 +103,28 @@ struct BackendAIProvider: AIProvider {
     func estimateValue(
         for item: ItemValueInput
     ) async throws -> ValueRange {
-        // TODO: Wire to backend endpoint when implemented.
         throw AIError.notImplementedYet("Value estimation via backend is not yet implemented.")
     }
 
     func draftPersonalMessage(
         from input: MessageDraftInput
     ) async throws -> DraftMessageResult {
-        // TODO: Wire to backend endpoint when implemented.
         throw AIError.notImplementedYet("Message drafting via backend is not yet implemented.")
     }
 
     func suggestBeneficiaries(
         from input: BeneficiarySuggestionInput
     ) async throws -> [BeneficiarySuggestion] {
-        // TODO: Wire to backend endpoint when implemented.
-        throw AIError.notImplementedYet("Beneficiary suggestions via backend are not yet implemented.")
+        throw AIError.notImplementedYet("Beneficiary suggestions via backend is not yet implemented.")
     }
 
     // MARK: - Internal Networking Helpers
 
-    /// Generic JSON POST helper.
     private func postJSON<RequestBody: Encodable, ResponseBody: Decodable>(
         path: String,
         body: RequestBody
     ) async throws -> ResponseBody {
 
-        // Normalize path to avoid accidental double slashes.
         let trimmedPath = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let url = baseURL.appendingPathComponent(trimmedPath)
 
@@ -148,7 +149,6 @@ struct BackendAIProvider: AIProvider {
             )
         }
 
-        // Helpful for the “missing data” decoder case
         if data.isEmpty {
             throw AIError.invalidResponse(
                 "Backend returned HTTP \(httpResponse.statusCode) with EMPTY body for \(path)."
@@ -167,23 +167,17 @@ struct BackendAIProvider: AIProvider {
         }
     }
 
-    /// Decoder that accepts ISO8601 with or without fractional seconds and with Z / timezone offsets.
     private func makeLenientISO8601Decoder() -> JSONDecoder {
         let decoder = JSONDecoder()
 
-        // Use a custom date decoding strategy:
-        // - Tries ISO8601 with fractional seconds
-        // - Falls back to ISO8601 without fractional seconds
         decoder.dateDecodingStrategy = .custom { dec -> Date in
             let container = try dec.singleValueContainer()
             let str = try container.decode(String.self)
 
-            // 1) ISO8601 with fractional seconds
             let fmtFrac = ISO8601DateFormatter()
             fmtFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
             if let d = fmtFrac.date(from: str) { return d }
 
-            // 2) ISO8601 without fractional seconds
             let fmt = ISO8601DateFormatter()
             fmt.formatOptions = [.withInternetDateTime]
             if let d = fmt.date(from: str) { return d }
@@ -200,11 +194,11 @@ struct BackendAIProvider: AIProvider {
 
 // MARK: - Backend DTOs
 
-/// Request payload sent from the iOS app to the backend for photo analysis.
 private struct AnalyzeItemPhotoRequest: Encodable {
-    /// JPEG image data encoded as Base64.
     let imageJpegBase64: String
-
-    /// Optional hints to help the model; directly reuses your ItemAIHints type.
     let hints: ItemAIHints?
+}
+
+private struct AnalyzeItemTextRequest: Encodable {
+    let hints: ItemAIHints
 }

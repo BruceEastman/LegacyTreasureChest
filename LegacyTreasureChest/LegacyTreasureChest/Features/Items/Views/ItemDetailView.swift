@@ -3,11 +3,6 @@
 //  LegacyTreasureChest
 //
 //  Editable detail screen for a single LTCItem.
-//  Uses SwiftData @Bindable so changes auto-save and
-//  are reflected immediately when navigating back.
-//  Includes sections for Photos, Documents,
-//  Audio stories, and Beneficiaries.
-//  NOTE: This view owns the photo and document preview sheets.
 //
 
 import SwiftUI
@@ -19,22 +14,18 @@ struct ItemDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
 
-    // SwiftData model binding – edits persist automatically.
     @Bindable var item: LTCItem
 
-    // Preview sheet state for photos
     private struct PhotoPreviewItem: Identifiable {
         let id = UUID()
         let filePath: String
     }
 
-    // Preview sheet state for documents
     private struct DocumentPreviewItem: Identifiable {
         let id = UUID()
         let document: Document
     }
 
-    // Wrapper for editing an ItemBeneficiary in a sheet.
     private struct BeneficiaryEditItem: Identifiable {
         let id = UUID()
         let link: ItemBeneficiary
@@ -43,25 +34,19 @@ struct ItemDetailView: View {
     @State private var photoPreviewItem: PhotoPreviewItem?
     @State private var documentPreviewItem: DocumentPreviewItem?
 
-    // Photo share state
     @State private var isPhotoSharePresented: Bool = false
     @State private var photoShareURL: URL?
 
-    // Beneficiaries sheet
     @State private var isBeneficiaryPickerPresented: Bool = false
     @State private var editingLinkItem: BeneficiaryEditItem?
 
-    // AI analysis sheet
     @State private var isAIAnalysisPresented: Bool = false
 
-    // surface save failures (prevents “disappearing” edits)
     @State private var saveErrorMessage: String?
     @State private var showSaveErrorAlert: Bool = false
 
-    // Base category options (centralized via LTCItem.baseCategories)
     private let defaultCategories: [String] = LTCItem.baseCategories
 
-    // Progressive disclosure persistence (shared across screens)
     @AppStorage("ltc_fieldGuidanceCollapsed") private var fieldGuidanceCollapsed: Bool = false
     @AppStorage("ltc_fieldGuidanceUserOverride") private var fieldGuidanceUserOverride: Bool = false
     @AppStorage("ltc_aiGuidanceCollapsed") private var aiGuidanceCollapsed: Bool = false
@@ -70,7 +55,6 @@ struct ItemDetailView: View {
 
     private let autoCollapseThreshold: Int = 5
 
-    // Include the item's current category if it's not in the defaults
     private var categoryOptions: [String] {
         let current = item.category.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !current.isEmpty, !defaultCategories.contains(current) else {
@@ -79,15 +63,12 @@ struct ItemDetailView: View {
         return defaultCategories + [current]
     }
 
-    // Currency code based on current locale, defaulting to USD
     private var currencyCode: String {
         Locale.current.currency?.identifier ?? "USD"
     }
 
     // MARK: - Liquidate (optional gating)
 
-    /// Set to `true` if you want to hide Liquidate unless Market AI is enabled.
-    /// For now, default is `false` so Liquidate is always reachable and can fall back locally.
     private var gateLiquidateOnMarketAI: Bool { false }
 
     private var shouldShowLiquidate: Bool {
@@ -100,7 +81,6 @@ struct ItemDetailView: View {
     var body: some View {
         Form {
             // MARK: - Basic Info
-
             Section {
                 TextField("Name", text: $item.name)
                     .textInputAutocapitalization(.words)
@@ -135,7 +115,6 @@ struct ItemDetailView: View {
             }
 
             // MARK: - Details
-
             Section {
                 Picker("Category", selection: $item.category) {
                     ForEach(categoryOptions, id: \.self) { category in
@@ -145,7 +124,6 @@ struct ItemDetailView: View {
                     }
                 }
 
-                // Quantity
                 Stepper(value: $item.quantity, in: 1...999) {
                     HStack {
                         Text("Quantity")
@@ -177,7 +155,6 @@ struct ItemDetailView: View {
             }
 
             // MARK: - AI Assistance
-
             Section {
                 FieldGuidanceDisclosure(
                     title: "AI Guidance",
@@ -208,13 +185,13 @@ struct ItemDetailView: View {
                             .font(Theme.bodyFont.weight(.semibold))
                     }
                 }
-                .disabled(item.images.isEmpty)
+                // IMPORTANT: do not block this. The sheet supports text-only now.
             } header: {
                 Text("AI Assistance")
                     .ltcSectionHeaderStyle()
             } footer: {
                 if item.images.isEmpty {
-                    Text("Add at least one photo in the Photos section to enable AI analysis.")
+                    Text("You can run a text-only AI estimate now. Adding photos later improves accuracy and confidence.")
                         .font(Theme.secondaryFont)
                         .foregroundStyle(Theme.textSecondary)
                 } else {
@@ -225,42 +202,30 @@ struct ItemDetailView: View {
             }
 
             // MARK: - Photos
-
             ItemPhotosSection(item: item) { image in
                 photoPreviewItem = PhotoPreviewItem(filePath: image.filePath)
             }
 
             // MARK: - Documents
-
             ItemDocumentsSection(item: item) { document in
                 documentPreviewItem = DocumentPreviewItem(document: document)
             }
 
             // MARK: - Audio
-
             ItemAudioSection(item: item)
 
             // MARK: - Beneficiaries
-
             ItemBeneficiariesSection(
                 item: item,
-                onAddTapped: {
-                    isBeneficiaryPickerPresented = true
-                },
-                onEditLink: { link in
-                    editingLinkItem = BeneficiaryEditItem(link: link)
-                },
-                onRemoveLink: { link in
-                    removeItemBeneficiary(link)
-                }
+                onAddTapped: { isBeneficiaryPickerPresented = true },
+                onEditLink: { link in editingLinkItem = BeneficiaryEditItem(link: link) },
+                onRemoveLink: { link in removeItemBeneficiary(link) }
             )
 
             // MARK: - Liquidate (Next Step)
-
             if shouldShowLiquidate {
                 Section {
 
-                    // Row 1: Liquidate
                     NavigationLink {
                         LiquidationSectionView(item: item)
                     } label: {
@@ -279,13 +244,10 @@ struct ItemDetailView: View {
                             }
 
                             Spacer()
-
-                            
                         }
                         .padding(.vertical, 4)
                     }
 
-                    // Row 2: Local Help (Disposition Engine)
                     if FeatureFlags().dispositionEngineUI {
                         NavigationLink {
                             DispositionPartnersView(item: item)
@@ -305,8 +267,6 @@ struct ItemDetailView: View {
                                 }
 
                                 Spacer()
-
-                            
                             }
                             .padding(.vertical, 4)
                         }
@@ -323,10 +283,7 @@ struct ItemDetailView: View {
             }
 
             // MARK: - Footer
-
-            Section {
-                EmptyView()
-            } footer: {
+            Section { EmptyView() } footer: {
                 Text("In future versions, you’ll be able to fully manage photos, documents, audio stories, and beneficiaries for this item.")
                     .font(Theme.secondaryFont)
                     .foregroundStyle(Theme.textSecondary)
@@ -354,7 +311,6 @@ struct ItemDetailView: View {
             ItemAIAnalysisSheet(item: item)
         }
         .onAppear {
-            // Auto-collapse after threshold unless the user has explicitly overridden.
             if !fieldGuidanceUserOverride {
                 fieldGuidanceCollapsed = itemCreationCount >= autoCollapseThreshold
             }
@@ -379,8 +335,7 @@ struct ItemDetailView: View {
 
         return NavigationStack {
             ZStack {
-                Color.black
-                    .ignoresSafeArea()
+                Color.black.ignoresSafeArea()
 
                 if let image = MediaStorage.loadImage(from: filePath) {
                     ZoomableImageView(image: image)
@@ -389,20 +344,14 @@ struct ItemDetailView: View {
                         .foregroundStyle(.white)
                 }
             }
-            .onAppear {
-                photoShareURL = url
-            }
+            .onAppear { photoShareURL = url }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Done") {
-                        photoPreviewItem = nil
-                    }
-                    .foregroundStyle(.white)
+                    Button("Done") { photoPreviewItem = nil }
+                        .foregroundStyle(.white)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        isPhotoSharePresented = true
-                    } label: {
+                    Button { isPhotoSharePresented = true } label: {
                         Image(systemName: "square.and.arrow.up")
                             .foregroundStyle(.white)
                     }
@@ -527,9 +476,7 @@ private struct DocumentPreviewScreen: View {
                 }
 
                 if isImageDoc {
-                    Button {
-                        isSharePresented = true
-                    } label: {
+                    Button { isSharePresented = true } label: {
                         Image(systemName: "square.and.arrow.up")
                             .imageScale(.large)
                             .padding(12)
