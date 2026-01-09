@@ -26,6 +26,27 @@ curl -s http://127.0.0.1:8000/ai/disposition/partners/search \
     }
   }' | python3 -m json.tool
 
+## Current Status (Jan 8, 2026)
+
+### What’s working now
+- **Disposition Engine UI v1 is live in the iOS app** (Item Detail → Next Step → **Local Help**) behind a feature flag.
+- The UI supports:
+  - Running partner search from an **item context**
+  - Showing a **ranked list** with **rating**, **review count**, and **distance**
+  - Expanding a partner to view **Why recommended** + **Questions to ask**
+  - Action links (e.g., **Call** / **Website**) when available
+- **Briefs and Plans** work end-to-end (latency noticeable but acceptable for now).
+
+### Known behavior / caveats
+- Google Places `places:searchText` can intermittently return **HTTP 400 Bad Request**. Re-running the same search often succeeds. We added basic provider-side debug logging to capture request/response details when it occurs.
+- Local Help results are most accurate **after a Brief + Plan exists** (the chosen path and scenario strongly influence partner types and queries).
+
+### Next likely work (in priority order)
+1) **Scenario coverage**: Expand `disposition_matrix.json` beyond the current defaults so categories like **Jewelry, Collectibles, Rugs, China/Crystal** map to appropriate partner types and queries.
+2) **Product flow clarity**: Treat Local Help as “**Execute the Plan**” (or explicitly guide users that best results come after Plan).
+3) **UI polish**: Improve formatting of expanded details and relabel/hide trust/debug details for non-developer users.
+
+
 ## Status Update — Disposition Engine v1 (Current State)
 
 **Date:** 2026-01-07 
