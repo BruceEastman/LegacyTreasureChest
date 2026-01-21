@@ -964,7 +964,6 @@ def _apply_required_gates(gates: list[dict]) -> bool:
             return False
     return True
 
-
 @router.post("/disposition/partners/search", response_model=DispositionPartnersSearchResponse)
 async def disposition_partners_search(
     payload: DispositionPartnersSearchRequest,
@@ -977,6 +976,10 @@ async def disposition_partners_search(
     - Rank + return "why recommended" and "questions to ask"
     - Radius expansion when results are too few
     - In-memory cache to limit provider calls
+
+    v1.1 addition:
+    - partnerType == "luxury_hub_mailin" returns curated hub/national channels
+      (does NOT depend on Google Places; suitable for secondary markets like Boise).
     """
     from app.services.partner_discovery.factory import get_partner_discovery_provider
     from app.services.partner_discovery.providers import PartnerDiscoveryQuery
@@ -1000,11 +1003,9 @@ async def disposition_partners_search(
         Wire payload.hints.keywords -> payload.scenario.brandHints (v1-safe).
         Dedup + cap to keep queries short and deterministic.
         """
-        # Start from scenario.brandHints (already part of DTO)
         current = list(payload.scenario.brandHints or [])
         seen = {_norm(x) for x in current if isinstance(x, str) and x.strip()}
 
-        # Add hints.keywords
         if payload.hints and payload.hints.keywords:
             for kw in payload.hints.keywords:
                 if not isinstance(kw, str):
@@ -1018,8 +1019,112 @@ async def disposition_partners_search(
                 current.append(kw_s)
                 seen.add(fp)
 
-        # Keep short; provider/search quality improves when not overstuffed
         payload.scenario.brandHints = current[:6]
+
+    def _curated_luxury_hub_mailin_candidates(*, req: DispositionPartnersSearchRequest) -> list[dict]:
+        """
+        Curated hub/national channels for luxury clothing & lots.
+        These are intentionally NOT discovered via Google Places.
+
+        NOTE: We avoid implying "market price guaranteed".
+        The purpose is: specialist-first + correct channel selection.
+        """
+        brand_hints = []
+        for x in (req.scenario.brandHints or []):
+            if isinstance(x, str) and x.strip():
+                brand_hints.append(x.strip())
+        brand_hints = brand_hints[:6]
+
+        hints_txt = ""
+        if brand_hints:
+            hints_txt = f" (brand hints: {', '.join(brand_hints[:3])})"
+
+        curated = [
+            {
+                "partnerId": "curated:luxury:therealreal",
+                "name": "The RealReal",
+                "partnerType": "luxury_hub_mailin",
+                "contact": {
+                    "phone": None,
+                    "website": "https://www.therealreal.com/",
+                    "email": None,
+                    "address": None,
+                    "city": None,
+                    "region": None,
+                },
+                "distanceMiles": None,
+                "rating": None,
+                "userRatingsTotal": None,
+                "sources": {
+                    "website_snippet": (
+                        "Luxury consignment channel with mail-in / concierge-style intake options; "
+                        "authentication-oriented workflow (verify current programs)."
+                    ),
+                    "place_details": (
+                        "Hub/national channel. Often a better fit than local consignment for Remembered/Luxury brands "
+                        "in secondary markets."
+                        + hints_txt
+                    ),
+                    "reviews_snippet": "",
+                },
+            },
+            {
+                "partnerId": "curated:luxury:vestiaire",
+                "name": "Vestiaire Collective",
+                "partnerType": "luxury_hub_mailin",
+                "contact": {
+                    "phone": None,
+                    "website": "https://www.vestiairecollective.com/",
+                    "email": None,
+                    "address": None,
+                    "city": None,
+                    "region": None,
+                },
+                "distanceMiles": None,
+                "rating": None,
+                "userRatingsTotal": None,
+                "sources": {
+                    "website_snippet": (
+                        "Designer fashion resale marketplace; authentication pathways are part of the model "
+                        "(verify process for your item type and region)."
+                    ),
+                    "place_details": (
+                        "Hub/online channel. Shipping is often easier than driving, even in major cities."
+                        + hints_txt
+                    ),
+                    "reviews_snippet": "",
+                },
+            },
+            {
+                "partnerId": "curated:luxury:grailed",
+                "name": "Grailed (Menswear)",
+                "partnerType": "luxury_hub_mailin",
+                "contact": {
+                    "phone": None,
+                    "website": "https://www.grailed.com/",
+                    "email": None,
+                    "address": None,
+                    "city": None,
+                    "region": None,
+                },
+                "distanceMiles": None,
+                "rating": None,
+                "userRatingsTotal": None,
+                "sources": {
+                    "website_snippet": (
+                        "Menswear-focused resale marketplace; best for specific menswear brands/styles "
+                        "(verify selling workflow and fees)."
+                    ),
+                    "place_details": (
+                        "Online channel; useful when local luxury demand is weak or inconsistent."
+                        + hints_txt
+                    ),
+                    "reviews_snippet": "",
+                },
+            },
+        ]
+
+        return curated
 
     matrix = _load_disposition_matrix()
     scenario = _pick_scenario(matrix, payload)
@@ -1032,18 +1137,13 @@ async def disposition_partners_search(
     partner_types: list[dict] = scenario.get("partnerTypes", []) or []
     all_results: list[dict] = []
 
-    # Provider: explicit selection by env var; stub remains available.
     provider = get_partner_discovery_provider(stub_fn=_stub_places_search)
 
-    # Normalize hints early so they consistently affect all queries/types.
     _normalize_brand_hints()
 
-    # Optional center coordinates for accurate distance computation.
-    # Backwards compatible: iOS/curl can omit.
     center_lat = _as_float(_safe_getattr(payload.location, "latitude", None))
     center_lng = _as_float(_safe_getattr(payload.location, "longitude", None))
 
-    # Each partner type defines its own query templates and trust/ranking
     for pt in partner_types:
         partner_type = pt.get("type")
         if not partner_type:
@@ -1053,7 +1153,79 @@ async def disposition_partners_search(
         trust_gates = pt.get("trustGates", []) or []
         rank_weights = pt.get("rankWeights", {}) or {}
 
-        # Radius expansion loop (25 -> 50 -> 100, capped)
+        # Special-case: curated hub channels (no Places search, no radius expansion)
+        if partner_type == "luxury_hub_mailin":
+            found_for_type: list[dict] = []
+
+            # Treat as a single "query context" so relevance scoring can still run.
+            query_str = "luxury mail-in resale"
+            if payload.scenario.brandHints:
+                query_str = f"{query_str} {' '.join(payload.scenario.brandHints[:2])}"
+
+            candidates = _curated_luxury_hub_mailin_candidates(req=payload)
+
+            for c in candidates:
+                sources = c.get("sources", {}) or {}
+                gates_eval, trust_score, signals = _evaluate_trust(
+                    matrix,
+                    partner_payload_sources=sources,
+                    trust_gate_ids=trust_gates,
+                )
+
+                if not _apply_required_gates(gates_eval):
+                    continue
+
+                rel = _relevance_score(c, query_str)
+
+                # Hub channels: distance is not meaningful; keep neutral.
+                dist_score = 0.5
+                rev_score = _review_score(c.get("rating"))
+
+                score = _rank_candidates(
+                    rank_weights=rank_weights,
+                    trust_score=trust_score,
+                    relevance=rel,
+                    distance_score=dist_score,
+                    review_score=rev_score,
+                )
+
+                reasons = _summarize_reasons(
+                    partner_type=partner_type,
+                    req=payload,
+                    trust_score=trust_score,
+                    rel=rel,
+                    gates_eval=gates_eval,
+                )
+
+                found_for_type.append(
+                    {
+                        "partnerId": c.get("partnerId"),
+                        "name": c.get("name"),
+                        "partnerType": partner_type,
+                        "contact": c.get("contact", {}),
+                        "distanceMiles": c.get("distanceMiles"),
+                        "rating": c.get("rating"),
+                        "userRatingsTotal": c.get("userRatingsTotal") or c.get("userRatingCount"),
+                        "trust": {
+                            "trustScore": trust_score,
+                            "claimLevel": "curated",
+                            "gates": gates_eval,
+                            "signals": signals[:12],
+                        },
+                        "ranking": {
+                            "score": score,
+                            "reasons": reasons,
+                        },
+                        "whyRecommended": " ; ".join(reasons[:2]),
+                        "questionsToAsk": _build_questions(partner_type, payload),
+                    }
+                )
+
+            all_results.extend(found_for_type[: int(matrix.get("maxResultsPerType", 8))])
+            continue
+
+        # ---- Normal Places/stub discovery flow for all other partner types ----
+
         radii: list[int] = [base_radius]
         if base_radius < 50:
             radii.append(50)
@@ -1064,7 +1236,6 @@ async def disposition_partners_search(
         found_for_type: list[dict] = []
 
         for radius in radii:
-            # Run each query template (weighted queries later; v1 uses all)
             for q in queries:
                 q_template = q.get("q") if isinstance(q, dict) else None
                 if not q_template:
@@ -1076,7 +1247,6 @@ async def disposition_partners_search(
                     .replace("{category}", payload.scenario.category or "")
                 )
 
-                # Allow hints to enrich search (v1)
                 if payload.scenario.brandHints:
                     query_str = f"{query_str} {' '.join(payload.scenario.brandHints[:2])}"
 
@@ -1090,7 +1260,6 @@ async def disposition_partners_search(
                 if cached is not None:
                     candidates = cached.get("candidates", [])
                 else:
-                    # Provider abstraction (stub or Google Places New)
                     candidates = provider.search(
                         PartnerDiscoveryQuery(
                             query=query_str,
@@ -1100,7 +1269,6 @@ async def disposition_partners_search(
                             partner_type=partner_type,
                             center_lat=center_lat,
                             center_lng=center_lng,
-                            # Optional: keep these default unless you later add localization inputs
                             language_code="en",
                             region_code="US",
                         )
@@ -1108,7 +1276,6 @@ async def disposition_partners_search(
                     _cache_set(cache_key, {"candidates": candidates})
 
                 for c in candidates:
-                    # Trust evaluation
                     sources = c.get("sources", {}) or {}
                     gates_eval, trust_score, signals = _evaluate_trust(
                         matrix,
@@ -1121,7 +1288,6 @@ async def disposition_partners_search(
 
                     rel = _relevance_score(c, query_str)
 
-                    # Be tolerant of missing distance in provider payload.
                     dist_miles_raw = c.get("distanceMiles", None)
                     try:
                         dist_miles = float(dist_miles_raw) if dist_miles_raw is not None else float(radius)
@@ -1155,11 +1321,7 @@ async def disposition_partners_search(
                             "contact": c.get("contact", {}),
                             "distanceMiles": c.get("distanceMiles"),
                             "rating": c.get("rating"),
-
-                            # Consumer facing trust signals
                             "userRatingsTotal": c.get("userRatingsTotal") or c.get("userRatingCount"),
-
-
                             "trust": {
                                 "trustScore": trust_score,
                                 "claimLevel": "claimed",
@@ -1175,19 +1337,15 @@ async def disposition_partners_search(
                         }
                     )
 
-                    # Stop collecting more candidates for this query if we have enough
                     if len(found_for_type) >= min_results:
                         break
 
-                # Stop running more queries at this radius if we have enough
                 if len(found_for_type) >= min_results:
                     break
 
-            # Stop expanding radius if we have enough
             if len(found_for_type) >= min_results:
                 break
 
-        # Deduplicate within partnerType by a stable fingerprint (stub partnerId is not stable)
         def _fingerprint(r: dict) -> str:
             c = r.get("contact") or {}
             name = _norm(r.get("name", ""))
@@ -1213,7 +1371,6 @@ async def disposition_partners_search(
 
         all_results.extend(deduped[: int(matrix.get("maxResultsPerType", 8))])
 
-    # Global ranking
     all_results_sorted = sorted(
         all_results,
         key=lambda x: float(x.get("ranking", {}).get("score", 0.0)),
@@ -1226,7 +1383,10 @@ async def disposition_partners_search(
         scenarioId=scenario.get("id", "unknown"),
         partnerTypes=[pt.get("type") for pt in partner_types if pt.get("type")],
         results=all_results_sorted[: int(matrix.get("maxResultsTotal", 15))],
-        disclaimer="Partner information is best-effort and may be outdated. Verify policies (bonding/insurance/receipts/fees) directly.",
+        disclaimer=(
+            "Partner information is best-effort and may be outdated. "
+            "For curated hub channels, verify current fees, intake rules, and authentication steps directly."
+        ),
         recommendedRefreshDays=int(matrix.get("recommendedRefreshDays", 30)),
     )
 

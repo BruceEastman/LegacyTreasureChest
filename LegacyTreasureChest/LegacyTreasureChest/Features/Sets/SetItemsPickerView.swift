@@ -221,6 +221,8 @@ struct SetItemsPickerView: View {
             return containsAny(["rug"])
         case .diningRoom, .bedroom, .furnitureSuite:
             return containsAny(["furniture", "decor"])
+        case .closetLot:
+            return containsAny(["clothing", "closet lot"])
         case .other:
             return true
         }

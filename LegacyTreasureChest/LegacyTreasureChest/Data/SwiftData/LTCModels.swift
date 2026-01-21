@@ -73,6 +73,7 @@ public enum SetType: String, Codable, CaseIterable, Sendable {
     case flatware = "Flatware/Silverware"
     case rugCollection = "Rug Collection"
     case furnitureSuite = "Furniture Suite"
+    case closetLot = "Closet Lot"
     case other = "Other"
 }
 

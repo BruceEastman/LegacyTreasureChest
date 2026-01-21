@@ -53,6 +53,8 @@ struct SetDetailView: View {
             return "Suggested: Furniture / Decor (Bedroom)"
         case .furnitureSuite:
             return "Suggested: Furniture / Decor"
+        case .closetLot:
+            return "Suggested: Clothing (Closet Lot)"
         case .other:
             return "Suggested: All Items (mixed set)"
         }

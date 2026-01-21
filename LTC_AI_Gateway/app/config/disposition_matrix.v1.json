@@ -61,6 +61,33 @@
     },
 
     {
+      "id": "clothing_luxury_med_high_value",
+      "priority": 65,
+      "when": {
+        "categories": ["Clothing"],
+        "valueBand": ["MED", "HIGH", "*"],
+        "bulky": false,
+        "goals": ["maximize_price", "balanced", "*"],
+        "chosenPaths": ["A", "B", "*"]
+      },
+      "partnerTypes": [
+        {
+          "type": "luxury_hub_mailin",
+          "queries": [
+            { "q": "luxury mail-in resale", "weight": 1.0 }
+          ],
+          "trustGates": [],
+          "rankWeights": {
+            "trustScore": 0.45,
+            "relevanceScore": 0.45,
+            "distanceScore": 0.05,
+            "reviewScore": 0.05
+          }
+        }
+      ]
+    },
+
+    {
       "id": "collectibles_cards_toys_balanced",
       "priority": 60,
       "when": {

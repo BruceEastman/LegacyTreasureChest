@@ -22,6 +22,10 @@ struct ItemPhotosSection: View {
     // Callback for when a photo thumbnail is tapped.
     // The parent view (ItemDetailView) can use this to present a preview.
     var onImageTap: (ItemImage) -> Void
+    
+    /// Optional callback invoked when a new image file is saved to disk.
+    /// Used by AddItemView to track paths for cleanup if the user cancels.
+    var onFileSaved: ((String) -> Void)? = nil
 
     // PhotosPicker state
     @State private var selectedItems: [PhotosPickerItem] = []
@@ -230,6 +234,7 @@ struct ItemPhotosSection: View {
                 }
 
                 let relativePath = try MediaStorage.saveImage(uiImage)
+                onFileSaved?(relativePath)
 
                 let newImage = ItemImage(filePath: relativePath)
                 newImage.item = item

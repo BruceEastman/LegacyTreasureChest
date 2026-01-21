@@ -1,4 +1,43 @@
 # Legacy Treasure Chest
+## Recent Update — Manual Item Creation with Photos (Stable, Cancel-Safe)
+
+**Status:** Implemented and verified  
+**Scope:** iOS UI / SwiftData (no backend changes)
+
+### What Changed
+Manual item creation now supports **adding photos during creation**, without forcing AI analysis or risking partial data persistence.
+
+Users can:
+- Create an item with **text + photos in a single flow**
+- Review photos before saving
+- **Cancel safely** without creating empty items or orphaned media files
+
+This restores the natural real-world workflow:
+> *“I’m holding the item → I add a photo → I add what I know → I save.”*
+
+### Why This Matters
+Previously, manual creation required photos to be added **after** the item was saved, which added friction and broke the natural capture moment.
+
+This update:
+- Improves capture ergonomics for single, high-attention items
+- Preserves batch photo workflows for high-volume intake
+- Maintains strict data integrity (no ghost items, no orphan files)
+
+### Architectural Principles Preserved
+- **Advisor, not operator**: AI analysis remains a deliberate, separate step
+- **Capture ≠ Analysis**: Item creation is fast and local; AI is opt-in
+- **Stability first**: No SwiftData objects or media files are persisted until Save
+- **Zero side effects on Cancel**: Cancel leaves no trace in storage or database
+
+### Implementation Notes (High Level)
+- Photos selected during creation are held **in memory**
+- Disk writes and `ItemImage` records are created **only after the item is saved**
+- Cancel simply dismisses the view — nothing to clean up
+
+This change lays a clean foundation for higher-value work:
+**category-specific valuation, liquidation strategy, and disposition advice** — the core differentiators of Legacy Treasure Chest.
+
+
 ## Status Update (2026-01-09) — Text-Only AI Analysis Now Works
 
 **What’s new**

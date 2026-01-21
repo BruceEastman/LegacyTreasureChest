@@ -5,9 +5,14 @@
 //  Full-screen form pushed from ItemsListView to create a new LTCItem.
 //  Saves to SwiftData and pops back to the list, which updates via @Query.
 //
+//  UPDATE (2026-01): Supports adding photos during item creation.
+//  Photos are kept in-memory until Save to avoid orphan files and to ensure Cancel creates nothing.
+//
 
 import SwiftUI
 import SwiftData
+import PhotosUI
+import UIKit
 
 struct AddItemView: View {
     @Environment(\.modelContext) private var modelContext
@@ -29,6 +34,7 @@ struct AddItemView: View {
     // UX feedback
     @State private var errorMessage: String?
     @State private var didSave: Bool = false
+    @State private var isSaving: Bool = false
 
     // Progressive disclosure persistence
     @AppStorage("ltc_fieldGuidanceCollapsed") private var fieldGuidanceCollapsed: Bool = false
@@ -37,9 +43,15 @@ struct AddItemView: View {
 
     private let autoCollapseThreshold: Int = 5
 
+    // MARK: - Photos (in-memory until Save)
+
+    @State private var selectedPhotoItems: [PhotosPickerItem] = []
+    @State private var pickedImages: [UIImage] = []
+    @State private var isProcessingPhotos: Bool = false
+
     // Simple validation: require a name
     private var canSave: Bool {
-        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isSaving
     }
 
     // Currency code based on current locale, defaulting to USD
@@ -96,6 +108,10 @@ struct AddItemView: View {
                     .lineLimit(3, reservesSpace: true)
             }
 
+            // MARK: - Photos (during creation, in-memory)
+
+            photosSection
+
             // MARK: - Details
 
             Section(header: Text("Details")) {
@@ -136,28 +152,29 @@ struct AddItemView: View {
                 footer: Text("💡 Best AI results: add key details first → add a photo → tap Improve with AI on the item details screen.")
                     .font(Theme.secondaryFont)
                     .foregroundStyle(Theme.textSecondary)
-            ) {
-                EmptyView()
-            }
+            ) { EmptyView() }
 
             Section(
-                footer: Text("You can add photos, documents, audio stories, and beneficiaries from the item details screen.")
+                footer: Text("You can add documents, audio stories, and beneficiaries from the item details screen.")
                     .font(Theme.secondaryFont)
                     .foregroundStyle(Theme.textSecondary)
-            ) {
-                EmptyView()
-            }
+            ) { EmptyView() }
         }
         .navigationTitle("Add Item")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") { dismiss() }
+                    .disabled(isSaving)
             }
 
             ToolbarItem(placement: .confirmationAction) {
-                Button("Save") { saveItem() }
-                    .disabled(!canSave)
+                if isSaving {
+                    ProgressView()
+                } else {
+                    Button("Save") { saveItem() }
+                        .disabled(!canSave)
+                }
             }
         }
         .onAppear {
@@ -166,6 +183,148 @@ struct AddItemView: View {
                 fieldGuidanceCollapsed = itemCreationCount >= autoCollapseThreshold
             }
         }
+        // When picker selection changes, load images into memory.
+        .onChange(of: selectedPhotoItems) {
+            guard !selectedPhotoItems.isEmpty else { return }
+            Task { @MainActor in
+                await loadPickedPhotos(selectedPhotoItems)
+            }
+        }
+    }
+
+    // MARK: - Photos UI
+
+    private var photosSection: some View {
+        Section {
+            if pickedImages.isEmpty {
+                VStack(alignment: .center, spacing: 12) {
+                    Image(systemName: "photo.on.rectangle")
+                        .font(.system(size: 40))
+                        .foregroundStyle(Theme.textSecondary)
+
+                    Text("Add photos of this item")
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                        .multilineTextAlignment(.center)
+
+                    PhotosPicker(
+                        selection: $selectedPhotoItems,
+                        maxSelectionCount: 10,
+                        matching: .images,
+                        photoLibrary: .shared()
+                    ) {
+                        HStack {
+                            Image(systemName: "plus")
+                            Text("Add Photo")
+                                .font(Theme.bodyFont)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isProcessingPhotos || isSaving)
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 8)
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    ScrollView(.horizontal, showsIndicators: true) {
+                        HStack(spacing: 10) {
+                            ForEach(Array(pickedImages.enumerated()), id: \.offset) { index, uiImage in
+                                ZStack(alignment: .topTrailing) {
+                                    Image(uiImage: uiImage)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 110, height: 110)
+                                        .clipped()
+                                        .cornerRadius(10)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 10)
+                                                .stroke(Theme.textSecondary.opacity(0.2), lineWidth: 0.5)
+                                        )
+
+                                    Button {
+                                        removePickedImage(at: index)
+                                    } label: {
+                                        Image(systemName: "trash.fill")
+                                            .font(.system(size: 13, weight: .semibold))
+                                            .foregroundColor(.white)
+                                            .padding(6)
+                                            .background(Circle().fill(Theme.destructive.opacity(0.9)))
+                                    }
+                                    .padding(4)
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+
+                    if isProcessingPhotos {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                            Text("Adding photos…")
+                                .font(Theme.secondaryFont)
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                        .padding(.top, 2)
+                    }
+
+                    PhotosPicker(
+                        selection: $selectedPhotoItems,
+                        maxSelectionCount: 10,
+                        matching: .images,
+                        photoLibrary: .shared()
+                    ) {
+                        HStack {
+                            Image(systemName: "plus")
+                            Text("Add More Photos")
+                                .font(Theme.secondaryFont)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isProcessingPhotos || isSaving)
+                }
+                .padding(.vertical, 4)
+            }
+        } header: {
+            Text("Photos")
+                .ltcSectionHeaderStyle()
+        }
+    }
+
+    @MainActor
+    private func loadPickedPhotos(_ items: [PhotosPickerItem]) async {
+        isProcessingPhotos = true
+        defer {
+            isProcessingPhotos = false
+            selectedPhotoItems = [] // reset so picker can be used again
+        }
+
+        var encounteredError = false
+
+        for pickerItem in items {
+            do {
+                guard let data = try await pickerItem.loadTransferable(type: Data.self) else { continue }
+                guard let uiImage = UIImage(data: data) else {
+                    encounteredError = true
+                    continue
+                }
+                pickedImages.append(uiImage)
+            } catch {
+                encounteredError = true
+                print("❌ Failed to load picked photo: \(error)")
+            }
+        }
+
+        if encounteredError {
+            errorMessage = "Unable to add one or more photos. Please try again."
+        }
+    }
+
+    private func removePickedImage(at index: Int) {
+        guard pickedImages.indices.contains(index) else { return }
+        pickedImages.remove(at: index)
     }
 
     // MARK: - Save
@@ -173,6 +332,7 @@ struct AddItemView: View {
     private func saveItem() {
         errorMessage = nil
         didSave = false
+        isSaving = true
 
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedDescription = itemDescription.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -183,22 +343,42 @@ struct AddItemView: View {
             category: selectedCategory,
             value: value ?? 0
         )
-
-        // Ensure quantity is always valid.
         item.quantity = max(quantity, 1)
 
         modelContext.insert(item)
 
+        // If image saving fails mid-way, we delete any files we already created (best effort).
+        var savedPaths: [String] = []
+
         do {
+            // First save the item itself.
             try modelContext.save()
+
+            // Now attach photos (disk + SwiftData ItemImage).
+            for uiImage in pickedImages {
+                let relativePath = try MediaStorage.saveImage(uiImage)
+                savedPaths.append(relativePath)
+
+                let newImage = ItemImage(filePath: relativePath)
+                newImage.item = item
+                item.images.append(newImage)
+                modelContext.insert(newImage)
+            }
+
+            // Save again with images attached.
+            try modelContext.save()
+
             didSave = true
-
-            // Progressive disclosure: track creation count
             itemCreationCount += 1
-
+            isSaving = false
             dismiss()
         } catch {
-            // If save fails, keep the view open and show the error
+            // Rollback best-effort for saved image files.
+            for path in savedPaths {
+                try? MediaStorage.deleteFile(at: path)
+            }
+
+            isSaving = false
             errorMessage = "Could not save item: \(error.localizedDescription)"
         }
     }
