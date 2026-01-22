@@ -14,6 +14,24 @@ struct SetEditorSheet: View {
         case edit(LTCItemSet)
     }
 
+    enum ClosetConditionBand: String, CaseIterable, Identifiable {
+        case likeNew = "LikeNew"
+        case good = "Good"
+        case fair = "Fair"
+        case poor = "Poor"
+
+        var id: String { rawValue }
+
+        var displayLabel: String {
+            switch self {
+            case .likeNew: return "Like New"
+            case .good: return "Good"
+            case .fair: return "Fair"
+            case .poor: return "Poor"
+            }
+        }
+    }
+
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
 
@@ -25,6 +43,12 @@ struct SetEditorSheet: View {
     @State private var completeness: Completeness = .unknown
     @State private var story: String = ""
     @State private var notes: String = ""
+
+    // Closet lot metadata (v1 minimal capture)
+    @State private var approxItemCount: String = ""
+    @State private var sizeBand: String = ""
+    @State private var conditionBand: ClosetConditionBand = .good
+    @State private var brandList: String = ""
 
     init(mode: Mode) {
         self.mode = mode
@@ -51,6 +75,31 @@ struct SetEditorSheet: View {
                     ForEach(Completeness.allCases, id: \.self) { c in
                         Text(c.rawValue).tag(c)
                     }
+                }
+            }
+
+            if setType == .closetLot {
+                Section("Closet Lot Details (recommended)") {
+                    TextField("Approx item count (e.g., 20–40)", text: $approxItemCount)
+                        .textInputAutocapitalization(.never)
+
+                    TextField("Size band (e.g., Men’s 42R / L, Women’s M, Mixed)", text: $sizeBand)
+
+                    Picker("Condition", selection: $conditionBand) {
+                        ForEach(ClosetConditionBand.allCases) { b in
+                            Text(b.displayLabel).tag(b)
+                        }
+                    }
+
+                    TextField("Brands (comma-separated, up to ~12)", text: $brandList)
+                }
+
+                Section("Closet Lot Guidance") {
+                    Text("Photos to capture:")
+                    Text("• Rail / pile overview")
+                    Text("• Label collage (5–12 labels)")
+                    Text("• 1–3 hero examples")
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -96,10 +145,28 @@ struct SetEditorSheet: View {
         completeness = itemSet.completeness
         story = itemSet.story ?? ""
         notes = itemSet.notes ?? ""
+
+        // Closet lot fields (safe defaults)
+        approxItemCount = itemSet.closetApproxItemCount ?? ""
+        sizeBand = itemSet.closetSizeBand ?? ""
+        brandList = itemSet.closetBrandList ?? ""
+
+        if let raw = itemSet.closetConditionBandRaw,
+           let parsed = ClosetConditionBand(rawValue: raw) {
+            conditionBand = parsed
+        } else {
+            conditionBand = .good
+        }
     }
 
     private func save() {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Normalize closet fields (store only when closetLot; otherwise clear)
+        let savedApproxCount = setType == .closetLot ? approxItemCount.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty : nil
+        let savedSizeBand = setType == .closetLot ? sizeBand.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty : nil
+        let savedBrandList = setType == .closetLot ? brandList.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty : nil
+        let savedConditionRaw = setType == .closetLot ? conditionBand.rawValue : nil
 
         switch mode {
         case .create:
@@ -114,6 +181,13 @@ struct SetEditorSheet: View {
                 createdAt: .now,
                 updatedAt: .now
             )
+
+            // Closet lot fields
+            newSet.closetApproxItemCount = savedApproxCount
+            newSet.closetSizeBand = savedSizeBand
+            newSet.closetConditionBandRaw = savedConditionRaw
+            newSet.closetBrandList = savedBrandList
+
             modelContext.insert(newSet)
 
         case .edit(let itemSet):
@@ -123,6 +197,13 @@ struct SetEditorSheet: View {
             itemSet.completeness = completeness
             itemSet.story = story.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
             itemSet.notes = notes.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+
+            // Closet lot fields
+            itemSet.closetApproxItemCount = savedApproxCount
+            itemSet.closetSizeBand = savedSizeBand
+            itemSet.closetConditionBandRaw = savedConditionRaw
+            itemSet.closetBrandList = savedBrandList
+
             itemSet.updatedAt = .now
         }
     }

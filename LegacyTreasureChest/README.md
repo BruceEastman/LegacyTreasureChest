@@ -1,4 +1,55 @@
 # Legacy Treasure Chest
+## Project Status Update — Luxury Clothing & Closet Lots (2026-01-21)
+
+This project has completed a **foundational milestone** in category-specific disposition planning, using **Luxury Clothing** as the first end-to-end vertical slice.
+
+### What Was Completed
+
+**1. Category Reality Locked (Luxury Clothing)**
+- Confirmed that **Luxury / Designer clothing is not a local-discovery problem** in most markets.
+- Implemented **hub-only, specialist-first disposition** for Luxury Clothing.
+- Local consignment is no longer the default recommendation for this category.
+
+**2. New Set Pattern Introduced: `Closet Lot`**
+- Added a new `SetType.closetLot` to support selling clothing **as a lot**, without itemizing each garment.
+- This enables realistic closet workflows while preserving the existing Item → Brief → Plan → Execute architecture.
+
+**3. Disposition Engine Enhancement**
+- Added a curated partner type (`luxury_hub_mailin`) that:
+  - bypasses Google Places
+  - returns specialist, national channels appropriate for luxury apparel
+  - executes instantly and deterministically
+- Existing categories and partner discovery behavior remain unchanged.
+
+**4. UI & Model Alignment**
+- Updated Set UI logic to properly handle `closetLot`.
+- Ensured all enum switches are exhaustive and stable.
+- Preserved conservative, category-based item suggestion logic (no premature inference).
+
+**5. Authoritative Spec Created**
+- Added **Clothing Disposition Spec v1** as the single source of truth for:
+  - lot metadata
+  - photo requirements
+  - allowed disposition paths
+  - Brief and Plan output contracts
+- This spec will drive backend prompts and frontend capture going forward.
+
+### Current State
+- Architecture is stable.
+- Changes are additive and non-breaking.
+- Luxury Clothing now reflects real-world market behavior.
+- The system is ready to extend **Brief + Plan generation for `closetLot`** using the approved spec.
+
+### Next Focus
+- Backend Brief/Plan support for:
+  - `scope = set`
+  - `setType = closetLot`
+- Continue spec-first, incremental category expansion using the same pattern.
+
+---
+
+*Legacy Treasure Chest continues to prioritize correctness, executor-grade guidance, and real-world usability over speed to MVP.*
+
 ## Recent Update — Manual Item Creation with Photos (Stable, Cancel-Safe)
 
 **Status:** Implemented and verified  

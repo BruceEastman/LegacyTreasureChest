@@ -448,6 +448,13 @@ public final class LTCItemSet {
     public var setTypeRaw: String
     public var story: String?
     public var notes: String?
+    
+    // Closet Lot metadata (Clothing v1) — optional, only used when setType == .closetLot
+    public var closetApproxItemCount: String?
+    public var closetSizeBand: String?
+    public var closetConditionBandRaw: String?   // LikeNew | Good | Fair | Poor
+    public var closetBrandList: String?          // comma-separated free text
+
 
     public var sellTogetherPreferenceRaw: String
     public var completenessRaw: String
@@ -490,6 +497,10 @@ public final class LTCItemSet {
         setType: SetType = .other,
         story: String? = nil,
         notes: String? = nil,
+        closetApproxItemCount: String? = nil,
+        closetSizeBand: String? = nil,
+        closetConditionBandRaw: String? = nil,
+        closetBrandList: String? = nil,
         sellTogetherPreference: SellTogetherPreference = .togetherPreferred,
         completeness: Completeness = .unknown,
         estimatedSetPremium: Double? = nil,
@@ -501,6 +512,10 @@ public final class LTCItemSet {
         self.setTypeRaw = setType.rawValue
         self.story = story
         self.notes = notes
+        self.closetApproxItemCount = closetApproxItemCount
+        self.closetSizeBand = closetSizeBand
+        self.closetConditionBandRaw = closetConditionBandRaw
+        self.closetBrandList = closetBrandList
         self.sellTogetherPreferenceRaw = sellTogetherPreference.rawValue
         self.completenessRaw = completeness.rawValue
         self.estimatedSetPremium = estimatedSetPremium
@@ -667,6 +682,12 @@ public final class LTCSet {
     public var setTypeRaw: String
     public var story: String?
     public var notes: String?
+    
+    // Closet Lot metadata (Clothing v1) — optional, only used when setType == .closetLot
+    public var closetApproxItemCount: String?
+    public var closetSizeBand: String?
+    public var closetConditionBandRaw: String?   // LikeNew | Good | Fair | Poor
+    public var closetBrandList: String?          // comma-separated free text
 
     public var sellTogetherPreferenceRaw: String
     public var completenessRaw: String
@@ -709,6 +730,10 @@ public final class LTCSet {
         setType: SetType = .other,
         story: String? = nil,
         notes: String? = nil,
+        closetApproxItemCount: String? = nil,
+        closetSizeBand: String? = nil,
+        closetConditionBandRaw: String? = nil,
+        closetBrandList: String? = nil,
         sellTogetherPreference: SellTogetherPreference = .togetherPreferred,
         completeness: Completeness = .unknown,
         estimatedSetPremium: Double? = nil,
@@ -720,6 +745,10 @@ public final class LTCSet {
         self.setTypeRaw = setType.rawValue
         self.story = story
         self.notes = notes
+        self.closetApproxItemCount = closetApproxItemCount
+        self.closetSizeBand = closetSizeBand
+        self.closetConditionBandRaw = closetConditionBandRaw
+        self.closetBrandList = closetBrandList
         self.sellTogetherPreferenceRaw = sellTogetherPreference.rawValue
         self.completenessRaw = completeness.rawValue
         self.estimatedSetPremium = estimatedSetPremium

@@ -217,10 +217,13 @@ struct SetLiquidationSectionView: View {
                     .font(.subheadline)
                     .bold()
 
-                Text(dto.reasoning)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(6)
+                ScrollView {
+                    Text(dto.reasoning)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxHeight: 160)
 
                 if !dto.missingDetails.isEmpty {
                     Divider()
@@ -240,7 +243,7 @@ struct SetLiquidationSectionView: View {
                 .font(.footnote)
         }
     }
-
+    
     private func shouldBlockPlanCreation(from briefRecord: LiquidationBriefRecord) -> Bool {
         guard let dto = LiquidationJSONCoding.tryDecode(LiquidationBriefDTO.self, from: briefRecord.payloadJSON) else {
             return true

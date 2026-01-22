@@ -121,31 +121,44 @@ struct LiquidationAIService {
         return try await generatePlanBackendFirst(from: req)
     }
 
-    // MARK: - Backend-first with fallback (Brief)
+    // MARK: - Backend-first with smart fallback (Brief)
 
     private func generateBriefBackendFirst(from req: LiquidationBriefRequest) async throws -> LiquidationBriefDTO {
 
         let shouldTryBackend = flags.enableMarketAI
 
-        if shouldTryBackend {
-            do {
-                let dto = try await backend.generateLiquidationBrief(request: req)
-
-                if dto.schemaVersion != req.schemaVersion {
-                    debugLog("⚠️ Liquidation brief schemaVersion mismatch. req=\(req.schemaVersion) resp=\(dto.schemaVersion)")
-                }
-
-                return dto
-            } catch {
-                debugLog("⚠️ Backend liquidation brief failed; using local fallback. Error: \(error)")
-                // ✅ IMPORTANT: propagate the backend error into the local fallback DTO
-                return localBrief.generate(from: req, backendError: error)
-            }
-        } else {
+        guard shouldTryBackend else {
             debugLog("ℹ️ Backend liquidation brief skipped (FeatureFlags.enableMarketAI == false). Using local.")
+            return localBrief.generate(from: req, backendError: nil)
         }
 
-        return localBrief.generate(from: req, backendError: nil)
+        do {
+            let dto = try await backend.generateLiquidationBrief(request: req)
+
+            if dto.schemaVersion != req.schemaVersion {
+                debugLog("⚠️ Liquidation brief schemaVersion mismatch. req=\(req.schemaVersion) resp=\(dto.schemaVersion)")
+            }
+
+            return dto
+
+        } catch {
+            // Transport failures (device can't reach server, timeout, etc.) -> fallback OK
+            let isTransportFailure: Bool = {
+                if error is URLError { return true }
+                let ns = error as NSError
+                if ns.domain == NSURLErrorDomain { return true }
+                return false
+            }()
+
+            if isTransportFailure {
+                debugLog("⚠️ Backend liquidation brief transport failure; using local fallback. Error: \(error)")
+                return localBrief.generate(from: req, backendError: error)
+            } else {
+                // Decode/schema/model drift -> do NOT hide it with a misleading local brief
+                debugLog("❌ Backend liquidation brief decode/schema failure; NOT falling back. Error: \(error)")
+                throw error
+            }
+        }
     }
 
     // MARK: - Backend-first with fallback (Plan)
@@ -194,6 +207,57 @@ enum LiquidationRequestBuilder {
         let valuation = item.valuation
         let photoBase64: String? = imageData?.base64EncodedString()
 
+        // If the item belongs to a Closet Lot set, enrich setContext.story with lot metadata.
+        let setContext: LiquidationSetContext? = item.set.map { set in
+            let storyWithClosetLotMetadata: String? = {
+                guard set.setType == .closetLot else { return set.story }
+
+                var lines: [String] = []
+                if let base = set.story?.trimmingCharacters(in: .whitespacesAndNewlines), !base.isEmpty {
+                    lines.append(base)
+                }
+
+                var meta: [String] = []
+                if let v = set.closetApproxItemCount?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty {
+                    meta.append("Approx item count: \(v)")
+                }
+                if let v = set.closetSizeBand?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty {
+                    meta.append("Size band: \(v)")
+                }
+                if let v = set.closetConditionBandRaw?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty {
+                    meta.append("Condition band: \(v)")
+                }
+                if let v = set.closetBrandList?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty {
+                    meta.append("Brands: \(v)")
+                }
+
+                if !meta.isEmpty {
+                    if !lines.isEmpty { lines.append("") }
+                    lines.append("Closet Lot Metadata:")
+                    lines.append(contentsOf: meta.map { "• \($0)" })
+                }
+
+                let joined = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+                return joined.isEmpty ? nil : joined
+            }()
+
+            return LiquidationSetContext(
+                setName: set.name,
+                setType: set.setTypeRaw,
+                story: storyWithClosetLotMetadata,
+                sellTogetherPreference: set.sellTogetherPreferenceRaw,
+                completeness: set.completenessRaw,
+                memberSummaries: set.items.map {
+                    LiquidationMemberSummary(
+                        title: $0.name,
+                        category: $0.category,
+                        quantity: $0.quantity,
+                        unitValue: $0.value
+                    )
+                }
+            )
+        }
+
         return LiquidationBriefRequest(
             schemaVersion: 1,
             scope: .item,
@@ -207,23 +271,7 @@ enum LiquidationRequestBuilder {
             valuationLikely: valuation?.estimatedValue,
             valuationHigh: valuation?.valueHigh,
             photoJpegBase64: photoBase64,
-            setContext: item.set.map { set in
-                LiquidationSetContext(
-                    setName: set.name,
-                    setType: set.setTypeRaw,
-                    story: set.story,
-                    sellTogetherPreference: set.sellTogetherPreferenceRaw,
-                    completeness: set.completenessRaw,
-                    memberSummaries: set.items.map {
-                        LiquidationMemberSummary(
-                            title: $0.name,
-                            category: $0.category,
-                            quantity: $0.quantity,
-                            unitValue: $0.value
-                        )
-                    }
-                )
-            },
+            setContext: setContext,
             inputs: LiquidationInputsDTO(goal: goal, constraints: constraints, locationHint: locationHint)
         )
     }
@@ -256,10 +304,43 @@ enum LiquidationRequestBuilder {
             )
         }
 
+        // If this is a Clothing closet lot, append the required lot metadata into story for the backend.
+        let storyWithClosetLotMetadata: String? = {
+            guard itemSet.setType == .closetLot else { return itemSet.story }
+
+            var lines: [String] = []
+            if let base = itemSet.story?.trimmingCharacters(in: .whitespacesAndNewlines), !base.isEmpty {
+                lines.append(base)
+            }
+
+            var meta: [String] = []
+            if let v = itemSet.closetApproxItemCount?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty {
+                meta.append("Approx item count: \(v)")
+            }
+            if let v = itemSet.closetSizeBand?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty {
+                meta.append("Size band: \(v)")
+            }
+            if let v = itemSet.closetConditionBandRaw?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty {
+                meta.append("Condition band: \(v)")
+            }
+            if let v = itemSet.closetBrandList?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty {
+                meta.append("Brands: \(v)")
+            }
+
+            if !meta.isEmpty {
+                if !lines.isEmpty { lines.append("") }
+                lines.append("Closet Lot Metadata:")
+                lines.append(contentsOf: meta.map { "• \($0)" })
+            }
+
+            let joined = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            return joined.isEmpty ? nil : joined
+        }()
+
         let context = LiquidationSetContext(
             setName: itemSet.name,
             setType: itemSet.setType.rawValue,
-            story: itemSet.story,
+            story: storyWithClosetLotMetadata,
             sellTogetherPreference: itemSet.sellTogetherPreference.rawValue,
             completeness: itemSet.completeness.rawValue,
             memberSummaries: summaries
@@ -269,8 +350,8 @@ enum LiquidationRequestBuilder {
             schemaVersion: 1,
             scope: .set,
             title: itemSet.name,
-            description: itemSet.story ?? itemSet.notes,
-            category: itemSet.setType.rawValue,
+            description: storyWithClosetLotMetadata ?? itemSet.notes,
+            category: (itemSet.setType == .closetLot ? "Clothing" : itemSet.setType.rawValue),
             quantity: max(1, totalQty == 0 ? memberItems.count : totalQty),
             unitValue: nil,
             currencyCode: "USD",
@@ -291,12 +372,45 @@ enum LiquidationRequestBuilder {
         locationHint: String?
     ) -> LiquidationBriefRequest {
 
+        // If this is a Clothing closet lot, append the required lot metadata into story for the backend.
+        let storyWithClosetLotMetadata: String? = {
+            guard set.setType == .closetLot else { return set.story }
+
+            var lines: [String] = []
+            if let base = set.story?.trimmingCharacters(in: .whitespacesAndNewlines), !base.isEmpty {
+                lines.append(base)
+            }
+
+            var meta: [String] = []
+            if let v = set.closetApproxItemCount?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty {
+                meta.append("Approx item count: \(v)")
+            }
+            if let v = set.closetSizeBand?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty {
+                meta.append("Size band: \(v)")
+            }
+            if let v = set.closetConditionBandRaw?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty {
+                meta.append("Condition band: \(v)")
+            }
+            if let v = set.closetBrandList?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty {
+                meta.append("Brands: \(v)")
+            }
+
+            if !meta.isEmpty {
+                if !lines.isEmpty { lines.append("") }
+                lines.append("Closet Lot Metadata:")
+                lines.append(contentsOf: meta.map { "• \($0)" })
+            }
+
+            let joined = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            return joined.isEmpty ? nil : joined
+        }()
+
         return LiquidationBriefRequest(
             schemaVersion: 1,
             scope: .set,
             title: set.name,
-            description: set.story ?? set.notes,
-            category: set.setTypeRaw,
+            description: storyWithClosetLotMetadata ?? set.notes,
+            category: (set.setType == .closetLot ? "Clothing" : set.setTypeRaw),
             quantity: set.items.count,
             unitValue: nil,
             currencyCode: "USD",
@@ -307,7 +421,7 @@ enum LiquidationRequestBuilder {
             setContext: LiquidationSetContext(
                 setName: set.name,
                 setType: set.setTypeRaw,
-                story: set.story,
+                story: storyWithClosetLotMetadata,
                 sellTogetherPreference: set.sellTogetherPreferenceRaw,
                 completeness: set.completenessRaw,
                 memberSummaries: set.items.map {
