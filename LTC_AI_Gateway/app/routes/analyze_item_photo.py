@@ -249,7 +249,6 @@ def _normalize_effort_value(effort: Any) -> Any:
     }
     return alias.get(s, effort)
 
-
 def _normalize_liquidation_brief_obj(*, raw_json: str, request: LiquidationBriefRequest) -> Dict[str, Any]:
     """
     Make the backend tolerant of:
@@ -257,7 +256,11 @@ def _normalize_liquidation_brief_obj(*, raw_json: str, request: LiquidationBrief
     - missing required top-level fields we can safely infer/stamp (scope, generatedAt)
     - missing pathOptions ids (generate UUIDs pre-validation)
     - enum drift for recommendedPath/pathOptions[].path and effort
+    - netProceeds drift (string ranges) -> MoneyRangeDTO dict
+    - missing label -> fill from path
     """
+    import re
+
     obj_any = _parse_llm_json_obj(raw_json)
     obj_any = _unwrap_singleton_wrapper(obj_any)
 
@@ -276,16 +279,83 @@ def _normalize_liquidation_brief_obj(*, raw_json: str, request: LiquidationBrief
     # Normalize paths
     if "recommendedPath" in obj:
         obj["recommendedPath"] = _normalize_path_value(obj.get("recommendedPath"))
+
+    # Helpers
+    currency = request.currencyCode or "USD"
+
+    label_by_path = {
+        "pathA_maximizePrice": "Maximize Price (DIY or multi-step)",
+        "pathB_delegateConsign": "Delegate to Specialists (Consign / Hub Mail-In)",
+        "pathC_quickExit": "Quick Exit (Fast, lower return)",
+        "donate": "Donate / Discard",
+        "needsInfo": "Needs More Info (Collect details first)",
+    }
+
+    def _parse_money_range(s: str) -> dict:
+        """
+        Accepts strings like:
+        - "500 - 3000 USD"
+        - "0 USD"
+        - "$400-$2500"
+        - "Unknown"
+        Returns MoneyRangeDTO-like dict.
+        """
+        txt = (s or "").strip()
+        if not txt or txt.lower() in {"unknown", "n/a", "na", "tbd"}:
+            return {"currencyCode": currency, "low": None, "likely": None, "high": None}
+
+        # Extract numbers (ints or floats)
+        nums = re.findall(r"(\d+(?:\.\d+)?)", txt.replace(",", ""))
+        if not nums:
+            return {"currencyCode": currency, "low": None, "likely": None, "high": None}
+
+        values = [float(n) for n in nums]
+        if len(values) == 1:
+            v = values[0]
+            return {"currencyCode": currency, "low": v, "likely": v, "high": v}
+
+        # Use first two as low/high; likely = midpoint
+        low = values[0]
+        high = values[1]
+        if high < low:
+            low, high = high, low
+        likely = round((low + high) / 2.0, 2)
+        return {"currencyCode": currency, "low": low, "likely": likely, "high": high}
+
     if "pathOptions" in obj and isinstance(obj["pathOptions"], list):
         for opt in obj["pathOptions"]:
-            if isinstance(opt, dict):
-                # Pre-generate ID if missing (since id is required by DTO)
-                if not opt.get("id"):
-                    opt["id"] = str(uuid4())
-                if "path" in opt:
-                    opt["path"] = _normalize_path_value(opt.get("path"))
-                if "effort" in opt:
-                    opt["effort"] = _normalize_effort_value(opt.get("effort"))
+            if not isinstance(opt, dict):
+                continue
+
+            # Pre-generate ID if missing (since id is required by DTO)
+            if not opt.get("id"):
+                opt["id"] = str(uuid4())
+
+            # Normalize path
+            if "path" in opt:
+                opt["path"] = _normalize_path_value(opt.get("path"))
+
+            # Fill label if missing
+            if not opt.get("label"):
+                p = opt.get("path")
+                if isinstance(p, str) and p in label_by_path:
+                    opt["label"] = label_by_path[p]
+                else:
+                    opt["label"] = "Recommended Path"
+
+            # Normalize effort
+            if "effort" in opt:
+                opt["effort"] = _normalize_effort_value(opt.get("effort"))
+
+            # Coerce netProceeds into MoneyRangeDTO dict if needed
+            if "netProceeds" in opt:
+                if isinstance(opt["netProceeds"], str):
+                    opt["netProceeds"] = _parse_money_range(opt["netProceeds"])
+                elif opt["netProceeds"] is None:
+                    # keep None; DTO allows Optional
+                    pass
+                elif isinstance(opt["netProceeds"], dict):
+                    opt["netProceeds"].setdefault("currencyCode", currency)
 
     # Ensure lists exist if omitted (to avoid nulls)
     if obj.get("pathOptions") is None:
@@ -326,7 +396,6 @@ def _normalize_liquidation_plan_obj(*, raw_json: str, request: LiquidationPlanRe
 # ---------------------------------------------------------------------------
 # Liquidation prompt helpers
 # ---------------------------------------------------------------------------
-
 def _build_liquidation_brief_prompt(payload: LiquidationBriefRequest) -> str:
     title = payload.title or "Untitled Item"
     description = payload.description or ""
@@ -337,7 +406,30 @@ def _build_liquidation_brief_prompt(payload: LiquidationBriefRequest) -> str:
     goal = payload.inputs.goal if payload.inputs and payload.inputs.goal else "balanced"
     location = payload.inputs.locationHint if payload.inputs else None
 
-    return f"""You are an expert estate liquidation assistant.
+    # Set context (optional)
+    set_name = payload.setContext.setName if payload.setContext else None
+    set_type = payload.setContext.setType if payload.setContext else None
+    set_story = payload.setContext.story if payload.setContext else None
+    set_sell_pref = payload.setContext.sellTogetherPreference if payload.setContext else None
+    set_completeness = payload.setContext.completeness if payload.setContext else None
+
+    member_lines = []
+    if payload.setContext and payload.setContext.memberSummaries:
+        for m in payload.setContext.memberSummaries[:50]:
+            member_lines.append(
+                f"- {m.title or 'Item'} | cat={m.category or 'unknown'} | qty={m.quantity or 'n/a'} | unitValue={m.unitValue or 'n/a'}"
+            )
+    member_block = "\n".join(member_lines) if member_lines else "(none)"
+
+    is_clothing_closetlot = (
+        (payload.scope or "").strip().lower() == "set"
+        and (category or "").strip().lower() == "clothing"
+        and (set_type or "").strip().lower() == "closetlot"
+    )
+
+    if not is_clothing_closetlot:
+        # Default / existing behavior (unchanged)
+        return f"""You are an expert estate liquidation assistant.
 Return STRICT JSON ONLY matching LiquidationBriefDTO. No markdown.
 
 IMPORTANT:
@@ -363,44 +455,122 @@ Rules:
 - pathOptions[].id MUST be a UUID string
 """
 
+    # Clothing closet-lot (spec v1)
+    # NOTE: We express "hub-first luxury mail-in" as pathB_delegateConsign (delegate to specialists),
+    # and explicitly name the partnerType 'luxury_hub_mailin' in reasoning + actionSteps.
+    return f"""You are an expert CLOTHING liquidation assistant for estate cleanouts.
 
-def _build_liquidation_brief_repair_prompt(*, original_prompt: str, raw_json: str, validation_error: str) -> str:
-    return f"""{original_prompt}
+Return STRICT JSON ONLY matching LiquidationBriefDTO. No markdown.
 
-The JSON you returned DID NOT validate against the LiquidationBriefDTO schema.
+IMPORTANT:
+- Return a FLAT JSON object (no wrapper key like "LiquidationBriefDTO").
+- Do NOT nest the response under any extra keys.
 
-Common mistakes to avoid:
-- Do NOT wrap the JSON in a top-level key like "LiquidationBriefDTO".
-- Return one FLAT object only.
+This request is governed by: "LTC Category Disposition Spec — Clothing (v1)".
+Apply its rails exactly:
+- Avoid false local optimism for luxury clothing.
+- Route Tier 1 luxury/designer to hub specialists by default (hub-first), even in major cities.
+- Non-luxury clothing defaults to convenience pathways (donate/local thrift) unless LikeNew and user explicitly wants effort.
+- Do NOT donate until luxury potential is ruled out.
+- For Poor condition: default donate/discard unless brand is Tier 1 and defect is minor/repairable.
 
-Validation error:
-{validation_error}
+Context:
+- Scope: set
+- SetType: closetLot
+- SetName: {set_name or "(none)"}
+- Title: {title}
+- Description: {description}
+- Category: Clothing
+- Goal: {goal}
+- Location: {location or "none"}
+- Currency: {currency}
 
-Your previous JSON:
-{raw_json}
+Set metadata (may be embedded in story/notes):
+- story/notes: {set_story or "(none)"}
+- sellTogetherPreference: {set_sell_pref or "(none)"}
+- completeness: {set_completeness or "(none)"}
 
-Return STRICT JSON ONLY that fixes the schema errors. No markdown. No backticks.
+Member summaries (optional grounding; do not require itemization):
+{member_block}
+
+Your job:
+1) Classify the lot into Tier 1 (Luxury/Designer), Tier 2 (Better contemporary), Tier 3 (Mainstream) using any brand clues in description/story/photos.
+2) Recommend a channel that matches market reality:
+   - Tier 1 → hub-first specialist mail-in (partnerType: luxury_hub_mailin)
+   - Tier 2 → selective mail-in resale / aggregator (or delegate)
+   - Tier 3 → donation/local thrift (local resale only if LikeNew + user wants time tradeoff)
+3) Provide executor-grade rails and next steps for a CLOSET LOT (set), not individual garment listings.
+
+Output requirements (MUST comply with LiquidationBriefDTO):
+- Return a SINGLE FLAT JSON object matching LiquidationBriefDTO EXACTLY.
+- Do NOT include any fields that are not in the schema (e.g., do NOT add "partnerType" inside pathOptions).
+
+LiquidationBriefDTO requirements (no example JSON):
+
+Top-level fields REQUIRED:
+- schemaVersion (int)
+- scope (string; must be "set")
+- generatedAt (ISO-8601 datetime string)
+- recommendedPath (one of: pathA_maximizePrice | pathB_delegateConsign | pathC_quickExit | donate | needsInfo)
+- reasoning (string)
+- pathOptions (array)
+- actionSteps (array of strings)
+
+Each pathOptions element MUST include:
+- id (UUID string)
+- path (one of: pathA_maximizePrice | pathB_delegateConsign | pathC_quickExit | donate | needsInfo)
+- label (string, required)
+- netProceeds (object with keys: currencyCode, low, likely, high; low/likely/high are numbers or null)
+- effort (one of: low | medium | high | veryHigh)
+- timeEstimate (string, optional)
+- risks (array of strings)
+- logisticsNotes (string, optional)
+
+Rules:
+- Do NOT include any fields not in the schema (e.g., do NOT add partnerType inside pathOptions).
+- netProceeds MUST be an object (not a string like "500-3000 USD").
+
+
+
+Executor rails (must appear in reasoning and/or actionSteps):
+- "Secondary markets rarely have true luxury resale capability. Default to hub specialists."
+- "Shipping can be faster than driving; prioritize intake workflow quality."
+- "Do not donate until luxury potential is ruled out."
+
+ActionSteps must be lot-oriented (not per-item listing):
+- Split the lot into piles (Luxury / Better / Mainstream)
+- Create a simple manifest
+- Photo package (overview + label collage + hero items)
+- Choose channel; Luxury pile → luxury_hub_mailin
+- Execute submission/outreach and track status
+
+Return JSON only.
 """
-
 
 def _build_liquidation_plan_prompt(req: LiquidationPlanRequest) -> str:
     safe_title = req.title or "Untitled"
     safe_category = req.category or "Uncategorized"
 
-    # brief fields
     brief = req.brief
     recommended = brief.recommendedPath
     reasoning = brief.reasoning
     action_steps = brief.actionSteps or []
     missing = brief.missingDetails or []
 
-    # Path grounding
     chosen = req.chosenPath
 
     steps_block = "\n".join(f"- {s}" for s in action_steps[:20]) if action_steps else "(none)"
     missing_block = "\n".join(f"- {m}" for m in missing[:20]) if missing else "(none)"
 
-    return f"""You are an expert estate liquidation assistant.
+    # Determine if this is the Clothing closetLot set case.
+    # We only have the Brief + optional title/category in the plan request.
+    # In v1, we infer clothing + closetLot by checking the text (title/category/reasoning) and chosenPath pattern.
+    # Primary trigger is that iOS will send category="Clothing" for this Plan request.
+    is_clothing = (safe_category or "").strip().lower() == "clothing"
+
+    if not is_clothing:
+        # Default / existing behavior (unchanged)
+        return f"""You are an expert estate liquidation assistant.
 
 Your job: generate an OPERATIONAL checklist plan for the user to execute.
 
@@ -449,6 +619,84 @@ Rules:
   - donate: pick destination, receipt, record donation details.
   - needsInfo: gather missing details first, then regenerate brief.
 - Do NOT include markdown. Do NOT include commentary.
+Return JSON only.
+"""
+
+    # Clothing lot plan (spec v1): Blocks A–E, lot-level, hub-first for luxury
+    # We express luxury hub mail-in execution via explicit steps referencing partnerType 'luxury_hub_mailin'
+    # when chosenPath is delegate-consign (hub-first specialist flow).
+    hub_line = ""
+    if chosen == "pathB_delegateConsign":
+        hub_line = "If the luxury/designer pile is present, use the curated hub mail-in channel (partnerType: luxury_hub_mailin)."
+
+    return f"""You are an expert CLOTHING liquidation assistant for estate cleanouts.
+
+Your job: generate an OPERATIONAL checklist plan for a CLOSET LOT (set). Do NOT itemize each garment.
+
+Return STRICT JSON ONLY that matches LiquidationPlanChecklistDTO:
+{{
+  "schemaVersion": 1,
+  "createdAt": "ISO-8601 datetime",
+  "items": [
+    {{
+      "order": 1,
+      "text": "step text",
+      "isCompleted": false,
+      "completedAt": null,
+      "userNotes": null
+    }}
+  ]
+}}
+
+IMPORTANT:
+- Return a FLAT JSON object (no wrapper key like "LiquidationPlanChecklistDTO").
+- Do NOT nest the response under any extra keys.
+
+Governed by: "LTC Category Disposition Spec — Clothing (v1)".
+Apply these rails:
+- Avoid false local optimism for luxury clothing; default to hub specialists.
+- Do not donate until luxury potential is ruled out.
+
+Context:
+- Scope: {req.scope}
+- Title: {safe_title}
+- Category: Clothing
+- ChosenPath: {chosen}
+
+Brief context:
+- recommendedPath: {recommended}
+- reasoning: {reasoning}
+
+Brief actionSteps (context only):
+{steps_block}
+
+Missing details (collect early if relevant):
+{missing_block}
+
+Rules:
+- Generate 12–18 steps.
+- Steps must be specific, short, sequential, and lot-oriented.
+- The checklist MUST include Blocks A–E (in order), adapted to the chosenPath.
+
+Checklist blocks (must be represented):
+A) Split the lot (mandatory): Luxury/Designer, Better contemporary, Mainstream/Donate, plus a "maybe" hold pile for labels.
+B) Create a simple manifest: counts by pile, top brands per pile, condition notes.
+C) Photo package: overview + label collage + hero examples; add close-ups for any Tier 1 items.
+D) Choose channel:
+   - Luxury pile → curated hub mail-in (partnerType MUST be exactly: luxury_hub_mailin)
+   - Better contemporary → mail-in/aggregator or selective local only if user insists
+   - Mainstream → donation/local thrift; local resale only if LikeNew and user wants the effort
+E) Execute submission/outreach:
+   - Use Disposition Engine "Execute Plan" for the luxury pile (partnerType: luxury_hub_mailin) and track status
+   - Follow intake instructions
+   - Track status: NotStarted → InProgress → Completed
+
+ChosenPath mapping:
+- pathB_delegateConsign = delegate to specialists (this is the hub-first luxury mail-in flow when Tier 1 is present). {hub_line}
+- pathC_quickExit = convenience-first exit (donation/local thrift), after ruling out luxury.
+- donate = donation workflow, after ruling out luxury.
+- needsInfo = gather missing details first (labels/brands/condition/count), then regenerate brief.
+
 Return JSON only.
 """
 
