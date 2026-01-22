@@ -256,8 +256,11 @@ def _normalize_liquidation_brief_obj(*, raw_json: str, request: LiquidationBrief
     - missing required top-level fields we can safely infer/stamp (scope, generatedAt)
     - missing pathOptions ids (generate UUIDs pre-validation)
     - enum drift for recommendedPath/pathOptions[].path and effort
+    - schemaVersion drift (e.g., "0.0.1" or "1" as string) -> int
+    - pathOptions drift: missing "path" or using alternate keys -> map to "path"
     - netProceeds drift (string ranges) -> MoneyRangeDTO dict
     - missing label -> fill from path
+    - actionSteps drift (list of objects) -> list of strings
     """
     import re
 
@@ -271,16 +274,33 @@ def _normalize_liquidation_brief_obj(*, raw_json: str, request: LiquidationBrief
 
     # Required fields we can safely infer/stamp before validation
     obj.setdefault("schemaVersion", request.schemaVersion)
+
+    # Coerce schemaVersion to int if model returns a string like "1" or "0.0.1"
+    sv = obj.get("schemaVersion")
+    if isinstance(sv, str):
+        try:
+            obj["schemaVersion"] = int(sv.strip())
+        except Exception:
+            m = re.search(r"(\d+)", sv)
+            if m:
+                try:
+                    obj["schemaVersion"] = int(m.group(1))
+                except Exception:
+                    obj["schemaVersion"] = request.schemaVersion
+            else:
+                obj["schemaVersion"] = request.schemaVersion
+    elif not isinstance(sv, int):
+        obj["schemaVersion"] = request.schemaVersion
+
     obj.setdefault("scope", request.scope)
 
     if "generatedAt" not in obj or obj.get("generatedAt") in (None, ""):
         obj["generatedAt"] = datetime.now(timezone.utc).isoformat()
 
-    # Normalize paths
+    # Normalize recommended path
     if "recommendedPath" in obj:
         obj["recommendedPath"] = _normalize_path_value(obj.get("recommendedPath"))
 
-    # Helpers
     currency = request.currencyCode or "USD"
 
     label_by_path = {
@@ -292,19 +312,10 @@ def _normalize_liquidation_brief_obj(*, raw_json: str, request: LiquidationBrief
     }
 
     def _parse_money_range(s: str) -> dict:
-        """
-        Accepts strings like:
-        - "500 - 3000 USD"
-        - "0 USD"
-        - "$400-$2500"
-        - "Unknown"
-        Returns MoneyRangeDTO-like dict.
-        """
         txt = (s or "").strip()
         if not txt or txt.lower() in {"unknown", "n/a", "na", "tbd"}:
             return {"currencyCode": currency, "low": None, "likely": None, "high": None}
 
-        # Extract numbers (ints or floats)
         nums = re.findall(r"(\d+(?:\.\d+)?)", txt.replace(",", ""))
         if not nums:
             return {"currencyCode": currency, "low": None, "likely": None, "high": None}
@@ -314,7 +325,6 @@ def _normalize_liquidation_brief_obj(*, raw_json: str, request: LiquidationBrief
             v = values[0]
             return {"currencyCode": currency, "low": v, "likely": v, "high": v}
 
-        # Use first two as low/high; likely = midpoint
         low = values[0]
         high = values[1]
         if high < low:
@@ -322,20 +332,52 @@ def _normalize_liquidation_brief_obj(*, raw_json: str, request: LiquidationBrief
         likely = round((low + high) / 2.0, 2)
         return {"currencyCode": currency, "low": low, "likely": likely, "high": high}
 
+    # NEW: Normalize actionSteps into list[str]
+    if "actionSteps" in obj and isinstance(obj["actionSteps"], list):
+        normalized_steps: List[str] = []
+        for step in obj["actionSteps"]:
+            if isinstance(step, str):
+                s = step.strip()
+                if s:
+                    normalized_steps.append(s)
+                continue
+
+            if isinstance(step, dict):
+                # common keys: description/text/stepText
+                desc = step.get("description") or step.get("text") or step.get("stepText")
+                if isinstance(desc, str) and desc.strip():
+                    normalized_steps.append(desc.strip())
+                else:
+                    # fallback: stringify minimal dict
+                    normalized_steps.append(str(step))
+                continue
+
+            # fallback for numbers/other types
+            normalized_steps.append(str(step))
+
+        obj["actionSteps"] = normalized_steps
+
+    # Normalize pathOptions
     if "pathOptions" in obj and isinstance(obj["pathOptions"], list):
         for opt in obj["pathOptions"]:
             if not isinstance(opt, dict):
                 continue
 
-            # Pre-generate ID if missing (since id is required by DTO)
             if not opt.get("id"):
                 opt["id"] = str(uuid4())
 
-            # Normalize path
-            if "path" in opt:
-                opt["path"] = _normalize_path_value(opt.get("path"))
+            if not opt.get("path"):
+                for alt_key in ("type", "partnerType", "route", "option"):
+                    alt_val = opt.get(alt_key)
+                    if alt_val:
+                        opt["path"] = alt_val
+                        break
 
-            # Fill label if missing
+            if not opt.get("path"):
+                opt["path"] = obj.get("recommendedPath") or "needsInfo"
+
+            opt["path"] = _normalize_path_value(opt.get("path"))
+
             if not opt.get("label"):
                 p = opt.get("path")
                 if isinstance(p, str) and p in label_by_path:
@@ -343,16 +385,13 @@ def _normalize_liquidation_brief_obj(*, raw_json: str, request: LiquidationBrief
                 else:
                     opt["label"] = "Recommended Path"
 
-            # Normalize effort
             if "effort" in opt:
                 opt["effort"] = _normalize_effort_value(opt.get("effort"))
 
-            # Coerce netProceeds into MoneyRangeDTO dict if needed
             if "netProceeds" in opt:
                 if isinstance(opt["netProceeds"], str):
                     opt["netProceeds"] = _parse_money_range(opt["netProceeds"])
                 elif opt["netProceeds"] is None:
-                    # keep None; DTO allows Optional
                     pass
                 elif isinstance(opt["netProceeds"], dict):
                     opt["netProceeds"].setdefault("currencyCode", currency)
@@ -368,6 +407,7 @@ def _normalize_liquidation_brief_obj(*, raw_json: str, request: LiquidationBrief
         obj["assumptions"] = []
 
     return obj
+
 
 
 def _normalize_liquidation_plan_obj(*, raw_json: str, request: LiquidationPlanRequest) -> Dict[str, Any]:
@@ -397,7 +437,7 @@ def _normalize_liquidation_plan_obj(*, raw_json: str, request: LiquidationPlanRe
 # Liquidation prompt helpers
 # ---------------------------------------------------------------------------
 def _build_liquidation_brief_prompt(payload: LiquidationBriefRequest) -> str:
-    title = payload.title or "Untitled Item"
+    title = payload.title or "Untitled Set"
     description = payload.description or ""
     category = payload.category or "Uncategorized"
     qty = payload.quantity or 1
@@ -406,35 +446,36 @@ def _build_liquidation_brief_prompt(payload: LiquidationBriefRequest) -> str:
     goal = payload.inputs.goal if payload.inputs and payload.inputs.goal else "balanced"
     location = payload.inputs.locationHint if payload.inputs else None
 
-    # Set context (optional)
-    set_name = payload.setContext.setName if payload.setContext else None
-    set_type = payload.setContext.setType if payload.setContext else None
-    set_story = payload.setContext.story if payload.setContext else None
-    set_sell_pref = payload.setContext.sellTogetherPreference if payload.setContext else None
-    set_completeness = payload.setContext.completeness if payload.setContext else None
+    set_block = ""
+    if payload.scope == "set" and payload.setContext:
+        ctx = payload.setContext
 
-    member_lines = []
-    if payload.setContext and payload.setContext.memberSummaries:
-        for m in payload.setContext.memberSummaries[:50]:
-            member_lines.append(
-                f"- {m.title or 'Item'} | cat={m.category or 'unknown'} | qty={m.quantity or 'n/a'} | unitValue={m.unitValue or 'n/a'}"
+        members = ""
+        if ctx.memberSummaries:
+            members = "\n".join(
+                f"- {m.title} | {m.category} | qty={m.quantity or 1} | unit≈{m.unitValue or 'unknown'}"
+                for m in ctx.memberSummaries[:30]
             )
-    member_block = "\n".join(member_lines) if member_lines else "(none)"
 
-    is_clothing_closetlot = (
-        (payload.scope or "").strip().lower() == "set"
-        and (category or "").strip().lower() == "clothing"
-        and (set_type or "").strip().lower() == "closetlot"
-    )
+        set_block = f"""
+SET CONTEXT:
+- Set type: {ctx.setType}
+- Sell-together preference: {ctx.sellTogetherPreference}
+- Completeness: {ctx.completeness}
 
-    if not is_clothing_closetlot:
-        # Default / existing behavior (unchanged)
-        return f"""You are an expert estate liquidation assistant.
+SET STORY / METADATA:
+{ctx.story or "(none)"}
+
+MEMBER SUMMARY:
+{members or "(none)"}
+"""
+
+    return f"""You are an expert estate liquidation assistant.
 Return STRICT JSON ONLY matching LiquidationBriefDTO. No markdown.
 
 IMPORTANT:
-- Return a FLAT JSON object (no wrapper key like "LiquidationBriefDTO").
-- Do NOT nest the response under any extra keys.
+- Return a FLAT JSON object (no wrapper key).
+- Do NOT nest under extra keys.
 
 Context:
 - Scope: {payload.scope}
@@ -446,13 +487,16 @@ Context:
 - Location: {location or "none"}
 - Currency: {currency}
 
+{set_block}
+
 Rules:
 - Always include: schemaVersion, scope, generatedAt, recommendedPath, reasoning, pathOptions, actionSteps.
 - recommendedPath MUST be one of:
   pathA_maximizePrice | pathB_delegateConsign | pathC_quickExit | donate | needsInfo
-- Include the primary A/B/C paths in pathOptions (plus donate/needsInfo when appropriate).
+- Include the primary A/B/C paths in pathOptions.
 - pathOptions[].effort MUST be one of: low | medium | high | veryHigh
 - pathOptions[].id MUST be a UUID string
+- Use pathOptions[].netProceeds as a COARSE lot-level range.
 """
 
     # Clothing closet-lot (spec v1)
