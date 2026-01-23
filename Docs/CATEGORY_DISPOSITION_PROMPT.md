@@ -1,4 +1,9 @@
 
+This is a standard prompt to provide context as we work on Category specific AI Advice within the system
+
+Please remember I am not a programmer so I don't read code and understand the structures as a programmer would.
+
+I like to go step by step and will generally take one or two steps at a time. So if you provide several steps I will likely only accomplish a couple for before I come back to you for additional feedback or errors, etc.
 
 ### The correct approach
 

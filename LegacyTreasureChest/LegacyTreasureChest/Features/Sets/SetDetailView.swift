@@ -2,20 +2,26 @@
 //  SetDetailView.swift
 //  LegacyTreasureChest
 //
-//  Sets v1: Detail view + members.
-//  Enhancements:
-//  - Visual reinforcement: shows the picker’s default “Suggested” intent.
-//  - Adds item thumbnails for members (matches ItemsListView thumbnail style).
-//  - Wires “Next Step → Liquidate Set” end-to-end.
-//
 
 import SwiftUI
 import SwiftData
 import UIKit
+import CoreLocation
+import Combine
+
+// MARK: - Shared partner selection model (file-level, accessible everywhere)
+
+struct LTCSavedSelectedPartner: Codable {
+    var partnerId: String
+    var name: String
+    var partnerType: String
+    var distanceMiles: Double?
+    var website: String?
+    var phone: String?
+}
 
 struct SetDetailView: View {
     @Environment(\.modelContext) private var modelContext
-
     @Bindable var itemSet: LTCItemSet
 
     @State private var isPresentingEdit: Bool = false
@@ -39,24 +45,15 @@ struct SetDetailView: View {
 
     private var suggestedHint: String {
         switch itemSet.setType {
-        case .china:
-            return "Suggested: China / Dinnerware (and related Crystal)"
-        case .crystal:
-            return "Suggested: Crystal / Stemware / Glass"
-        case .flatware:
-            return "Suggested: Flatware / Silverware"
-        case .rugCollection:
-            return "Suggested: Rugs"
-        case .diningRoom:
-            return "Suggested: Furniture / Decor (Dining Room)"
-        case .bedroom:
-            return "Suggested: Furniture / Decor (Bedroom)"
-        case .furnitureSuite:
-            return "Suggested: Furniture / Decor"
-        case .closetLot:
-            return "Suggested: Clothing (Closet Lot)"
-        case .other:
-            return "Suggested: All Items (mixed set)"
+        case .china: return "Suggested: China / Dinnerware (and related Crystal)"
+        case .crystal: return "Suggested: Crystal / Stemware / Glass"
+        case .flatware: return "Suggested: Flatware / Silverware"
+        case .rugCollection: return "Suggested: Rugs"
+        case .diningRoom: return "Suggested: Furniture / Decor (Dining Room)"
+        case .bedroom: return "Suggested: Furniture / Decor (Bedroom)"
+        case .furnitureSuite: return "Suggested: Furniture / Decor"
+        case .closetLot: return "Suggested: Clothing (Closet Lot)"
+        case .other: return "Suggested: All Items (mixed set)"
         }
     }
 
@@ -139,6 +136,16 @@ struct SetDetailView: View {
                     HStack {
                         Image(systemName: "arrow.right.circle.fill")
                         Text("Next Step → Liquidate Set")
+                    }
+                }
+                .foregroundStyle(Theme.accent)
+
+                NavigationLink {
+                    SetExecutePlanView(itemSet: itemSet)
+                } label: {
+                    HStack {
+                        Image(systemName: "play.circle.fill")
+                        Text("Execute Plan")
                     }
                 }
                 .foregroundStyle(Theme.accent)
@@ -244,5 +251,940 @@ struct SetDetailView: View {
 
     private func touchUpdatedAt() {
         itemSet.updatedAt = .now
+    }
+}
+
+// MARK: - Set Execute Plan
+
+private struct SetExecutePlanView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Bindable var itemSet: LTCItemSet
+
+    @State private var expandedBlockID: BlockID? = .luxury
+    @State private var errorMessage: String?
+    @State private var refreshToken: UUID = UUID()
+
+    // Partner picker (sheet(item:) prevents empty/blank sheet)
+    private struct PartnerPickerSheet: Identifiable {
+        let id: String
+        let block: BlockID
+        let planID: String
+
+        init(block: BlockID, planID: String) {
+            self.block = block
+            self.planID = planID
+            self.id = "\(planID).\(block.rawValue)"
+        }
+    }
+
+    @State private var partnerPickerSheet: PartnerPickerSheet?
+
+    private let dispositionAI = DispositionAIService()
+
+    // NOTE: no longer `private` so SetPartnerPickerView can use it
+    enum BlockID: String, CaseIterable, Identifiable {
+        case luxury
+        case contemporary
+        case donate
+        case discard
+        case other
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .luxury: return "Luxury / Designer → Mail-in Hub"
+            case .contemporary: return "Better Contemporary → Secondary Channels"
+            case .donate: return "Donate"
+            case .discard: return "Discard / Recycle"
+            case .other: return "Other Steps"
+            }
+        }
+
+        var subtitle: String {
+            switch self {
+            case .luxury: return "Highest-value pile. Usually requires one hub partner."
+            case .contemporary: return "Good condition brands; local consignment or resale apps."
+            case .donate: return "Fast exit; keep a simple record."
+            case .discard: return "Worn/damaged; keep it simple."
+            case .other: return "General steps not tied to a specific pile."
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .luxury: return "shippingbox.fill"
+            case .contemporary: return "tag.fill"
+            case .donate: return "heart.fill"
+            case .discard: return "trash.fill"
+            case .other: return "checkmark.circle.fill"
+            }
+        }
+
+        var requiresPartner: Bool {
+            switch self {
+            case .luxury, .contemporary: return true
+            default: return false
+            }
+        }
+    }
+
+    private func selectionKey(planID: String, block: BlockID) -> String {
+        "ltc.set.execute.partner.\(planID).\(block.rawValue)"
+    }
+
+    private func loadSelectedPartner(planID: String, block: BlockID) -> LTCSavedSelectedPartner? {
+        let key = selectionKey(planID: planID, block: block)
+        guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
+        return try? JSONDecoder().decode(LTCSavedSelectedPartner.self, from: data)
+    }
+
+    private func saveSelectedPartner(planID: String, block: BlockID, partner: LTCSavedSelectedPartner?) {
+        let key = selectionKey(planID: planID, block: block)
+        if let partner {
+            if let data = try? JSONEncoder().encode(partner) {
+                UserDefaults.standard.set(data, forKey: key)
+            }
+        } else {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+    }
+
+    private func latestActivePlanRecord(for itemSet: LTCItemSet) -> LiquidationPlanRecord? {
+        guard let state = itemSet.liquidationState else { return nil }
+        if let active = state.plans.first(where: { $0.isActive }) { return active }
+        return state.plans.sorted(by: { $0.createdAt > $1.createdAt }).first
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Execute Plan")
+                        .font(Theme.sectionHeaderFont)
+                        .foregroundStyle(Theme.text)
+
+                    Text("Work one pile at a time. Choose partners only where needed.")
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                .padding(.vertical, 4)
+            }
+
+            if let plan = latestActivePlanRecord(for: itemSet) {
+                planBackedExecution(planRecord: plan)
+                    .id(refreshToken)
+            } else {
+                Section("No Plan Yet") {
+                    Text("Generate a brief and create a plan first.")
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+
+                    NavigationLink {
+                        SetLiquidationSectionView(itemSet: itemSet)
+                    } label: {
+                        HStack {
+                            Image(systemName: "arrow.right.circle.fill")
+                            Text("Go to Liquidate Set")
+                        }
+                    }
+                    .foregroundStyle(Theme.accent)
+                }
+            }
+
+            if let errorMessage {
+                Section("Error") {
+                    Text(errorMessage)
+                        .foregroundStyle(.red)
+                        .font(Theme.secondaryFont)
+                }
+            }
+        }
+        .navigationTitle("Execute Plan")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $partnerPickerSheet) { sheet in
+            NavigationStack {
+                SetPartnerPickerView(
+                    itemSet: itemSet,
+                    block: sheet.block,
+                    planID: sheet.planID,
+                    dispositionAI: dispositionAI,
+                    onSelect: { selected in
+                        saveSelectedPartner(planID: sheet.planID, block: sheet.block, partner: selected)
+                        partnerPickerSheet = nil
+                        refreshToken = UUID()
+                    },
+                    onCancel: {
+                        partnerPickerSheet = nil
+                    }
+                )
+            }
+            .presentationDetents([.large])
+        }
+    }
+
+    // MARK: - Plan-backed UI
+
+    @ViewBuilder
+    private func planBackedExecution(planRecord: LiquidationPlanRecord) -> some View {
+        if let checklist = LiquidationJSONCoding.tryDecode(
+            LiquidationPlanChecklistDTO.self,
+            from: planRecord.payloadJSON
+        ) {
+            let pct = completionPercent(checklist)
+
+            Section("Progress") {
+                VStack(alignment: .leading, spacing: 8) {
+                    ProgressView(value: pct)
+                    Text("Completion: \(Int(pct * 100))%")
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                .padding(.vertical, 4)
+            }
+
+            let groupedIndices = groupChecklistItemIndices(
+                checklist: checklist,
+                setType: itemSet.setType
+            )
+
+            let planID = String(describing: planRecord.persistentModelID)
+
+            Section("Work Units") {
+                ForEach(BlockID.allCases) { blockID in
+                    let indices = groupedIndices[blockID, default: []]
+                    if !indices.isEmpty {
+                        blockCard(
+                            blockID: blockID,
+                            indices: indices,
+                            checklist: checklist,
+                            planRecord: planRecord,
+                            planID: planID
+                        )
+                    }
+                }
+            }
+        } else {
+            Section("Plan") {
+                Text("Could not decode plan checklist JSON.")
+                    .foregroundStyle(.red)
+                    .font(Theme.secondaryFont)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func blockCard(
+        blockID: BlockID,
+        indices: [Int],
+        checklist: LiquidationPlanChecklistDTO,
+        planRecord: LiquidationPlanRecord,
+        planID: String
+    ) -> some View {
+        let isExpanded = (expandedBlockID == blockID)
+        let completedCount = indices.filter { checklist.items[$0].isCompleted }.count
+        let totalCount = indices.count
+
+        VStack(alignment: .leading, spacing: 10) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    expandedBlockID = isExpanded ? nil : blockID
+                }
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: blockID.icon)
+                        .foregroundStyle(Theme.accent)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(blockID.title)
+                            .font(Theme.sectionHeaderFont)
+                            .foregroundStyle(Theme.text)
+
+                        Text(blockID.subtitle)
+                            .font(Theme.secondaryFont)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+
+                    Spacer()
+
+                    Text("\(completedCount)/\(totalCount)")
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                .padding(.vertical, 4)
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                Divider()
+
+                partnerRow(blockID: blockID, planID: planID)
+
+                Divider()
+
+                ForEach(indices.sorted(), id: \.self) { i in
+                    let item = checklist.items[i]
+                    Toggle(isOn: Binding(
+                        get: { item.isCompleted },
+                        set: { newValue in
+                            toggleChecklistItem(
+                                planRecord: planRecord,
+                                checklistItemID: item.id,
+                                newValue: newValue
+                            )
+                        }
+                    )) {
+                        Text("\(item.order). \(item.text)")
+                            .font(.subheadline)
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 6)
+    }
+
+    @ViewBuilder
+    private func partnerRow(blockID: BlockID, planID: String) -> some View {
+        if blockID.requiresPartner {
+            let selected = loadSelectedPartner(planID: planID, block: blockID)
+            let selectedName = selected?.name ?? "Not selected"
+            let actionLabel = (selected == nil) ? "Select" : "Change"
+
+            Button {
+                partnerPickerSheet = PartnerPickerSheet(block: blockID, planID: planID)
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "person.crop.circle.badge.checkmark")
+                        .foregroundStyle(Theme.textSecondary)
+
+                    Text("Partner:")
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+
+                    Text(selectedName)
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.text)
+
+                    Spacer()
+
+                    Text(actionLabel)
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.accent)
+                }
+            }
+            .buttonStyle(.plain)
+        } else {
+            HStack(spacing: 10) {
+                Image(systemName: "person.crop.circle")
+                    .foregroundStyle(Theme.textSecondary)
+
+                Text("Partner: Not needed")
+                    .font(Theme.secondaryFont)
+                    .foregroundStyle(Theme.textSecondary)
+
+                Spacer()
+            }
+        }
+    }
+
+    // MARK: - Grouping logic (safe, heuristic, index-based)
+
+    private func groupChecklistItemIndices(
+        checklist: LiquidationPlanChecklistDTO,
+        setType: SetType
+    ) -> [BlockID: [Int]] {
+        let indices = Array(checklist.items.indices)
+
+        guard setType == .closetLot else {
+            return [.other: indices]
+        }
+
+        func blockForText(_ text: String) -> BlockID {
+            let t = text.lowercased()
+
+            if t.contains("hub") || t.contains("mail") || t.contains("ship") || t.contains("insured") || t.contains("authentication") || t.contains("designer") || t.contains("luxury") {
+                return .luxury
+            }
+
+            if t.contains("consign") || t.contains("consignment") || t.contains("resale") || t.contains("poshmark") || t.contains("depop") || t.contains("thredup") || t.contains("contemporary") || t.contains("facebook marketplace") {
+                return .contemporary
+            }
+
+            if t.contains("donat") || t.contains("charity") || t.contains("thrift") {
+                return .donate
+            }
+
+            if t.contains("discard") || t.contains("trash") || t.contains("recycle") || t.contains("damaged") || t.contains("stain") {
+                return .discard
+            }
+
+            return .other
+        }
+
+        var dict: [BlockID: [Int]] = [:]
+        for i in indices {
+            let bid = blockForText(checklist.items[i].text)
+            dict[bid, default: []].append(i)
+        }
+        return dict
+    }
+
+    // MARK: - Persistence (checklist)
+
+    @MainActor
+    private func toggleChecklistItem(
+        planRecord: LiquidationPlanRecord,
+        checklistItemID: UUID,
+        newValue: Bool
+    ) {
+        errorMessage = nil
+
+        guard var checklist = LiquidationJSONCoding.tryDecode(LiquidationPlanChecklistDTO.self, from: planRecord.payloadJSON) else {
+            errorMessage = "Could not decode plan checklist JSON."
+            return
+        }
+
+        guard let idx = checklist.items.firstIndex(where: { $0.id == checklistItemID }) else {
+            errorMessage = "Checklist item not found."
+            return
+        }
+
+        checklist.items[idx].isCompleted = newValue
+        checklist.items[idx].completedAt = newValue ? .now : nil
+
+        do {
+            let data = try LiquidationJSONCoding.encode(checklist)
+            planRecord.payloadJSON = data
+            planRecord.updatedAt = .now
+
+            let pct = completionPercent(checklist)
+            if pct >= 1.0, !checklist.items.isEmpty {
+                planRecord.statusRaw = PlanStatus.completed.rawValue
+                itemSet.liquidationState?.status = .completed
+            } else if pct > 0 {
+                planRecord.statusRaw = PlanStatus.inProgress.rawValue
+                itemSet.liquidationState?.status = .inProgress
+            } else {
+                planRecord.statusRaw = PlanStatus.notStarted.rawValue
+                itemSet.liquidationState?.status = .inProgress
+            }
+
+            itemSet.updatedAt = .now
+            itemSet.liquidationState?.updatedAt = .now
+
+            try modelContext.save()
+            refreshToken = UUID()
+        } catch {
+            errorMessage = "Failed saving checklist: \(error.localizedDescription)"
+        }
+    }
+
+    private func completionPercent(_ checklist: LiquidationPlanChecklistDTO) -> Double {
+        guard !checklist.items.isEmpty else { return 0 }
+        let completed = checklist.items.filter { $0.isCompleted }.count
+        return Double(completed) / Double(checklist.items.count)
+    }
+}
+
+// MARK: - Partner Picker (Set scope)
+
+private final class LTCLocationAutofill: NSObject, ObservableObject, CLLocationManagerDelegate {
+    private let manager = CLLocationManager()
+    private let geocoder = CLGeocoder()
+
+    @Published var city: String = ""
+    @Published var region: String = ""
+    @Published var countryCode: String = ""
+
+    @Published var statusText: String? = nil
+    @Published var isWorking: Bool = false
+
+    override init() {
+        super.init()
+        manager.delegate = self
+    }
+
+    func requestOnce() {
+        // Don’t spam requests
+        guard !isWorking else { return }
+        isWorking = true
+        statusText = "Using your current location…"
+
+        let status = manager.authorizationStatus
+        switch status {
+        case .notDetermined:
+            manager.requestWhenInUseAuthorization()
+        case .authorizedAlways, .authorizedWhenInUse:
+            manager.requestLocation()
+        case .denied, .restricted:
+            statusText = "Location access is off. Enter a city or enable Location Services."
+            isWorking = false
+        @unknown default:
+            statusText = "Location status unknown. Enter a city."
+            isWorking = false
+        }
+    }
+
+    // MARK: CLLocationManagerDelegate
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        let status = manager.authorizationStatus
+        switch status {
+        case .authorizedAlways, .authorizedWhenInUse:
+            manager.requestLocation()
+        case .denied, .restricted:
+            statusText = "Location access is off. Enter a city or enable Location Services."
+            isWorking = false
+        case .notDetermined:
+            break
+        @unknown default:
+            statusText = "Location status unknown. Enter a city."
+            isWorking = false
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        statusText = "Couldn’t get current location. Enter a city."
+        isWorking = false
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let loc = locations.first else {
+            statusText = "Couldn’t get current location. Enter a city."
+            isWorking = false
+            return
+        }
+
+        geocoder.reverseGeocodeLocation(loc) { [weak self] placemarks, _ in
+            guard let self else { return }
+            let pm = placemarks?.first
+
+            let city = pm?.locality ?? ""
+            let region = pm?.administrativeArea ?? ""
+            let cc = pm?.isoCountryCode ?? ""
+
+            if !city.isEmpty { self.city = city }
+            if !region.isEmpty { self.region = region }
+            if !cc.isEmpty { self.countryCode = cc }
+
+            self.statusText = nil
+            self.isWorking = false
+        }
+    }
+}
+
+private struct SetPartnerPickerView: View {
+    @Environment(\.dismiss) private var dismiss
+    
+    let itemSet: LTCItemSet
+    let block: SetExecutePlanView.BlockID
+    let planID: String
+    
+    let dispositionAI: DispositionAIService
+    
+    let onSelect: (LTCSavedSelectedPartner) -> Void
+    let onCancel: () -> Void
+    
+    @State private var city: String = ""
+    @State private var region: String = ""
+    @State private var countryCode: String = Locale.current.region?.identifier ?? "US"
+    @State private var radiusMiles: Int = 25
+    
+    @State private var isSearching: Bool = false
+    @State private var errorMessage: String?
+    @State private var response: DispositionPartnersSearchResponse?
+    
+    @State private var isResultsExpanded: Bool = true
+    
+    @FocusState private var focusedField: Field?
+    
+    @StateObject private var autofill = LTCLocationAutofill()
+    
+    private enum Field {
+        case city
+        case region
+        case country
+    }
+    
+    private var blockForService: DispositionAIService.SetPartnerBlock? {
+        switch block {
+        case .luxury: return .luxury
+        case .contemporary: return .contemporary
+        default: return nil
+        }
+    }
+    
+    private var chosenPathForRequest: DispositionChosenPath {
+        // IMPORTANT: backend requires chosenPath.
+        // We avoid the donation path for luxury/contemporary partner searches.
+        switch block {
+        case .luxury:
+            return .B
+        case .contemporary:
+            return .C
+        default:
+            return .needsInfo
+        }
+    }
+    
+    var body: some View {
+        Form {
+            Section("Location") {
+                TextField("City", text: $city)
+                    .focused($focusedField, equals: .city)
+                    .textInputAutocapitalization(.words)
+                    .submitLabel(.done)
+                
+                TextField("State / Region", text: $region)
+                    .focused($focusedField, equals: .region)
+                    .textInputAutocapitalization(.characters)
+                    .submitLabel(.done)
+                
+                TextField("Country Code (e.g. US)", text: $countryCode)
+                    .focused($focusedField, equals: .country)
+                    .textInputAutocapitalization(.characters)
+                    .submitLabel(.done)
+                
+                Stepper(value: $radiusMiles, in: 5...200, step: 5) {
+                    Text("Radius: \(radiusMiles) miles")
+                }
+                
+                if let status = autofill.statusText {
+                    Text(status)
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                
+                Button {
+                    autofill.requestOnce()
+                } label: {
+                    Label(autofill.isWorking ? "Locating…" : "Use Current Location", systemImage: "location.fill")
+                }
+                .disabled(autofill.isWorking)
+            }
+            
+            Section {
+                Button {
+                    focusedField = nil
+                    Task { await search() }
+                } label: {
+                    Label(isSearching ? "Searching…" : "Search Partners", systemImage: "magnifyingglass")
+                }
+                .disabled(isSearching || blockForService == nil)
+                
+                if let errorMessage {
+                    Text(errorMessage)
+                        .foregroundStyle(.red)
+                        .font(Theme.secondaryFont)
+                }
+            }
+            
+            if let response {
+                Section {
+                    DisclosureGroup(isExpanded: $isResultsExpanded) {
+                        if response.results.isEmpty {
+                            Text("No partners found. Try a larger radius or different city.")
+                                .font(Theme.secondaryFont)
+                                .foregroundStyle(Theme.textSecondary)
+                        } else {
+                            ForEach(response.results) { p in
+                                partnerRowButton(p)
+                            }
+                        }
+                    } label: {
+                        Text("Results")
+                            .font(Theme.sectionHeaderFont)
+                            .foregroundStyle(Theme.text)
+                    }
+                }
+            }
+            
+            Section {
+                Button(role: .cancel) {
+                    focusedField = nil
+                    onCancel()
+                    dismiss()
+                } label: {
+                    Text("Close")
+                }
+            }
+        }
+        .navigationTitle("Select Partner")
+        .navigationBarTitleDisplayMode(.inline)
+        .scrollDismissesKeyboard(.interactively)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    focusedField = nil
+                }
+            }
+        }
+        .onAppear {
+            // If we have last-used values, keep them.
+            let lastCity = UserDefaults.standard.string(forKey: "ltc.lastDisposition.city") ?? ""
+            let lastRegion = UserDefaults.standard.string(forKey: "ltc.lastDisposition.region") ?? ""
+            
+            if city.isEmpty { city = lastCity }
+            if region.isEmpty { region = lastRegion }
+            
+            // If still empty, try current location autofill.
+            if city.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                autofill.requestOnce()
+            }
+        }
+        .onReceive(autofill.$city) { newCity in
+            // Only auto-fill if user hasn’t typed anything yet
+            if city.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !newCity.isEmpty {
+                city = newCity
+            }
+        }
+        .onReceive(autofill.$region) { newRegion in
+            if region.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !newRegion.isEmpty {
+                region = newRegion
+            }
+        }
+        .onReceive(autofill.$countryCode) { newCC in
+            if countryCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !newCC.isEmpty {
+                countryCode = newCC
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private func partnerRowButton(_ p: DispositionPartnerResult) -> some View {
+        let name = p.name
+        let type = p.partnerType
+        let distText: String? = {
+            if let d = p.distanceMiles { return String(format: "%.1f mi", d) }
+            return nil
+        }()
+        let why = (p.whyRecommended?.isEmpty == false) ? p.whyRecommended : nil
+        let ratingText: String? = {
+            guard let r = p.rating else { return nil }
+            let count = p.userRatingsTotal ?? 0
+            return "Rating: \(String(format: "%.1f", r)) (\(count))"
+        }()
+        let trustText: String? = {
+            guard let gates = p.trust?.gates, !gates.isEmpty else { return nil }
+            let passed = gates.filter { $0.status.lowercased() == "pass" }.count
+            return "Trust gates passed: \(passed)/\(gates.count)"
+        }()
+        
+        Button {
+            focusedField = nil
+            let selected = LTCSavedSelectedPartner(
+                partnerId: p.partnerId,
+                name: p.name,
+                partnerType: p.partnerType,
+                distanceMiles: p.distanceMiles,
+                website: p.contact.website,
+                phone: p.contact.phone
+            )
+            onSelect(selected)
+            dismiss()
+        } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text(name)
+                        .font(Theme.sectionHeaderFont)
+                        .foregroundStyle(Theme.text)
+                    Spacer()
+                    if let distText {
+                        Text(distText)
+                            .font(Theme.secondaryFont)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                }
+                
+                Text(type)
+                    .font(Theme.secondaryFont)
+                    .foregroundStyle(Theme.textSecondary)
+                
+                if let why {
+                    Text(why)
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(3)
+                }
+                
+                if let ratingText {
+                    Text(ratingText)
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                
+                if let trustText {
+                    Text(trustText)
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                }
+            }
+            .padding(.vertical, 6)
+        }
+        .buttonStyle(.plain)
+    }
+    
+    @MainActor
+    private func search() async {
+        errorMessage = nil
+        response = nil
+        isSearching = true
+        isResultsExpanded = true
+        focusedField = nil
+        
+        // Persist last used (still useful for contemporary/local searches)
+        UserDefaults.standard.set(city, forKey: "ltc.lastDisposition.city")
+        UserDefaults.standard.set(region, forKey: "ltc.lastDisposition.region")
+        
+        guard let blockForService else {
+            errorMessage = "This block does not require a partner."
+            isSearching = false
+            return
+        }
+        
+        // ✅ Luxury: return curated hubs instantly (no backend search)
+        if block == .luxury {
+            let curated: [DispositionPartnerResult] = [
+                DispositionPartnerResult(
+                    partnerId: "curated-realreal",
+                    name: "The RealReal",
+                    partnerType: "Luxury Mail-in Hub (SF/NYC)",
+                    contact: DispositionPartnerContact(
+                        phone: nil,
+                        website: "https://www.therealreal.com",
+                        email: nil,
+                        address: nil,
+                        city: "San Francisco / New York",
+                        region: "CA / NY"
+                    ),
+                    distanceMiles: nil,
+                    rating: nil,
+                    userRatingsTotal: nil,
+                    trust: nil,
+                    ranking: nil,
+                    whyRecommended: "Major luxury consignment hub with mail-in kits and authentication workflows.",
+                    questionsToAsk: [
+                        "What brands do you accept right now?",
+                        "Do you offer a mail-in kit and prepaid label?",
+                        "What are your commission tiers and payout timing?",
+                        "Do you return items that don’t meet condition/brand requirements?"
+                    ]
+                ),
+                DispositionPartnerResult(
+                    partnerId: "curated-fashionphile",
+                    name: "Fashionphile",
+                    partnerType: "Luxury Buy/Sell (Mail-in)",
+                    contact: DispositionPartnerContact(
+                        phone: nil,
+                        website: "https://www.fashionphile.com",
+                        email: nil,
+                        address: nil,
+                        city: nil,
+                        region: nil
+                    ),
+                    distanceMiles: nil,
+                    rating: nil,
+                    userRatingsTotal: nil,
+                    trust: nil,
+                    ranking: nil,
+                    whyRecommended: "Strong option for luxury accessories; mail-in process, fast quotes on many items.",
+                    questionsToAsk: [
+                        "Which categories do you buy outright vs consignment?",
+                        "How do you handle authentication and condition grading?",
+                        "What’s the payout timeline and method?"
+                    ]
+                ),
+                DispositionPartnerResult(
+                    partnerId: "curated-rebag",
+                    name: "Rebag",
+                    partnerType: "Luxury Accessories (Mail-in)",
+                    contact: DispositionPartnerContact(
+                        phone: nil,
+                        website: "https://www.rebag.com",
+                        email: nil,
+                        address: nil,
+                        city: "New York",
+                        region: "NY"
+                    ),
+                    distanceMiles: nil,
+                    rating: nil,
+                    userRatingsTotal: nil,
+                    trust: nil,
+                    ranking: nil,
+                    whyRecommended: "Often a good path for handbags/accessories; offers remote selling options.",
+                    questionsToAsk: [
+                        "Do you offer an instant offer vs consignment?",
+                        "What brands/models are currently in demand?",
+                        "Are there fees for items not accepted?"
+                    ]
+                ),
+                DispositionPartnerResult(
+                    partnerId: "curated-vestiaire",
+                    name: "Vestiaire Collective",
+                    partnerType: "Luxury Marketplace (Ship-in)",
+                    contact: DispositionPartnerContact(
+                        phone: nil,
+                        website: "https://www.vestiairecollective.com",
+                        email: nil,
+                        address: nil,
+                        city: nil,
+                        region: nil
+                    ),
+                    distanceMiles: nil,
+                    rating: nil,
+                    userRatingsTotal: nil,
+                    trust: nil,
+                    ranking: nil,
+                    whyRecommended: "Large luxury resale marketplace; good for brands with broad demand.",
+                    questionsToAsk: [
+                        "What are seller fees and payout timing?",
+                        "How does authentication work for my category?",
+                        "What shipping/label options are available?"
+                    ]
+                )
+            ]
+            
+            response = DispositionPartnersSearchResponse(
+                schemaVersion: 1,
+                generatedAt: Date(),
+                scenarioId: "curated.luxury.mailin.v1",
+                partnerTypes: ["Luxury Mail-in Hub", "Luxury Resale"],
+                results: curated
+            )
+            
+            isSearching = false
+            return
+        }
+        
+        // Contemporary (and any non-luxury paths): use backend search
+        do {
+            let loc = DispositionLocationDTO(
+                city: city.trimmingCharacters(in: .whitespacesAndNewlines),
+                region: region.trimmingCharacters(in: .whitespacesAndNewlines),
+                countryCode: countryCode.trimmingCharacters(in: .whitespacesAndNewlines),
+                radiusMiles: radiusMiles,
+                latitude: nil,
+                longitude: nil
+            )
+            
+            let resp = try await dispositionAI.searchPartners(
+                itemSet: itemSet,
+                block: blockForService,
+                chosenPath: chosenPathForRequest,
+                location: loc,
+                radiusMiles: radiusMiles
+            )
+            
+            response = resp
+        } catch {
+            errorMessage = "Search failed: \(error.localizedDescription)"
+        }
+        
+        isSearching = false
     }
 }
