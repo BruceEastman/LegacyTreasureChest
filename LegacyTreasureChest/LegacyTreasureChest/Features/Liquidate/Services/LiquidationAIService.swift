@@ -482,16 +482,32 @@ struct LocalLiquidationBriefGenerator {
 
         let reasoning = "Local fallback brief for “\(title)” (\(category)) — qty \(qty). Estimated total ~\(formatMoney(likelyTotal)) (range \(formatMoney(low))–\(formatMoney(high)))."
 
+        let isLuxuryHub = looksLikeLuxuryHubScenario(req)
+
         let options: [LiquidationPathOptionDTO] = [
             .init(path: .pathA_maximizePrice, label: "Path A — Maximize Price",
                   netProceeds: .init(currencyCode: req.currencyCode ?? "USD", low: low * 0.70, likely: likelyTotal * 0.75, high: high * 0.80),
                   effort: .high, timeEstimate: "1–4 weeks",
                   risks: ["Returns", "Buyer disputes"], logisticsNotes: "More work, potentially higher net."),
-            .init(path: .pathB_delegateConsign, label: "Path B — Delegate / Consign",
-                  netProceeds: .init(currencyCode: req.currencyCode ?? "USD", low: low * 0.55, likely: likelyTotal * 0.62, high: high * 0.65),
-                  effort: .low, timeEstimate: "2–12 weeks",
-                  risks: ["Commission", "Payout delays"], logisticsNotes: "Less effort, less control."),
-            .init(path: .pathC_quickExit, label: "Path C — Quick Exit",
+            .init(
+                path: .pathB_delegateConsign,
+                label: isLuxuryHub ? "Path B — Luxury Mail-in Hub" : "Path B — Delegate / Consign",
+                netProceeds: .init(
+                    currencyCode: req.currencyCode ?? "USD",
+                    low: low * 0.55,
+                    likely: likelyTotal * 0.62,
+                    high: high * 0.65
+                ),
+                effort: .low,
+                timeEstimate: "2–12 weeks",
+                risks: isLuxuryHub
+                    ? ["Commission", "Acceptance / condition grading", "Payout delays"]
+                    : ["Commission", "Payout delays"],
+                logisticsNotes: isLuxuryHub
+                    ? "Mail-in hub / specialist channel. Authentication + condition standards matter; expect commissions and variable payout timing."
+                    : "Less effort, less control."
+            ),
+     .init(path: .pathC_quickExit, label: "Path C — Quick Exit",
                   netProceeds: .init(currencyCode: req.currencyCode ?? "USD", low: low * 0.65, likely: likelyTotal * 0.72, high: high * 0.78),
                   effort: .medium, timeEstimate: "1–10 days",
                   risks: ["No-shows", "Lowball offers"], logisticsNotes: "Fastest, simplest.")
@@ -525,6 +541,49 @@ struct LocalLiquidationBriefGenerator {
             inputs: req.inputs
         )
     }
+    
+    private func looksLikeLuxuryHubScenario(_ req: LiquidationBriefRequest) -> Bool {
+        var textParts: [String] = []
+
+        if let s = req.category { textParts.append(s) }
+        if let s = req.title { textParts.append(s) }
+        if let s = req.description { textParts.append(s) }
+
+        if let sc = req.setContext {
+            if let s = sc.setName { textParts.append(s) }
+            if let s = sc.story { textParts.append(s) }
+            // member summaries
+            for m in sc.memberSummaries {
+                if let s = m.title { textParts.append(s) }
+                if let s = m.category { textParts.append(s) }
+            }
+        }
+
+        let text = textParts.joined(separator: " ").lowercased()
+
+        // Broad luxury signals (category-driven)
+        let luxuryCategorySignals = [
+            "luxury clothing",
+            "luxury personal items",
+            "designer",
+            "luxury"
+        ]
+
+        if luxuryCategorySignals.contains(where: { text.contains($0) }) {
+            return true
+        }
+
+        // Watch & handbag signals (tight, specific)
+        let hubSignals = [
+            // watches
+            "watch", "watches", "rolex", "omega", "cartier", "tudor", "chronograph", "gmt",
+            // handbags
+            "handbag", "handbags", "purse", "bag", "chanel", "louis vuitton", "lv", "hermes", "gucci", "prada"
+        ]
+
+        return hubSignals.contains(where: { text.contains($0) })
+    }
+
 
     private func formatMoney(_ value: Double) -> String {
         let f = NumberFormatter()

@@ -6,8 +6,13 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		BEB528382F241290004CBD2D /* Luxury_Readiness_Checklists_v1.md in Resources */ = {isa = PBXBuildFile; fileRef = BEB528372F24126A004CBD2D /* Luxury_Readiness_Checklists_v1.md */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		BE3A74672ECE64C000DFEE10 /* LegacyTreasureChest.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LegacyTreasureChest.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		BEB528372F24126A004CBD2D /* Luxury_Readiness_Checklists_v1.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = Luxury_Readiness_Checklists_v1.md; sourceTree = "<group>"; };
 		BEFA6E2F2ED6777500A86ED8 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -46,6 +51,7 @@
 		BE3A745E2ECE64C000DFEE10 = {
 			isa = PBXGroup;
 			children = (
+				BEB528372F24126A004CBD2D /* Luxury_Readiness_Checklists_v1.md */,
 				BEFA6E2F2ED6777500A86ED8 /* README.md */,
 				BE3A74692ECE64C000DFEE10 /* LegacyTreasureChest */,
 				BE3A74682ECE64C000DFEE10 /* Products */,
@@ -124,6 +130,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BEB528382F241290004CBD2D /* Luxury_Readiness_Checklists_v1.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

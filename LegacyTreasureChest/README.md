@@ -1,4 +1,23 @@
 # Legacy Treasure Chest
+## Current System Status (v1)
+
+Legacy Treasure Chest is being developed as a production-quality, AI-native advisor for household inventory and disposition decisions. The system intentionally prioritizes correctness, trust, and real-world workflows over rapid MVP delivery.
+
+### Disposition Behavior
+- **Luxury categories use deterministic, curated partner paths** (e.g., luxury mail-in hubs)
+- **Contemporary and lower-value categories use search-based discovery**
+- Partner selection is advisory; the system does not automate transactions
+
+### Readiness Checklists (New)
+For deterministic disposition paths (e.g., Luxury Clothing, Luxury Personal Items), the system now defines **Readiness Checklists** that prepare users before partner execution.
+
+- Readiness is **advisory, not blocking**
+- Checklists focus on condition, authentication, and disclosure
+- Readiness appears during **Execute Plan**, not during item entry or partner selection
+
+The canonical reference for readiness logic and checklist content lives in:
+
+
 ## Project Status Update — Luxury Clothing & Closet Lots (2026-01-21)
 
 This project has completed a **foundational milestone** in category-specific disposition planning, using **Luxury Clothing** as the first end-to-end vertical slice.

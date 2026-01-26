@@ -261,6 +261,7 @@ private struct SetExecutePlanView: View {
     @Bindable var itemSet: LTCItemSet
 
     @State private var expandedBlockID: BlockID? = .luxury
+    @State private var readinessExpandedLuxury: Bool = false
     @State private var errorMessage: String?
     @State private var refreshToken: UUID = UUID()
 
@@ -485,7 +486,8 @@ private struct SetExecutePlanView: View {
         let completedCount = indices.filter { checklist.items[$0].isCompleted }.count
         let totalCount = indices.count
 
-        VStack(alignment: .leading, spacing: 10) {
+        Group {
+            // Row 1: Header (tap to expand/collapse)
             Button {
                 withAnimation(.easeInOut(duration: 0.15)) {
                     expandedBlockID = isExpanded ? nil : blockID
@@ -515,17 +517,18 @@ private struct SetExecutePlanView: View {
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Theme.textSecondary)
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, 6)
             }
             .buttonStyle(.plain)
 
             if isExpanded {
-                Divider()
+                // Row 2: Readiness (if applicable)
+                readinessChecklistIfApplicable(for: blockID)
 
+                // Row 3: Partner row (or "not needed")
                 partnerRow(blockID: blockID, planID: planID)
 
-                Divider()
-
+                // Rows 4..N: Plan checklist items (each as its own Form row)
                 ForEach(indices.sorted(), id: \.self) { i in
                     let item = checklist.items[i]
                     Toggle(isOn: Binding(
@@ -544,9 +547,8 @@ private struct SetExecutePlanView: View {
                 }
             }
         }
-        .padding(.vertical, 6)
     }
-
+    
     @ViewBuilder
     private func partnerRow(blockID: BlockID, planID: String) -> some View {
         if blockID.requiresPartner {
@@ -589,6 +591,218 @@ private struct SetExecutePlanView: View {
                 Spacer()
             }
         }
+    }
+
+    // MARK: - Readiness Checklist (v1)
+
+    private func readinessChecklistIfApplicable(for blockID: BlockID) -> some View {
+        return Group {
+            if blockID == .luxury {
+
+                // 1) Shoes / Boots
+                if setLooksLikeFootwear(itemSet),
+                   let checklist = try? ReadinessChecklistLibrary.shared.luxuryClothingShoesBoots()
+                {
+                    DisclosureGroup(isExpanded: $readinessExpandedLuxury) {
+                        readinessChecklistCard(checklist: checklist)
+                            .padding(.top, 6)
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "checklist")
+                                .foregroundStyle(Theme.accent)
+
+                            Text("Readiness Checklist (Advisory)")
+                                .font(Theme.secondaryFont)
+                                .foregroundStyle(Theme.text)
+
+                            Spacer()
+
+                            Text(readinessExpandedLuxury ? "Hide" : "Show")
+                                .font(Theme.secondaryFont)
+                                .foregroundStyle(Theme.accent)
+                        }
+                        .padding(.vertical, 6)
+                    }
+                }
+
+                // 2) Designer Apparel
+                else if setLooksLikeDesignerApparel(itemSet),
+                        let checklist = try? ReadinessChecklistLibrary.shared.luxuryClothingDesignerApparel()
+                {
+                    DisclosureGroup(isExpanded: $readinessExpandedLuxury) {
+                        readinessChecklistCard(checklist: checklist)
+                            .padding(.top, 6)
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "checklist")
+                                .foregroundStyle(Theme.accent)
+
+                            Text("Readiness Checklist (Advisory)")
+                                .font(Theme.secondaryFont)
+                                .foregroundStyle(Theme.text)
+
+                            Spacer()
+
+                            Text(readinessExpandedLuxury ? "Hide" : "Show")
+                                .font(Theme.secondaryFont)
+                                .foregroundStyle(Theme.accent)
+                        }
+                        .padding(.vertical, 6)
+                    }
+                }
+
+                // 3) Watches
+                else if setLooksLikeWatches(itemSet),
+                        let checklist = try? ReadinessChecklistLibrary.shared.luxuryPersonalItemsWatches()
+                {
+                    DisclosureGroup(isExpanded: $readinessExpandedLuxury) {
+                        readinessChecklistCard(checklist: checklist)
+                            .padding(.top, 6)
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "checklist")
+                                .foregroundStyle(Theme.accent)
+
+                            Text("Readiness Checklist (Advisory)")
+                                .font(Theme.secondaryFont)
+                                .foregroundStyle(Theme.text)
+
+                            Spacer()
+
+                            Text(readinessExpandedLuxury ? "Hide" : "Show")
+                                .font(Theme.secondaryFont)
+                                .foregroundStyle(Theme.accent)
+                        }
+                        .padding(.vertical, 6)
+                    }
+                }
+
+                else {
+                    EmptyView()
+                }
+            } else {
+                EmptyView()
+            }
+        }
+    }
+
+    // MARK: - Readiness Matching (v1)
+
+    private func setLooksLikeFootwear(_ set: LTCItemSet) -> Bool {
+        let text = setSearchText(set)
+        let tokens = tokenize(text)
+
+        let footwearSignals: Set<String> = [
+            "shoe", "shoes",
+            "boot", "boots",
+            "heel", "heels",
+            "sneaker", "sneakers",
+            "loafer", "loafers",
+            "sandal", "sandals",
+            "pump", "pumps",
+            "stiletto", "stilettos"
+        ]
+
+        // Avoid obvious false-positive
+        if tokens.contains("bootcut") { return false }
+
+        return !footwearSignals.isDisjoint(with: tokens)
+    }
+    
+    private func setLooksLikeWatches(_ set: LTCItemSet) -> Bool {
+        let text = setSearchText(set)
+        let tokens = tokenize(text)
+
+        let watchSignals: Set<String> = [
+            "watch", "watches",
+            "timepiece", "chronograph",
+            "gmt", "automatic", "mechanical",
+            "rolex", "omega", "cartier", "tudor",
+            "tag", "heuer", "breitling", "panerai",
+            "iwc", "jaeger", "jlc", "patek", "audemars", "ap"
+        ]
+
+        // Avoid accidental match from plain English
+        if tokens.contains("watching") { return false }
+
+        return !watchSignals.isDisjoint(with: tokens)
+    }
+
+    
+    private func setLooksLikeDesignerApparel(_ set: LTCItemSet) -> Bool {
+        let text = setSearchText(set)
+        let tokens = tokenize(text)
+
+        // If it's footwear, let footwear win (avoid double match)
+        if tokens.contains("shoe") || tokens.contains("shoes") || tokens.contains("boot") || tokens.contains("boots") {
+            return false
+        }
+
+        let apparelSignals: Set<String> = [
+            "shirt", "shirts",
+            "blouse", "blouses",
+            "dress", "dresses",
+            "skirt", "skirts",
+            "coat", "coats",
+            "jacket", "jackets",
+            "sportcoat", "sportcoats",
+            "blazer", "blazers",
+            "sweater", "sweaters",
+            "cardigan", "cardigans",
+            "shawl", "shawls",
+            "scarf", "scarves",
+            "pants", "trousers", "jeans",
+            "suit", "suits"
+        ]
+
+        return !apparelSignals.isDisjoint(with: tokens)
+    }
+    
+    private func setSearchText(_ set: LTCItemSet) -> String {
+        [
+            set.name,
+            set.notes ?? "",
+            set.story ?? "",
+            set.closetBrandList ?? ""
+        ]
+        .joined(separator: " ")
+        .lowercased()
+    }
+
+
+
+
+    private func tokenize(_ text: String) -> Set<String> {
+        let cleaned = text.map { ch -> Character in
+            ch.isLetter || ch.isNumber ? ch : " "
+        }
+
+        let tokens = String(cleaned)
+            .split(separator: " ")
+            .map { String($0) }
+
+        return Set(tokens)
+    }
+    // MARK: - Readiness UI
+
+    @ViewBuilder
+    private func readinessChecklistCard(checklist: ReadinessChecklist) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let attributed = try? AttributedString(markdown: checklist.markdown) {
+                Text(attributed)
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.text)
+            } else {
+                Text(checklist.markdown)
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.text)
+            }
+
+            Text("This is optional preparation. You can proceed even if you skip items.")
+                .font(Theme.secondaryFont)
+                .foregroundStyle(Theme.textSecondary)
+        }
+        .padding(.vertical, 6)
     }
 
     // MARK: - Grouping logic (safe, heuristic, index-based)
@@ -817,6 +1031,39 @@ private struct SetPartnerPickerView: View {
         default: return nil
         }
     }
+    
+    private func partnerPickerSetSearchText(_ set: LTCItemSet) -> String {
+        [
+            set.name,
+            set.notes ?? "",
+            set.story ?? "",
+            set.closetBrandList ?? ""
+        ]
+        .joined(separator: " ")
+        .lowercased()
+    }
+
+    private func partnerPickerTokenize(_ text: String) -> Set<String> {
+        let cleaned = text.replacingOccurrences(of: "[^a-z0-9]+", with: " ", options: .regularExpression)
+        return Set(cleaned.split(separator: " ").map { String($0) })
+    }
+
+    private func setLooksLikeWatches(_ set: LTCItemSet) -> Bool {
+        let tokens = partnerPickerTokenize(partnerPickerSetSearchText(set))
+
+        let watchSignals: Set<String> = [
+            "watch", "watches",
+            "timepiece", "chronograph",
+            "gmt", "automatic", "mechanical",
+            "rolex", "omega", "cartier", "tudor",
+            "tag", "heuer", "breitling", "panerai",
+            "iwc", "jaeger", "jlc", "patek", "audemars", "ap"
+        ]
+
+        if tokens.contains("watching") { return false }
+        return !watchSignals.isDisjoint(with: tokens)
+    }
+
     
     private var chosenPathForRequest: DispositionChosenPath {
         // IMPORTANT: backend requires chosenPath.
@@ -1049,7 +1296,111 @@ private struct SetPartnerPickerView: View {
         
         // ✅ Luxury: return curated hubs instantly (no backend search)
         if block == .luxury {
-            let curated: [DispositionPartnerResult] = [
+
+            // Watch-focused curated hubs
+            let curatedWatches: [DispositionPartnerResult] = [
+                DispositionPartnerResult(
+                    partnerId: "curated-1916company",
+                    name: "The 1916 Company (WatchBox)",
+                    partnerType: "Luxury Watches (Sell / Trade-in)",
+                    contact: DispositionPartnerContact(
+                        phone: nil,
+                        website: "https://www.the1916company.com/sell-and-trade/",
+                        email: nil,
+                        address: nil,
+                        city: nil,
+                        region: nil
+                    ),
+                    distanceMiles: nil,
+                    rating: nil,
+                    userRatingsTotal: nil,
+                    trust: nil,
+                    ranking: nil,
+                    whyRecommended: "Watch-specialist buyer/trade-in path with insured shipping workflows.",
+                    questionsToAsk: [
+                        "Do you buy outright, offer consignment, or both for my brand/model?",
+                        "How do you handle authentication and condition grading?",
+                        "What is the payout timeline and method?",
+                        "What documentation helps most (serial/ref, service history, box/papers)?"
+                    ]
+                ),
+                DispositionPartnerResult(
+                    partnerId: "curated-chrono24",
+                    name: "Chrono24",
+                    partnerType: "Luxury Watches Marketplace (Ship-in / Escrow)",
+                    contact: DispositionPartnerContact(
+                        phone: nil,
+                        website: "https://www.chrono24.com",
+                        email: nil,
+                        address: nil,
+                        city: nil,
+                        region: nil
+                    ),
+                    distanceMiles: nil,
+                    rating: nil,
+                    userRatingsTotal: nil,
+                    trust: nil,
+                    ranking: nil,
+                    whyRecommended: "Large watch-focused marketplace; useful for price discovery and broader buyer reach.",
+                    questionsToAsk: [
+                        "What are seller fees and payout timing?",
+                        "What protections/escrow options are available?",
+                        "What photo/verification details are required for my watch?"
+                    ]
+                ),
+                DispositionPartnerResult(
+                    partnerId: "curated-ebay-auth",
+                    name: "eBay Authenticity Guarantee (Watches)",
+                    partnerType: "Watches Marketplace (Authentication)",
+                    contact: DispositionPartnerContact(
+                        phone: nil,
+                        website: "https://www.ebay.com/authenticity-guarantee/watches",
+                        email: nil,
+                        address: nil,
+                        city: nil,
+                        region: nil
+                    ),
+                    distanceMiles: nil,
+                    rating: nil,
+                    userRatingsTotal: nil,
+                    trust: nil,
+                    ranking: nil,
+                    whyRecommended: "Often a practical path for single watches with authentication support.",
+                    questionsToAsk: [
+                        "Does my watch qualify for authenticity guarantee?",
+                        "What fees and shipping/insurance rules apply?",
+                        "What condition disclosures are required to avoid returns?"
+                    ]
+                ),
+                DispositionPartnerResult(
+                    partnerId: "curated-realreal-watches",
+                    name: "The RealReal",
+                    partnerType: "Luxury Consignment (Mail-in)",
+                    contact: DispositionPartnerContact(
+                        phone: nil,
+                        website: "https://www.therealreal.com",
+                        email: nil,
+                        address: nil,
+                        city: "San Francisco / New York",
+                        region: "CA / NY"
+                    ),
+                    distanceMiles: nil,
+                    rating: nil,
+                    userRatingsTotal: nil,
+                    trust: nil,
+                    ranking: nil,
+                    whyRecommended: "Broad luxury consignment hub that also handles watches; good general option.",
+                    questionsToAsk: [
+                        "What watch brands/models do you accept right now?",
+                        "Do you offer a mail-in kit and prepaid label?",
+                        "What are your commission tiers and payout timing?",
+                        "Do you return items that don’t meet requirements?"
+                    ]
+                )
+            ]
+
+            // Default curated hubs (existing Luxury Clothing / accessories)
+            let curatedLuxuryDefault: [DispositionPartnerResult] = [
                 DispositionPartnerResult(
                     partnerId: "curated-realreal",
                     name: "The RealReal",
@@ -1148,19 +1499,21 @@ private struct SetPartnerPickerView: View {
                     ]
                 )
             ]
-            
+
+            let curated = setLooksLikeWatches(itemSet) ? curatedWatches : curatedLuxuryDefault
+
             response = DispositionPartnersSearchResponse(
                 schemaVersion: 1,
                 generatedAt: Date(),
-                scenarioId: "curated.luxury.mailin.v1",
-                partnerTypes: ["Luxury Mail-in Hub", "Luxury Resale"],
+                scenarioId: setLooksLikeWatches(itemSet) ? "curated.luxury.watches.v1" : "curated.luxury.mailin.v1",
+                partnerTypes: setLooksLikeWatches(itemSet) ? ["Luxury Watches", "Watches Marketplace"] : ["Luxury Mail-in Hub", "Luxury Resale"],
                 results: curated
             )
-            
+
             isSearching = false
             return
         }
-        
+
         // Contemporary (and any non-luxury paths): use backend search
         do {
             let loc = DispositionLocationDTO(
