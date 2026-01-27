@@ -489,111 +489,141 @@ Often better suited for alternate paths:
 # Luxury Personal Items → Jewelry
 <!-- checklist_key: luxury_personal_items_jewelry -->
 
-### Pre-Hub Readiness Checklist (v1)
+### Pre-Hub Readiness & Decision Checklist (v1)
 
 **Purpose**  
-Assess whether fine jewelry is suitable for resale through luxury hubs and reduce rejection risk related to materials, authentication, and condition.
+Help determine whether jewelry is better suited for a **designer jewelry hub**, a **local resale / auction path**, or a **materials-based sale**, and reduce rejection risk if a hub path is chosen.
+
+Unlike watches or handbags, jewelry resale value often depends on **brand recognition, documentation, and buyer demand**, not original retail price.
+
+This checklist is designed to support an informed decision before contacting any hub.
 
 ---
 
-## 1. Materials & Metal Verification
+## Advisory Note (Read First)
 
-☐ **Identify metal type**  
-Why this matters: Metal composition is fundamental to valuation.
+Designer jewelry resale value often differs significantly from original retail price.  
+Brand recognition, documentation, and current buyer demand typically matter more than original purchase cost.
 
-☐ **Locate and photograph purity marks**  
-Why this matters: Hallmarks are required for verification.
+Many jewelry pieces are better suited for **local resale or materials-based paths** rather than luxury mail-in hubs.
+
+This checklist helps you decide.
+
+---
+
+## 1. Category & Intent Check (Decision Gate)
+
+☐ **Identify whether the piece is designer-branded or materials-driven**  
+Why this matters: Designer jewelry and materials-based jewelry follow different resale paths.
+
+Designer signals include:
+- Recognized brands (e.g., Tiffany, Cartier, Van Cleef, Bulgari)
+- Named collections or iconic designs
+- Original brand packaging or documentation
+
+Materials-driven signals include:
+- No recognizable brand or maker
+- Value primarily in gold, platinum, or stones
+- Broken, mismatched, or heavily worn pieces
+
+Guidance:  
+If uncertain, continue the checklist — clarity often emerges in later steps.
+
+---
+
+## 2. Materials & Metal Verification
+
+☐ **Identify metal type if known (gold, platinum, mixed)**  
+Why this matters: Metal composition affects both hub acceptance and alternate paths.
+
+☐ **Locate and photograph purity or hallmark stamps**  
+Why this matters: Stamps are required for verification.
 
 ☐ **Check for maker’s or brand marks**  
-Why this matters: Recognized makers significantly affect value.
+Why this matters: Recognized makers significantly affect resale options.
 
 ---
 
-## 2. Stones & Gemstones
+## 3. Stones & Gemstones
 
 ☐ **Identify stone type if known**  
-Why this matters: Stone type and size drive value.
+Why this matters: Stone type influences buyer interest.
 
 ☐ **Note natural vs lab-grown (if known)**  
 Why this matters: Buyers distinguish sharply.
 
-☐ **Inspect stones for chips or cracks**  
+☐ **Inspect stones for chips, cracks, or clouding**  
 Why this matters: Damage materially affects value.
 
-☐ **Check stone security**  
+☐ **Check stone security (prongs, settings)**  
 Why this matters: Loose stones are a common rejection reason.
 
 ---
 
-## 3. Brand, Designer & Provenance
+## 4. Brand, Designer & Provenance
 
-☐ **Confirm designer or brand**  
-Why this matters: Branded jewelry follows different resale paths.
+☐ **Confirm designer or brand, if applicable**  
+Why this matters: Designer jewelry follows different resale paths.
 
-☐ **Photograph logos or serials**  
+☐ **Photograph logos, signatures, or serials**  
 Why this matters: Supports authentication.
 
-☐ **Gather provenance if available**  
-Why this matters: Improves buyer confidence.
+☐ **Gather provenance or receipts if available**  
+Why this matters: Improves buyer confidence but is not required.
 
 ---
 
-## 4. Condition & Wear
+## 5. Condition, Wear & Integrity
 
 ☐ **Inspect prongs, clasps, and hinges**  
-Why this matters: Structural wear affects safety.
+Why this matters: Structural wear affects safety and resale.
 
-☐ **Check closures for function**  
-Why this matters: Non-functional closures are often disqualifying.
+☐ **Test closures for proper function**  
+Why this matters: Non-functional closures often limit resale options.
 
-☐ **Note scratches or dents**  
-Why this matters: Excessive damage should be disclosed.
+☐ **Note scratches, dents, or deformation**  
+Why this matters: Condition issues should be disclosed.
 
 ---
 
-## 5. Modifications & Repairs
+## 6. Modifications & Repairs
 
-☐ **Note resizing or repairs**  
-Why this matters: Repairs must be disclosed.
+☐ **Note resizing, repairs, or soldering**  
+Why this matters: Modifications must be disclosed.
 
-☐ **Check for replacement stones**  
-Why this matters: Non-original parts affect value.
+☐ **Check for replacement stones or parts**  
+Why this matters: Non-original components affect value.
 
 ☐ **Identify mixed-metal construction**  
 Why this matters: Affects pricing expectations.
 
 ---
 
-## 6. Photos Required
+## 7. Photos Required (Before Any Outreach)
 
 ☐ Front and back views  
 ☐ Hallmarks and stamps  
 ☐ Stones and settings  
-☐ Clasps or hinges  
-☐ Any wear or repairs
+☐ Clasps, hinges, or closures  
+☐ Any wear, damage, or repairs
 
 ---
 
-## 7. Accessories & Documentation (Optional)
+## 8. Ready-for-Path Assessment (Advisory)
 
-☐ Original box or pouch  
-☐ Appraisal documents  
-☐ Certificates (e.g., GIA)  
-☐ Proof of purchase
-
----
-
-## 8. Ready-for-Hub Assessment
-
-Likely good candidates:
-- Clear metal hallmarks
+Likely candidates for designer jewelry hubs:
+- Clear designer branding
 - Secure stones
 - Functional closures
-- Honest disclosure
+- Supporting documentation (if available)
 
 Often better suited for alternate paths:
-- Missing stamps
+- No recognizable brand or maker
+- Missing or unclear stamps
 - Loose or damaged stones
 - Significant structural wear
-- Unclear materials
-```
+
+Guidance:  
+It is common to separate **designer jewelry** from **materials-based pieces** before proceeding.
+
+This separation often improves outcomes and reduces rejection risk.
