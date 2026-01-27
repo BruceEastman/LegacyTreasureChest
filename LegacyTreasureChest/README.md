@@ -1,4 +1,45 @@
 # Legacy Treasure Chest
+## Recent Update — Luxury Categories v1 (Watches & Handbags)
+
+The Legacy Treasure Chest app now includes first-class support for **Luxury Categories v1**, with a focus on **deterministic, advisor-grade guidance** rather than automated selling.
+
+### What’s new
+
+**Luxury Readiness Checklists (v1)**
+- Category-specific readiness checklists appear in **Set → Execute Plan** for luxury sets
+- Current supported luxury categories:
+  - Watches
+  - Designer Handbags
+  - Designer Shoes / Boots
+  - Designer Apparel
+- Checklists are:
+  - Set-scoped
+  - Advisory only (no gating or scoring)
+  - Bundled from a single source-of-truth markdown file
+
+**Curated Luxury Partner Hubs**
+- Luxury partner selection is **deterministic and instant**
+- No backend or location search for luxury paths
+- Category-specific routing:
+  - Watches → watch-focused hubs (e.g. WatchBox / Chrono24)
+  - Handbags → handbag-specialist hubs (e.g. Fashionphile / Rebag / Vestiaire)
+  - Other luxury → general luxury mail-in hubs
+- Supports informed executor or owner decision-making without forcing outcomes
+
+**Path B Semantics**
+- For qualifying luxury scenarios, Path B is labeled:
+  > **“Luxury Mail-in Hub”**
+- Determined via lightweight, explainable heuristics using set context and item summaries
+
+### Design principles reinforced
+- Advisor, not Operator
+- Deterministic over inferred behavior
+- Frontend-first, compile-safe iteration
+- Executor-grade clarity over consumer marketplace UX
+
+This establishes a stable foundation for future luxury categories (e.g. Jewelry) without expanding the data model or backend surface area.
+
+
 ## Current System Status (v1)
 
 Legacy Treasure Chest is being developed as a production-quality, AI-native advisor for household inventory and disposition decisions. The system intentionally prioritizes correctness, trust, and real-world workflows over rapid MVP delivery.

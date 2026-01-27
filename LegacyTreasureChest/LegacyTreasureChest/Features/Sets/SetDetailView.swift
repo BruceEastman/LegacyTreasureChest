@@ -676,6 +676,33 @@ private struct SetExecutePlanView: View {
                         .padding(.vertical, 6)
                     }
                 }
+                
+                // 4) Handbags
+                else if setLooksLikeHandbags(itemSet),
+                        let checklist = try? ReadinessChecklistLibrary.shared.luxuryPersonalItemsHandbags()
+                {
+                    DisclosureGroup(isExpanded: $readinessExpandedLuxury) {
+                        readinessChecklistCard(checklist: checklist)
+                            .padding(.top, 6)
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "checklist")
+                                .foregroundStyle(Theme.accent)
+
+                            Text("Readiness Checklist (Advisory)")
+                                .font(Theme.secondaryFont)
+                                .foregroundStyle(Theme.text)
+
+                            Spacer()
+
+                            Text(readinessExpandedLuxury ? "Hide" : "Show")
+                                .font(Theme.secondaryFont)
+                                .foregroundStyle(Theme.accent)
+                        }
+                        .padding(.vertical, 6)
+                    }
+                }
+
 
                 else {
                     EmptyView()
@@ -757,6 +784,38 @@ private struct SetExecutePlanView: View {
 
         return !apparelSignals.isDisjoint(with: tokens)
     }
+    
+    private func setLooksLikeHandbags(_ set: LTCItemSet) -> Bool {
+        let text = setSearchText(set)
+        let tokens = tokenize(text)
+
+        let handbagSignals: Set<String> = [
+            // generic
+            "handbag", "handbags",
+            "purse", "purses",
+            "bag", "bags",
+            "tote", "totes",
+            "satchel", "satchels",
+            "crossbody", "cross-body",
+            "clutch", "clutches",
+            "hobo", "hobos",
+            "shoulderbag", "shoulderbags",
+            "backpack", "backpacks",
+            // luxury brands (signals, not exhaustive)
+            "chanel", "louis", "vuitton", "lv",
+            "hermes", "hermès",
+            "gucci", "prada", "dior", "celine", "céline",
+            "ysl", "saint", "laurent",
+            "balenciaga", "bottega", "veneta",
+            "fendi", "givenchy", "loewe", "coach"
+        ]
+
+        // Avoid obvious false positives
+        if tokens.contains("bagel") { return false }
+
+        return !handbagSignals.isDisjoint(with: tokens)
+    }
+
     
     private func setSearchText(_ set: LTCItemSet) -> String {
         [
@@ -1063,6 +1122,33 @@ private struct SetPartnerPickerView: View {
         if tokens.contains("watching") { return false }
         return !watchSignals.isDisjoint(with: tokens)
     }
+    
+    private func setLooksLikeHandbags(_ set: LTCItemSet) -> Bool {
+        let tokens = partnerPickerTokenize(partnerPickerSetSearchText(set))
+
+        let handbagSignals: Set<String> = [
+            "handbag", "handbags",
+            "purse", "purses",
+            "bag", "bags",
+            "tote", "totes",
+            "satchel", "satchels",
+            "crossbody", "cross", "body",
+            "clutch", "clutches",
+            "hobo", "hobos",
+            "shoulder", "shoulderbag", "shoulderbags",
+            // brand signals
+            "chanel", "louis", "vuitton", "lv",
+            "hermes", "gucci", "prada", "dior",
+            "celine", "ysl", "saint", "laurent",
+            "balenciaga", "bottega", "veneta",
+            "fendi", "givenchy", "loewe", "coach"
+        ]
+
+        // Avoid obvious accidental matches
+        if tokens.contains("baggage") { return false }
+
+        return !handbagSignals.isDisjoint(with: tokens)
+    }
 
     
     private var chosenPathForRequest: DispositionChosenPath {
@@ -1297,6 +1383,108 @@ private struct SetPartnerPickerView: View {
         // ✅ Luxury: return curated hubs instantly (no backend search)
         if block == .luxury {
 
+            // Handbag-focused curated hubs
+            let curatedHandbags: [DispositionPartnerResult] = [
+                DispositionPartnerResult(
+                    partnerId: "curated-fashionphile-handbags",
+                    name: "Fashionphile",
+                    partnerType: "Designer Handbags (Buy/Sell, Mail-in)",
+                    contact: DispositionPartnerContact(
+                        phone: nil,
+                        website: "https://www.fashionphile.com",
+                        email: nil,
+                        address: nil,
+                        city: nil,
+                        region: nil
+                    ),
+                    distanceMiles: nil,
+                    rating: nil,
+                    userRatingsTotal: nil,
+                    trust: nil,
+                    ranking: nil,
+                    whyRecommended: "Handbag-first buyer with strong brand knowledge and a mail-in workflow.",
+                    questionsToAsk: [
+                        "Do you buy outright vs offer consignment for my bag?",
+                        "How do you grade condition (corners, handles, interior, hardware)?",
+                        "What documentation helps most (receipt, dust bag, authenticity card)?",
+                        "What’s the payout timing and method?"
+                    ]
+                ),
+                DispositionPartnerResult(
+                    partnerId: "curated-rebag-handbags",
+                    name: "Rebag",
+                    partnerType: "Designer Handbags (Mail-in / Offer)",
+                    contact: DispositionPartnerContact(
+                        phone: nil,
+                        website: "https://www.rebag.com",
+                        email: nil,
+                        address: nil,
+                        city: "New York",
+                        region: "NY"
+                    ),
+                    distanceMiles: nil,
+                    rating: nil,
+                    userRatingsTotal: nil,
+                    trust: nil,
+                    ranking: nil,
+                    whyRecommended: "Often a good path for current-demand handbags; remote selling options.",
+                    questionsToAsk: [
+                        "Is my brand/model in current demand?",
+                        "Do you provide an instant offer? What affects it most?",
+                        "Are there fees if an item is not accepted?"
+                    ]
+                ),
+                DispositionPartnerResult(
+                    partnerId: "curated-vestiaire-handbags",
+                    name: "Vestiaire Collective",
+                    partnerType: "Designer Handbags Marketplace (Ship-in)",
+                    contact: DispositionPartnerContact(
+                        phone: nil,
+                        website: "https://www.vestiairecollective.com",
+                        email: nil,
+                        address: nil,
+                        city: nil,
+                        region: nil
+                    ),
+                    distanceMiles: nil,
+                    rating: nil,
+                    userRatingsTotal: nil,
+                    trust: nil,
+                    ranking: nil,
+                    whyRecommended: "Marketplace reach for luxury handbags; can be strong for certain brands.",
+                    questionsToAsk: [
+                        "What are seller fees and payout timing?",
+                        "How does authentication work for handbags?",
+                        "What photos are required to reduce disputes/returns?"
+                    ]
+                ),
+                DispositionPartnerResult(
+                    partnerId: "curated-realreal-handbags",
+                    name: "The RealReal",
+                    partnerType: "Designer Handbags Consignment (Mail-in)",
+                    contact: DispositionPartnerContact(
+                        phone: nil,
+                        website: "https://www.therealreal.com",
+                        email: nil,
+                        address: nil,
+                        city: "San Francisco / New York",
+                        region: "CA / NY"
+                    ),
+                    distanceMiles: nil,
+                    rating: nil,
+                    userRatingsTotal: nil,
+                    trust: nil,
+                    ranking: nil,
+                    whyRecommended: "Broad luxury hub that can handle handbags with authentication workflows.",
+                    questionsToAsk: [
+                        "Do you accept my specific brand/model right now?",
+                        "What are commission tiers and payout timing?",
+                        "Do you return items that don’t meet requirements?"
+                    ]
+                )
+            ]
+
+            
             // Watch-focused curated hubs
             let curatedWatches: [DispositionPartnerResult] = [
                 DispositionPartnerResult(
@@ -1500,16 +1688,34 @@ private struct SetPartnerPickerView: View {
                 )
             ]
 
-            let curated = setLooksLikeWatches(itemSet) ? curatedWatches : curatedLuxuryDefault
+            let isWatches = setLooksLikeWatches(itemSet)
+            let isHandbags = setLooksLikeHandbags(itemSet)
+
+            let curated: [DispositionPartnerResult]
+            let scenarioId: String
+            let partnerTypes: [String]
+
+            if isWatches {
+                curated = curatedWatches
+                scenarioId = "curated.luxury.watches.v1"
+                partnerTypes = ["Luxury Watches", "Watches Marketplace"]
+            } else if isHandbags {
+                curated = curatedHandbags
+                scenarioId = "curated.luxury.handbags.v1"
+                partnerTypes = ["Designer Handbags", "Luxury Mail-in Hub", "Luxury Marketplace"]
+            } else {
+                curated = curatedLuxuryDefault
+                scenarioId = "curated.luxury.mailin.v1"
+                partnerTypes = ["Luxury Mail-in Hub", "Luxury Resale"]
+            }
 
             response = DispositionPartnersSearchResponse(
                 schemaVersion: 1,
                 generatedAt: Date(),
-                scenarioId: setLooksLikeWatches(itemSet) ? "curated.luxury.watches.v1" : "curated.luxury.mailin.v1",
-                partnerTypes: setLooksLikeWatches(itemSet) ? ["Luxury Watches", "Watches Marketplace"] : ["Luxury Mail-in Hub", "Luxury Resale"],
+                scenarioId: scenarioId,
+                partnerTypes: partnerTypes,
                 results: curated
             )
-
             isSearching = false
             return
         }

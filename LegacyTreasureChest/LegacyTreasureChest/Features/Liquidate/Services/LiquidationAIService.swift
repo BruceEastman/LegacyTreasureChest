@@ -578,7 +578,9 @@ struct LocalLiquidationBriefGenerator {
             // watches
             "watch", "watches", "rolex", "omega", "cartier", "tudor", "chronograph", "gmt",
             // handbags
-            "handbag", "handbags", "purse", "bag", "chanel", "louis vuitton", "lv", "hermes", "gucci", "prada"
+            "handbag", "handbags", "purse", "bag", "chanel", "louis vuitton", "lv", "hermes", "gucci", "prada",
+            // handbags (optional extensions)
+            "tote", "satchel", "clutch", "crossbody", "fendi", "celine", "ysl", "saint laurent", "bottega"
         ]
 
         return hubSignals.contains(where: { text.contains($0) })

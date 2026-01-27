@@ -71,17 +71,27 @@ final class ReadinessChecklistLibrary {
         return ReadinessChecklist(key: key, title: title, markdown: block)
     }
 
-    /// Convenience for v1 start category: Luxury Clothing → Shoes / Boots
+    // MARK: - Convenience accessors (v1)
+
+    /// Luxury Clothing → Shoes / Boots
     func luxuryClothingShoesBoots() throws -> ReadinessChecklist {
         try checklist(forKey: "luxury_clothing_shoes_boots")
     }
+
+    /// Luxury Clothing → Designer Apparel
     func luxuryClothingDesignerApparel() throws -> ReadinessChecklist {
         try checklist(forKey: "luxury_clothing_designer_apparel")
     }
+
+    /// Luxury Personal Items → Watches
     func luxuryPersonalItemsWatches() throws -> ReadinessChecklist {
         try checklist(forKey: "luxury_personal_items_watches")
     }
 
+    /// Luxury Personal Items → Handbags
+    func luxuryPersonalItemsHandbags() throws -> ReadinessChecklist {
+        try checklist(forKey: "luxury_personal_items_handbags")
+    }
 
     // MARK: - Load / Cache
 
