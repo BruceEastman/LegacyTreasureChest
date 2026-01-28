@@ -5,6 +5,11 @@
 **Target:** iOS 18+ (Swift 6, SwiftUI, SwiftData)  
 **Core Principle:** Advisor, not operator (no marketplace automation)
 
+## Advisor, Not Operator
+Legacy Treasure Chest prioritizes clear, conservative guidance over enforced outcomes.
+Users and executors retain full control over decisions, even when LTC advises alternate paths.
+Category-specific flows may introduce additional advisory steps, but the system avoids hard gating or forced classification unless real-world usage demonstrates a clear need.
+
 ---
 
 ## 1) Capability Spine (Do Not Wander)
@@ -23,6 +28,7 @@ This is the ordering we follow to keep the project coherent as complexity increa
 5. **Sets**
    - Sell-together / lot logic
    - Set-level summaries
+   - Specialized Luxury Hubs for specific high value categories that includes Readiness Checklists
 6. **Estate Sale / Batch Exit**
    - Select items
    - Generate agent-ready package

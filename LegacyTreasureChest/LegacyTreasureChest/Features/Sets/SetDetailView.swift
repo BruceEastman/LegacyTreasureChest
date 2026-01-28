@@ -676,7 +676,7 @@ private struct SetExecutePlanView: View {
                         .padding(.vertical, 6)
                     }
                 }
-                
+
                 // 4) Handbags
                 else if setLooksLikeHandbags(itemSet),
                         let checklist = try? ReadinessChecklistLibrary.shared.luxuryPersonalItemsHandbags()
@@ -703,6 +703,31 @@ private struct SetExecutePlanView: View {
                     }
                 }
 
+                // 5) Jewelry
+                else if setLooksLikeJewelry(itemSet),
+                        let checklist = try? ReadinessChecklistLibrary.shared.luxuryPersonalItemsJewelry()
+                {
+                    DisclosureGroup(isExpanded: $readinessExpandedLuxury) {
+                        readinessChecklistCard(checklist: checklist)
+                            .padding(.top, 6)
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "checklist")
+                                .foregroundStyle(Theme.accent)
+
+                            Text("Readiness Checklist (Advisory)")
+                                .font(Theme.secondaryFont)
+                                .foregroundStyle(Theme.text)
+
+                            Spacer()
+
+                            Text(readinessExpandedLuxury ? "Hide" : "Show")
+                                .font(Theme.secondaryFont)
+                                .foregroundStyle(Theme.accent)
+                        }
+                        .padding(.vertical, 6)
+                    }
+                }
 
                 else {
                     EmptyView()
@@ -712,7 +737,6 @@ private struct SetExecutePlanView: View {
             }
         }
     }
-
     // MARK: - Readiness Matching (v1)
 
     private func setLooksLikeFootwear(_ set: LTCItemSet) -> Bool {
@@ -735,7 +759,7 @@ private struct SetExecutePlanView: View {
 
         return !footwearSignals.isDisjoint(with: tokens)
     }
-    
+
     private func setLooksLikeWatches(_ set: LTCItemSet) -> Bool {
         let text = setSearchText(set)
         let tokens = tokenize(text)
@@ -755,7 +779,6 @@ private struct SetExecutePlanView: View {
         return !watchSignals.isDisjoint(with: tokens)
     }
 
-    
     private func setLooksLikeDesignerApparel(_ set: LTCItemSet) -> Bool {
         let text = setSearchText(set)
         let tokens = tokenize(text)
@@ -784,7 +807,7 @@ private struct SetExecutePlanView: View {
 
         return !apparelSignals.isDisjoint(with: tokens)
     }
-    
+
     private func setLooksLikeHandbags(_ set: LTCItemSet) -> Bool {
         let text = setSearchText(set)
         let tokens = tokenize(text)
@@ -816,7 +839,59 @@ private struct SetExecutePlanView: View {
         return !handbagSignals.isDisjoint(with: tokens)
     }
 
-    
+    private func setLooksLikeJewelry(_ set: LTCItemSet) -> Bool {
+        let text = setSearchText(set)
+        let tokens = tokenize(text)
+
+        // Primary jewelry nouns
+        let jewelrySignals: Set<String> = [
+            "jewelry", "jewellery",
+            "ring", "rings",
+            "bracelet", "bracelets",
+            "necklace", "necklaces",
+            "pendant", "pendants",
+            "earring", "earrings",
+            "stud", "studs",
+            "hoop", "hoops",
+            "bangle", "bangles",
+            "brooch", "brooches",
+            "anklet", "anklets",
+            "charm", "charms",
+            "chain", "chains",
+            "cufflink", "cufflinks"
+        ]
+
+        // High-signal brand terms (still advisory, not classification)
+        let brandSignals: Set<String> = [
+            "tiffany",
+            "cartier",
+            "bulgari", "bvlgari",
+            "mikimoto",
+            "chopard",
+            "buccellati",
+            "graff",
+            "winston", "harry",
+            "yurman", "david",
+            "vca", "arpels", "cleef", "vancleef"
+        ]
+
+        // Avoid a few common false positives where "ring" appears in other contexts
+        let falsePositives: Set<String> = [
+            "ringtone", "ringtones",
+            "ringing",
+            "keyring", "keyrings",
+            "ringlight", "ringlights"
+        ]
+
+        // If we only hit a false-positive token and nothing else, bail out.
+        if !falsePositives.isDisjoint(with: tokens) {
+            let hasOtherJewelrySignal = !jewelrySignals.isDisjoint(with: tokens) || !brandSignals.isDisjoint(with: tokens)
+            if !hasOtherJewelrySignal { return false }
+        }
+
+        return !jewelrySignals.isDisjoint(with: tokens) || !brandSignals.isDisjoint(with: tokens)
+    }
+
     private func setSearchText(_ set: LTCItemSet) -> String {
         [
             set.name,
@@ -827,9 +902,6 @@ private struct SetExecutePlanView: View {
         .joined(separator: " ")
         .lowercased()
     }
-
-
-
 
     private func tokenize(_ text: String) -> Set<String> {
         let cleaned = text.map { ch -> Character in
@@ -1149,6 +1221,55 @@ private struct SetPartnerPickerView: View {
 
         return !handbagSignals.isDisjoint(with: tokens)
     }
+    
+    private func setLooksLikeJewelry(_ set: LTCItemSet) -> Bool {
+        let tokens = partnerPickerTokenize(partnerPickerSetSearchText(set))
+
+        let jewelrySignals: Set<String> = [
+            "jewelry", "jewellery",
+            "ring", "rings",
+            "bracelet", "bracelets",
+            "necklace", "necklaces",
+            "pendant", "pendants",
+            "earring", "earrings",
+            "stud", "studs",
+            "hoop", "hoops",
+            "bangle", "bangles",
+            "brooch", "brooches",
+            "anklet", "anklets",
+            "charm", "charms",
+            "chain", "chains",
+            "cufflink", "cufflinks"
+        ]
+
+        let brandSignals: Set<String> = [
+            "tiffany",
+            "cartier",
+            "bulgari", "bvlgari",
+            "mikimoto",
+            "chopard",
+            "buccellati",
+            "graff",
+            "winston", "harry",
+            "yurman", "david",
+            "vca", "arpels", "cleef", "vancleef"
+        ]
+
+        let falsePositives: Set<String> = [
+            "ringtone", "ringtones",
+            "ringing",
+            "keyring", "keyrings",
+            "ringlight", "ringlights"
+        ]
+
+        if !falsePositives.isDisjoint(with: tokens) {
+            let hasOtherJewelrySignal = !jewelrySignals.isDisjoint(with: tokens) || !brandSignals.isDisjoint(with: tokens)
+            if !hasOtherJewelrySignal { return false }
+        }
+
+        return !jewelrySignals.isDisjoint(with: tokens) || !brandSignals.isDisjoint(with: tokens)
+    }
+
 
     
     private var chosenPathForRequest: DispositionChosenPath {
@@ -1484,7 +1605,7 @@ private struct SetPartnerPickerView: View {
                 )
             ]
 
-            
+
             // Watch-focused curated hubs
             let curatedWatches: [DispositionPartnerResult] = [
                 DispositionPartnerResult(
@@ -1583,6 +1704,210 @@ private struct SetPartnerPickerView: View {
                         "Do you offer a mail-in kit and prepaid label?",
                         "What are your commission tiers and payout timing?",
                         "Do you return items that don’t meet requirements?"
+                    ]
+                )
+            ]
+
+            // Jewelry-focused curated hubs
+            let curatedJewelry: [DispositionPartnerResult] = [
+                DispositionPartnerResult(
+                    partnerId: "curated-realreal-jewelry",
+                    name: "The RealReal",
+                    partnerType: "Fine Jewelry Consignment (Mail-in)",
+                    contact: DispositionPartnerContact(
+                        phone: nil,
+                        website: "https://www.therealreal.com",
+                        email: nil,
+                        address: nil,
+                        city: "San Francisco / New York",
+                        region: "CA / NY"
+                    ),
+                    distanceMiles: nil,
+                    rating: nil,
+                    userRatingsTotal: nil,
+                    trust: nil,
+                    ranking: nil,
+                    whyRecommended: "Broad luxury consignment hub that can handle many fine jewelry scenarios with authentication workflows.",
+                    questionsToAsk: [
+                        "Do you accept my brand/material type right now (designer vs estate jewelry)?",
+                        "What are commission tiers and payout timing for jewelry?",
+                        "What documentation helps most (receipt, appraisal, box/papers)?",
+                        "Do you return items that don’t meet requirements?"
+                    ]
+                ),
+                DispositionPartnerResult(
+                    partnerId: "curated-fashionphile-jewelry",
+                    name: "Fashionphile",
+                    partnerType: "Designer Jewelry (Buy/Sell, Mail-in)",
+                    contact: DispositionPartnerContact(
+                        phone: nil,
+                        website: "https://www.fashionphile.com",
+                        email: nil,
+                        address: nil,
+                        city: nil,
+                        region: nil
+                    ),
+                    distanceMiles: nil,
+                    rating: nil,
+                    userRatingsTotal: nil,
+                    trust: nil,
+                    ranking: nil,
+                    whyRecommended: "Strong for designer-branded jewelry with a mail-in workflow and brand knowledge.",
+                    questionsToAsk: [
+                        "Do you buy outright or offer consignment for jewelry?",
+                        "What condition factors affect offers most (scratches, missing box, repairs)?",
+                        "What documentation helps most (receipt, authenticity card, appraisal)?",
+                        "What’s the payout timing and method?"
+                    ]
+                ),
+                DispositionPartnerResult(
+                    partnerId: "curated-vestiaire-jewelry",
+                    name: "Vestiaire Collective",
+                    partnerType: "Designer Jewelry Marketplace (Ship-in)",
+                    contact: DispositionPartnerContact(
+                        phone: nil,
+                        website: "https://www.vestiairecollective.com",
+                        email: nil,
+                        address: nil,
+                        city: nil,
+                        region: nil
+                    ),
+                    distanceMiles: nil,
+                    rating: nil,
+                    userRatingsTotal: nil,
+                    trust: nil,
+                    ranking: nil,
+                    whyRecommended: "Marketplace reach for designer jewelry; can be useful for certain brands and styles.",
+                    questionsToAsk: [
+                        "What are seller fees and payout timing?",
+                        "How does authentication work for jewelry?",
+                        "What photos are required to reduce disputes/returns?",
+                        "Are there restrictions on materials (gold/diamonds) or value thresholds?"
+                    ]
+                ),
+                DispositionPartnerResult(
+                    partnerId: "curated-worthydotcom",
+                    name: "Worthy",
+                    partnerType: "Diamond Jewelry Resale (Auction-style, Mail-in)",
+                    contact: DispositionPartnerContact(
+                        phone: nil,
+                        website: "https://www.worthy.com",
+                        email: nil,
+                        address: nil,
+                        city: nil,
+                        region: nil
+                    ),
+                    distanceMiles: nil,
+                    rating: nil,
+                    userRatingsTotal: nil,
+                    trust: nil,
+                    ranking: nil,
+                    whyRecommended: "Often a good pathway for diamond jewelry where value is materials-based and you want competitive offers.",
+                    questionsToAsk: [
+                        "What items are a good fit (diamonds, engagement rings, loose stones)?",
+                        "What fees apply and when are they charged?",
+                        "How do you handle insurance and shipping custody?",
+                        "What documentation helps maximize bids (appraisal, grading report)?"
+                    ]
+                ),
+                DispositionPartnerResult(
+                    partnerId: "curated-wpdiamonds",
+                    name: "WP Diamonds",
+                    partnerType: "Diamond Jewelry Buyer (Mail-in / Offer)",
+                    contact: DispositionPartnerContact(
+                        phone: nil,
+                        website: "https://www.wpdiamonds.com",
+                        email: nil,
+                        address: nil,
+                        city: "New York",
+                        region: "NY"
+                    ),
+                    distanceMiles: nil,
+                    rating: nil,
+                    userRatingsTotal: nil,
+                    trust: nil,
+                    ranking: nil,
+                    whyRecommended: "Direct buyer option for diamond jewelry; can be useful for simpler, materials-based sales.",
+                    questionsToAsk: [
+                        "Do you buy my item type (diamond ring, loose stones, estate jewelry)?",
+                        "What affects the offer most (carat, cut, clarity, certifications)?",
+                        "What are the shipping/insurance rules and payout timeline?",
+                        "Do you provide a return option if I decline the offer?"
+                    ]
+                ),
+                DispositionPartnerResult(
+                    partnerId: "curated-idonowidont",
+                    name: "I Do Now I Don’t",
+                    partnerType: "Bridal / Diamond Jewelry Resale (Consignment / Marketplace)",
+                    contact: DispositionPartnerContact(
+                        phone: nil,
+                        website: "https://www.idonowidont.com",
+                        email: nil,
+                        address: nil,
+                        city: nil,
+                        region: nil
+                    ),
+                    distanceMiles: nil,
+                    rating: nil,
+                    userRatingsTotal: nil,
+                    trust: nil,
+                    ranking: nil,
+                    whyRecommended: "Specialized path for engagement rings and bridal diamond jewelry where audience-fit matters.",
+                    questionsToAsk: [
+                        "Is my ring a good fit for your audience/value range?",
+                        "What fees apply and what is payout timing?",
+                        "What photos/documents do you require (appraisal, certification)?",
+                        "How do you handle returns, disputes, and authentication?"
+                    ]
+                ),
+                DispositionPartnerResult(
+                    partnerId: "curated-sothebys-jewelry",
+                    name: "Sotheby’s",
+                    partnerType: "Important Jewelry (Auction / Specialist Review)",
+                    contact: DispositionPartnerContact(
+                        phone: nil,
+                        website: "https://www.sothebys.com",
+                        email: nil,
+                        address: nil,
+                        city: nil,
+                        region: nil
+                    ),
+                    distanceMiles: nil,
+                    rating: nil,
+                    userRatingsTotal: nil,
+                    trust: nil,
+                    ranking: nil,
+                    whyRecommended: "High-end pathway for exceptional, signed, or important jewelry; best for standout pieces.",
+                    questionsToAsk: [
+                        "Is my piece appropriate for an auction vs a private sale?",
+                        "What estimate range would you suggest and why?",
+                        "What seller fees/commission apply and what timeline should I expect?",
+                        "What provenance documentation will you need?"
+                    ]
+                ),
+                DispositionPartnerResult(
+                    partnerId: "curated-christies-jewelry",
+                    name: "Christie’s",
+                    partnerType: "Important Jewelry (Auction / Specialist Review)",
+                    contact: DispositionPartnerContact(
+                        phone: nil,
+                        website: "https://www.christies.com",
+                        email: nil,
+                        address: nil,
+                        city: nil,
+                        region: nil
+                    ),
+                    distanceMiles: nil,
+                    rating: nil,
+                    userRatingsTotal: nil,
+                    trust: nil,
+                    ranking: nil,
+                    whyRecommended: "High-end pathway for exceptional pieces, designer-signed jewelry, or notable gemstones.",
+                    questionsToAsk: [
+                        "Is my piece appropriate for an auction vs private sale?",
+                        "What estimate range would you suggest and why?",
+                        "What seller fees/commission apply and what timeline should I expect?",
+                        "What documentation is most important (appraisal, provenance, certificates)?"
                     ]
                 )
             ]
@@ -1690,6 +2015,7 @@ private struct SetPartnerPickerView: View {
 
             let isWatches = setLooksLikeWatches(itemSet)
             let isHandbags = setLooksLikeHandbags(itemSet)
+            let isJewelry = setLooksLikeJewelry(itemSet)
 
             let curated: [DispositionPartnerResult]
             let scenarioId: String
@@ -1703,6 +2029,10 @@ private struct SetPartnerPickerView: View {
                 curated = curatedHandbags
                 scenarioId = "curated.luxury.handbags.v1"
                 partnerTypes = ["Designer Handbags", "Luxury Mail-in Hub", "Luxury Marketplace"]
+            } else if isJewelry {
+                curated = curatedJewelry
+                scenarioId = "curated.luxury.jewelry.v1"
+                partnerTypes = ["Fine Jewelry", "Designer Jewelry", "Jewelry Marketplace", "Important Jewelry"]
             } else {
                 curated = curatedLuxuryDefault
                 scenarioId = "curated.luxury.mailin.v1"
@@ -1719,6 +2049,7 @@ private struct SetPartnerPickerView: View {
             isSearching = false
             return
         }
+
 
         // Contemporary (and any non-luxury paths): use backend search
         do {

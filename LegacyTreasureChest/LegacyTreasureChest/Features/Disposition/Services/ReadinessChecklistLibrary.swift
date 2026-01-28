@@ -93,6 +93,11 @@ final class ReadinessChecklistLibrary {
         try checklist(forKey: "luxury_personal_items_handbags")
     }
 
+    /// Luxury Personal Items → Jewelry
+    func luxuryPersonalItemsJewelry() throws -> ReadinessChecklist {
+        try checklist(forKey: "luxury_personal_items_jewelry")
+    }
+
     // MARK: - Load / Cache
 
     private func loadMarkdown() throws -> String {
