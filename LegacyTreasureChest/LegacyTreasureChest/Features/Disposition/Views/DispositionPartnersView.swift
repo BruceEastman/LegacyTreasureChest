@@ -129,7 +129,7 @@ struct DispositionPartnersView: View {
                             Image(systemName: "magnifyingglass")
                         }
 
-                        Text(isSearching ? "Searching…" : "Find Local Partners")
+                        Text(isSearching ? "Searching…" : UserFacingTerms.Disposition.findLocalHelpCTA)
                             .font(Theme.bodyFont.weight(.semibold))
                     }
                 }
@@ -149,7 +149,7 @@ struct DispositionPartnersView: View {
             if let response {
                 Section {
                     if response.results.isEmpty {
-                        Text("No results found. Try a larger radius or adjust the item/category.")
+                        Text(UserFacingTerms.Disposition.noLocalHelpFound)
                             .font(Theme.secondaryFont)
                             .foregroundStyle(Theme.textSecondary)
                     } else {
@@ -159,7 +159,7 @@ struct DispositionPartnersView: View {
                     }
                 } header: {
                     HStack {
-                        Text("Results")
+                        Text(UserFacingTerms.Disposition.localHelpOptionsHeader)
                             .ltcSectionHeaderStyle()
                         Spacer()
                         if !response.partnerTypes.isEmpty {
@@ -182,7 +182,7 @@ struct DispositionPartnersView: View {
         }
         .scrollContentBackground(.hidden)
         .background(Theme.background)
-        .navigationTitle("Local Help")
+        .navigationTitle(UserFacingTerms.Disposition.localHelpTitle)
         .navigationBarTitleDisplayMode(.inline)
         .tint(Theme.accent)
     }

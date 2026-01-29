@@ -61,14 +61,19 @@ final class ReadinessChecklistLibrary {
             throw ReadinessChecklistError.checklistKeyNotFound(key: key)
         }
 
-        let block = String(full[range]).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !block.isEmpty else {
+        let rawBlock = String(full[range]).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !rawBlock.isEmpty else {
             throw ReadinessChecklistError.malformedChecklistBlock(key: key)
         }
 
         let title = inferTitle(in: full, blockStartIndex: range.lowerBound)
 
-        return ReadinessChecklist(key: key, title: title, markdown: block)
+        // Clean the markdown for UI rendering:
+        // - Remove <!-- checklist_key: ... --> markers
+        // - Remove the top "# Title" line (UI already provides the header)
+        let cleaned = cleanChecklistMarkdown(rawBlock)
+
+        return ReadinessChecklist(key: key, title: title, markdown: cleaned)
     }
 
     // MARK: - Convenience accessors (v1)
@@ -175,6 +180,36 @@ final class ReadinessChecklistLibrary {
         let firstLine = String(full[blockStartIndex..<lineEnd]).trimmingCharacters(in: .whitespacesAndNewlines)
         guard firstLine.hasPrefix("# ") else { return nil }
         return String(firstLine.dropFirst(2)).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    // MARK: - Markdown cleanup (v1)
+
+    private func cleanChecklistMarkdown(_ rawBlock: String) -> String {
+        // 1) Remove checklist_key marker lines entirely
+        var lines = rawBlock.split(separator: "\n", omittingEmptySubsequences: false).map { String($0) }
+        lines.removeAll { line in
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.hasPrefix("<!-- checklist_key:")
+        }
+
+        // 2) Remove the top H1 title line ("# ...") if present (UI header already shows)
+        if let firstNonEmptyIndex = lines.firstIndex(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+            let first = lines[firstNonEmptyIndex].trimmingCharacters(in: .whitespacesAndNewlines)
+            if first.hasPrefix("# ") {
+                lines.remove(at: firstNonEmptyIndex)
+
+                // Also remove a single blank line immediately following the title, if present
+                if firstNonEmptyIndex < lines.count {
+                    let next = lines[firstNonEmptyIndex].trimmingCharacters(in: .whitespacesAndNewlines)
+                    if next.isEmpty {
+                        lines.remove(at: firstNonEmptyIndex)
+                    }
+                }
+            }
+        }
+
+        // 3) Trim extra whitespace at ends
+        return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 

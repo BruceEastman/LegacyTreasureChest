@@ -563,7 +563,7 @@ private struct SetExecutePlanView: View {
                     Image(systemName: "person.crop.circle.badge.checkmark")
                         .foregroundStyle(Theme.textSecondary)
 
-                    Text("Partner:")
+                    Text(UserFacingTerms.Disposition.sellingOptionLabel + ":")
                         .font(Theme.secondaryFont)
                         .foregroundStyle(Theme.textSecondary)
 
@@ -584,7 +584,7 @@ private struct SetExecutePlanView: View {
                 Image(systemName: "person.crop.circle")
                     .foregroundStyle(Theme.textSecondary)
 
-                Text("Partner: Not needed")
+                Text("\(UserFacingTerms.Disposition.sellingOptionLabel): Not needed")
                     .font(Theme.secondaryFont)
                     .foregroundStyle(Theme.textSecondary)
 
@@ -592,6 +592,7 @@ private struct SetExecutePlanView: View {
             }
         }
     }
+
 
     // MARK: - Readiness Checklist (v1)
 
@@ -1326,7 +1327,7 @@ private struct SetPartnerPickerView: View {
                     focusedField = nil
                     Task { await search() }
                 } label: {
-                    Label(isSearching ? "Searching…" : "Search Partners", systemImage: "magnifyingglass")
+                    Label(isSearching ? "Searching…" : UserFacingTerms.Disposition.searchSellingOptionsCTA, systemImage: "magnifyingglass")
                 }
                 .disabled(isSearching || blockForService == nil)
                 
@@ -1341,7 +1342,7 @@ private struct SetPartnerPickerView: View {
                 Section {
                     DisclosureGroup(isExpanded: $isResultsExpanded) {
                         if response.results.isEmpty {
-                            Text("No partners found. Try a larger radius or different city.")
+                            Text(UserFacingTerms.Disposition.noSellingOptionsFound)
                                 .font(Theme.secondaryFont)
                                 .foregroundStyle(Theme.textSecondary)
                         } else {
@@ -1350,7 +1351,7 @@ private struct SetPartnerPickerView: View {
                             }
                         }
                     } label: {
-                        Text("Results")
+                        Text(UserFacingTerms.Disposition.sellingOptionsHeader)
                             .font(Theme.sectionHeaderFont)
                             .foregroundStyle(Theme.text)
                     }
@@ -1367,7 +1368,7 @@ private struct SetPartnerPickerView: View {
                 }
             }
         }
-        .navigationTitle("Select Partner")
+        .navigationTitle(UserFacingTerms.Disposition.chooseWhereToSellTitle)
         .navigationBarTitleDisplayMode(.inline)
         .scrollDismissesKeyboard(.interactively)
         .toolbar {
@@ -2072,7 +2073,7 @@ private struct SetPartnerPickerView: View {
             
             response = resp
         } catch {
-            errorMessage = "Search failed: \(error.localizedDescription)"
+            errorMessage = "\(UserFacingTerms.Disposition.sellingOptionsSearchFailedPrefix) \(error.localizedDescription)"
         }
         
         isSearching = false
