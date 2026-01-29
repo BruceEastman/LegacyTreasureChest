@@ -18,8 +18,7 @@ struct BatchListView: View {
             } else {
                 ForEach(batches) { batch in
                     NavigationLink {
-                        // B1: Detail view not implemented yet
-                        BatchStubDetailView(batch: batch)
+                        BatchDetailView(batch: batch)
                     } label: {
                         VStack(alignment: .leading, spacing: 6) {
                             Text(batch.name)
@@ -70,15 +69,39 @@ struct BatchListView: View {
     }
 }
 
-private struct BatchStubDetailView: View {
+private struct BatchDetailView: View {
     let batch: LiquidationBatch
 
     var body: some View {
         Form {
             Section("Batch") {
                 LabeledContent("Name", value: batch.name)
-                LabeledContent("Status", value: batch.status.rawValue)
-                LabeledContent("Sale Type", value: batch.saleType.rawValue)
+                LabeledContent("Status", value: batch.status.rawValue.capitalized)
+                LabeledContent("Sale Type", value: batch.saleType.rawValue.capitalized)
+
+                if let target = batch.targetDate {
+                    LabeledContent("Target Date") {
+                        Text(target, style: .date)
+                    }
+                } else {
+                    LabeledContent("Target Date", value: "Not set")
+                }
+
+                if let venue = batch.venue?.rawValue, !venue.isEmpty {
+                    LabeledContent("Venue", value: venue)
+                }
+
+                if let provider = batch.provider, !provider.isEmpty {
+                    LabeledContent("Provider", value: provider)
+                }
+
+                LabeledContent("Created") {
+                    Text(batch.createdAt, style: .date)
+                }
+
+                LabeledContent("Updated") {
+                    Text(batch.updatedAt, style: .date)
+                }
             }
 
             Section("Contents") {
@@ -86,8 +109,8 @@ private struct BatchStubDetailView: View {
                 LabeledContent("Sets", value: "\(batch.sets.count)")
             }
 
-            Section {
-                Text("Batch detail, scope builder, and execution tools will be added in later steps.")
+            Section("Scope Builder") {
+                Text("Coming next: choose which items and sets belong in this batch, then generate lot numbers and handling notes.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
