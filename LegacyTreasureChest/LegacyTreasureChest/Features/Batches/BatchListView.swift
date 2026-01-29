@@ -25,11 +25,11 @@ struct BatchListView: View {
                                 .font(.headline)
 
                             HStack(spacing: 12) {
-                                Text(batch.status.rawValue.capitalized)
+                                Text(batch.statusRaw.capitalized)
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
 
-                                Text(batch.saleType.rawValue.capitalized)
+                                Text(batch.saleTypeRaw.capitalized)
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                             }
@@ -70,30 +70,83 @@ struct BatchListView: View {
 }
 
 private struct BatchDetailView: View {
-    let batch: LiquidationBatch
+    @Bindable var batch: LiquidationBatch
+
+    @State private var hasTargetDate: Bool = false
+    @State private var draftTargetDate: Date = .now
 
     var body: some View {
         Form {
             Section("Batch") {
-                LabeledContent("Name", value: batch.name)
-                LabeledContent("Status", value: batch.status.rawValue.capitalized)
-                LabeledContent("Sale Type", value: batch.saleType.rawValue.capitalized)
+                TextField("Name", text: $batch.name)
+                    .onChange(of: batch.name) { _, _ in touchUpdatedAt() }
 
-                if let target = batch.targetDate {
-                    LabeledContent("Target Date") {
-                        Text(target, style: .date)
+                // We intentionally edit the raw fields to avoid guessing enum cases.
+                TextField("Status (raw)", text: $batch.statusRaw)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .onChange(of: batch.statusRaw) { _, _ in touchUpdatedAt() }
+
+                TextField("Sale Type (raw)", text: $batch.saleTypeRaw)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .onChange(of: batch.saleTypeRaw) { _, _ in touchUpdatedAt() }
+
+                Toggle("Target Date", isOn: $hasTargetDate)
+                    .onChange(of: hasTargetDate) { _, newValue in
+                        if newValue {
+                            // Turning ON: restore existing value or use a draft default
+                            if batch.targetDate == nil {
+                                batch.targetDate = draftTargetDate
+                            }
+                        } else {
+                            // Turning OFF: clear it
+                            batch.targetDate = nil
+                        }
+                        touchUpdatedAt()
                     }
-                } else {
-                    LabeledContent("Target Date", value: "Not set")
+
+                if hasTargetDate {
+                    DatePicker(
+                        "Date",
+                        selection: Binding<Date>(
+                            get: { batch.targetDate ?? draftTargetDate },
+                            set: { newDate in
+                                batch.targetDate = newDate
+                                draftTargetDate = newDate
+                                touchUpdatedAt()
+                            }
+                        ),
+                        displayedComponents: [.date]
+                    )
                 }
 
-                if let venue = batch.venue?.rawValue, !venue.isEmpty {
-                    LabeledContent("Venue", value: venue)
-                }
+                TextField(
+                    "Venue (raw)",
+                    text: Binding(
+                        get: { batch.venueRaw ?? "" },
+                        set: { newValue in
+                            let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                            batch.venueRaw = trimmed.isEmpty ? nil : trimmed
+                            touchUpdatedAt()
+                        }
+                    )
+                )
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
 
-                if let provider = batch.provider, !provider.isEmpty {
-                    LabeledContent("Provider", value: provider)
-                }
+                TextField(
+                    "Provider",
+                    text: Binding(
+                        get: { batch.provider ?? "" },
+                        set: { newValue in
+                            let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                            batch.provider = trimmed.isEmpty ? nil : trimmed
+                            touchUpdatedAt()
+                        }
+                    )
+                )
+                .autocorrectionDisabled()
 
                 LabeledContent("Created") {
                     Text(batch.createdAt, style: .date)
@@ -102,6 +155,10 @@ private struct BatchDetailView: View {
                 LabeledContent("Updated") {
                     Text(batch.updatedAt, style: .date)
                 }
+
+                Text("Note: Status, Sale Type, and Venue are edited as raw values for now. We’ll convert these to pickers once we wire in the exact enum case list safely.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Contents") {
@@ -115,8 +172,18 @@ private struct BatchDetailView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .navigationTitle(batch.name)
+        .navigationTitle(batch.name.isEmpty ? "Batch" : batch.name)
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            hasTargetDate = (batch.targetDate != nil)
+            if let t = batch.targetDate {
+                draftTargetDate = t
+            }
+        }
+    }
+
+    private func touchUpdatedAt() {
+        batch.updatedAt = .now
     }
 }
 
