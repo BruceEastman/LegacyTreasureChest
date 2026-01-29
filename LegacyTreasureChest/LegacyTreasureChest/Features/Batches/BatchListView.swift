@@ -95,12 +95,10 @@ private struct BatchDetailView: View {
                 Toggle("Target Date", isOn: $hasTargetDate)
                     .onChange(of: hasTargetDate) { _, newValue in
                         if newValue {
-                            // Turning ON: restore existing value or use a draft default
                             if batch.targetDate == nil {
                                 batch.targetDate = draftTargetDate
                             }
                         } else {
-                            // Turning OFF: clear it
                             batch.targetDate = nil
                         }
                         touchUpdatedAt()
@@ -164,6 +162,44 @@ private struct BatchDetailView: View {
             Section("Contents") {
                 LabeledContent("Items", value: "\(batch.items.count)")
                 LabeledContent("Sets", value: "\(batch.sets.count)")
+            }
+
+            Section("Items in Batch") {
+                if batch.items.isEmpty {
+                    Text("No items yet.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(batch.items) { entry in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(entry.item?.name ?? "Unnamed Item")
+                                .font(.body)
+
+                            Text(entry.dispositionRaw.capitalized)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+
+            Section("Sets in Batch") {
+                if batch.sets.isEmpty {
+                    Text("No sets yet.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(batch.sets) { entry in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(entry.itemSet?.name ?? "Unnamed Set")
+                                .font(.body)
+
+                            Text(entry.dispositionRaw.capitalized)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
             }
 
             Section("Scope Builder") {
