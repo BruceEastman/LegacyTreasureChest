@@ -35,6 +35,7 @@ struct EstateDashboardView: View {
                     valueByCategorySection
                     highValueLiquidateSection
                     nextStepsSection
+                    estateSaleSection
                     exportAndShareSection
                 }
 
@@ -381,6 +382,37 @@ struct EstateDashboardView: View {
         }
     }
 
+    private var estateSaleSection: some View {
+        VStack(alignment: .leading, spacing: Theme.spacing.small) {
+            Text("Estate Sale")
+                .ltcSectionHeaderStyle()
+
+            VStack(alignment: .leading, spacing: Theme.spacing.medium) {
+                NavigationLink {
+                    BatchListView()
+                } label: {
+                    HStack(spacing: Theme.spacing.small) {
+                        Image(systemName: "shippingbox")
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Estate Sale Batches")
+                                .font(Theme.bodyFont.weight(.semibold))
+                                .foregroundStyle(Theme.text)
+                            Text("Create and manage batches for an estate sale")
+                                .font(Theme.secondaryFont)
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                    .padding(.vertical, 6)
+                }
+            }
+            .ltcCardBackground()
+        }
+    }
+
     private var exportAndShareSection: some View {
         VStack(alignment: .leading, spacing: Theme.spacing.small) {
             Text("Export & Share")
@@ -677,3 +709,4 @@ private extension View {
             )
     }
 }
+

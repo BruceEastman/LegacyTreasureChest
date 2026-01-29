@@ -1,4 +1,31 @@
 # Legacy Treasure Chest
+## Current Status (January 28, 2026)
+
+Legacy Treasure Chest continues to evolve as an **advisor-first**, production-quality system focused on clarity, trust, and executor-friendly workflows.
+
+Recent updates include:
+
+- **Jewelry v1 support**
+  - Jewelry is treated as a distinct luxury category with advisory-only readiness guidance.
+  - The system highlights key decision considerations (designer vs. materials-based jewelry) without enforcing classification or suppressing user choices.
+  - Curated selling pathways are surfaced where appropriate, while keeping all decisions user-controlled.
+
+- **Improved readiness checklist presentation**
+  - Readiness checklists are now rendered cleanly and consistently across categories.
+  - Internal metadata and redundant headings are removed from the UI, improving readability without changing underlying content.
+
+- **Clearer user-facing language**
+  - Internal concepts such as “Partner” remain unchanged in the codebase.
+  - User-facing language now uses clearer, action-oriented terms (e.g., *Selling Options*, *Where to Sell*, *Local Help*).
+  - “Local Help” is intentionally distinct from luxury selling workflows, reflecting real-world differences between proximity-based assistance and specialized luxury resale.
+
+These changes reinforce the core design principle of Legacy Treasure Chest:
+
+> **Advisor, not operator.**  
+> The system provides informed guidance and best practices while preserving full control for users and executors.
+
+** Readiness checklists are currently rendered as advisory markdown; future versions may introduce interactive checklist state.
+
 ## Recent Update — Luxury Categories v1 (Watches & Handbags)
 
 The Legacy Treasure Chest app now includes first-class support for **Luxury Categories v1**, with a focus on **deterministic, advisor-grade guidance** rather than automated selling.

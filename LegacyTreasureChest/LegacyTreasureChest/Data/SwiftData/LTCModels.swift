@@ -579,6 +579,9 @@ public final class LiquidationBatch {
     @Relationship(deleteRule: .cascade)
     public var items: [BatchItem] = []
 
+    @Relationship(deleteRule: .cascade)
+    public var sets: [BatchSet] = []
+
 
     public var status: LiquidationBatchStatus {
         get { LiquidationBatchStatus(rawValue: statusRaw) ?? .draft }
@@ -670,6 +673,48 @@ public final class BatchItem {
         self.sellerNotes = sellerNotes
     }
 }
+
+@Model
+public final class BatchSet {
+    @Attribute(.unique) public var batchSetId: UUID
+    public var createdAt: Date
+
+    @Relationship(inverse: \LiquidationBatch.sets) public var batch: LiquidationBatch?
+    @Relationship public var itemSet: LTCItemSet?
+
+    // Context overrides IN THIS BATCH
+    public var dispositionRaw: String
+
+    public var lotNumber: String?
+    public var roomGroup: String?
+
+    public var handlingNotes: String?
+    public var sellerNotes: String?
+
+    public var disposition: BatchItemDisposition {
+        get { BatchItemDisposition(rawValue: dispositionRaw) ?? .undecided }
+        set { dispositionRaw = newValue.rawValue }
+    }
+
+    public init(
+        batchSetId: UUID = UUID(),
+        createdAt: Date = .now,
+        disposition: BatchItemDisposition = .include,
+        lotNumber: String? = nil,
+        roomGroup: String? = nil,
+        handlingNotes: String? = nil,
+        sellerNotes: String? = nil
+    ) {
+        self.batchSetId = batchSetId
+        self.createdAt = createdAt
+        self.dispositionRaw = disposition.rawValue
+        self.lotNumber = lotNumber
+        self.roomGroup = roomGroup
+        self.handlingNotes = handlingNotes
+        self.sellerNotes = sellerNotes
+    }
+}
+
 
 // MARK: - LEGACY: Liquidate Set (group of items)
 // Kept temporarily for smooth migration from prototype -> Pattern A.
