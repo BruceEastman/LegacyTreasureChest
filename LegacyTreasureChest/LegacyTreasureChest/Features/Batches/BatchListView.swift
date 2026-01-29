@@ -75,6 +75,9 @@ private struct BatchDetailView: View {
     @State private var hasTargetDate: Bool = false
     @State private var draftTargetDate: Date = .now
 
+    @State private var showingAddItemsSheet = false
+    @State private var showingAddSetsSheet = false
+
     var body: some View {
         Form {
             Section("Batch") {
@@ -165,6 +168,12 @@ private struct BatchDetailView: View {
             }
 
             Section("Items in Batch") {
+                Button {
+                    showingAddItemsSheet = true
+                } label: {
+                    Label("Add Items…", systemImage: "plus")
+                }
+
                 if batch.items.isEmpty {
                     Text("No items yet.")
                         .font(.footnote)
@@ -184,6 +193,12 @@ private struct BatchDetailView: View {
             }
 
             Section("Sets in Batch") {
+                Button {
+                    showingAddSetsSheet = true
+                } label: {
+                    Label("Add Sets…", systemImage: "plus")
+                }
+
                 if batch.sets.isEmpty {
                     Text("No sets yet.")
                         .font(.footnote)
@@ -216,10 +231,68 @@ private struct BatchDetailView: View {
                 draftTargetDate = t
             }
         }
+        .sheet(isPresented: $showingAddItemsSheet) {
+            AddItemsStubSheet(batchName: batch.name)
+        }
+        .sheet(isPresented: $showingAddSetsSheet) {
+            AddSetsStubSheet(batchName: batch.name)
+        }
     }
 
     private func touchUpdatedAt() {
         batch.updatedAt = .now
+    }
+}
+
+private struct AddItemsStubSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let batchName: String
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Text("This is a placeholder for the Batch Scope Builder.")
+                        .font(.body)
+                    Text("Next we’ll add a selection UI that lets you choose items from your catalog and create BatchItem join records.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle(batchName.isEmpty ? "Add Items" : "Add Items to \(batchName)")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+private struct AddSetsStubSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let batchName: String
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Text("This is a placeholder for the Batch Scope Builder.")
+                        .font(.body)
+                    Text("Next we’ll add a selection UI that lets you choose sets from your catalog and create BatchSet join records.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle(batchName.isEmpty ? "Add Sets" : "Add Sets to \(batchName)")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+            }
+        }
     }
 }
 
