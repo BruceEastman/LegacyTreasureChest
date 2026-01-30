@@ -1,4 +1,41 @@
 # Legacy Treasure Chest
+## Batch v1 (Estate Sale Batches) — Completed (January 30 2026)
+
+Batch v1 provides an executor-grade foundation for organizing an estate sale (or similar liquidation event) without automation or AI. The goal is to safely group **Items and Sets** into **Lots**, apply batch-specific overrides, and track readiness.
+
+### What Batch v1 includes
+
+**Data model**
+- `LiquidationBatch` represents a liquidation event container (status, sale type, venue, provider, target date).
+- Join models:
+  - `BatchItem` links an `LTCItem` to a batch with batch-specific overrides.
+  - `BatchSet` links an `LTCItemSet` to a batch with batch-specific overrides.
+- Batch overrides (join level): `disposition`, `lotNumber`, `roomGroup`, `handlingNotes`, `sellerNotes` (and optional future-safe fields).
+
+**UI**
+- `BatchListView`
+  - Lists batches with quick stats (lots, decisions progress, estimated value).
+  - Create / delete batches.
+- `BatchDetailView` (inside `BatchListView.swift` for now)
+  - Edit batch metadata using safe pickers (Status / Sale Type / Venue).
+  - Add Items / Add Sets sheets (deduplicated).
+  - Lot grouping:
+    - Assign/rename/clear lots
+    - Lot totals: estimated value (items only) + Decisions X/Y
+    - Batch readiness warnings (undecided entries, everything unassigned)
+  - Entry editors for batch-specific overrides (items + sets).
+
+### Design principles used
+- **Advisor-first**: no automation, no selling execution, no AI in Batch v1.
+- **Join model overrides**: item/set may be used differently across batches without modifying the underlying catalog entity.
+- **Lots are execution units**: lots are designed for labeling, staging, and listing groups.
+- **Compile-safe, incremental development**: built in small steps with frequent compile/run checks; bulk actions are reversible.
+
+### Notes for future updates
+- Estimated value currently totals **items only** (set valuation is intentionally deferred until a clear model is chosen).
+- Batch UI is currently consolidated in `Features/Batches/BatchListView.swift` for speed; it can be refactored into separate files when Batch v2 begins.
+- Next likely phase is **Execution mode** (lot checklists, staging, labels) or **Disposition Engine handoff** (partners/outreach).
+
 ## Current Status (January 28, 2026)
 
 Legacy Treasure Chest continues to evolve as an **advisor-first**, production-quality system focused on clarity, trust, and executor-friendly workflows.

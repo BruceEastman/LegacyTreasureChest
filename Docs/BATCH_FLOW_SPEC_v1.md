@@ -5,8 +5,83 @@
 **Audience:** Boomer owner + Executor
 **Principle:** Advisor, not operator (no automated selling, no auto-contact). 
 **Capability Spine:** Step 6 — Estate Sale / Batch Exit.  
+## Batch v1 (Estate Sale Batches) — Completed (January 2026)
+
+Batch v1 provides an executor-grade foundation for organizing an estate sale (or similar liquidation event) without automation or AI. The goal is to safely group **Items and Sets** into **Lots**, apply batch-specific overrides, and track readiness.
+
+### What Batch v1 includes
+
+**Data model**
+- `LiquidationBatch` represents a liquidation event container (status, sale type, venue, provider, target date).
+- Join models:
+  - `BatchItem` links an `LTCItem` to a batch with batch-specific overrides.
+  - `BatchSet` links an `LTCItemSet` to a batch with batch-specific overrides.
+- Batch overrides (join level): `disposition`, `lotNumber`, `roomGroup`, `handlingNotes`, `sellerNotes` (and optional future-safe fields).
+
+**UI**
+- `BatchListView`
+  - Lists batches with quick stats (lots, decisions progress, estimated value).
+  - Create / delete batches.
+- `BatchDetailView` (inside `BatchListView.swift` for now)
+  - Edit batch metadata using safe pickers (Status / Sale Type / Venue).
+  - Add Items / Add Sets sheets (deduplicated).
+  - Lot grouping:
+    - Assign/rename/clear lots
+    - Lot totals: estimated value (items only) + Decisions X/Y
+    - Batch readiness warnings (undecided entries, everything unassigned)
+  - Entry editors for batch-specific overrides (items + sets).
+
+### Design principles used
+- **Advisor-first**: no automation, no selling execution, no AI in Batch v1.
+- **Join model overrides**: item/set may be used differently across batches without modifying the underlying catalog entity.
+- **Lots are execution units**: lots are designed for labeling, staging, and listing groups.
+- **Compile-safe, incremental development**: built in small steps with frequent compile/run checks; bulk actions are reversible.
+
+### Notes for future updates
+- Estimated value currently totals **items only** (set valuation is intentionally deferred until a clear model is chosen).
+- Batch UI is currently consolidated in `Features/Batches/BatchListView.swift` for speed; it can be refactored into separate files when Batch v2 begins.
+- Next likely phase is **Execution mode** (lot checklists, staging, labels) or **Disposition Engine handoff** (partners/outreach).
 
 ---
+## Out of Scope for Batch v1 (Intentionally Not Included)
+
+Batch v1 is intentionally limited to **planning and readiness**, not execution or automation. The following capabilities are explicitly **out of scope** and deferred to future phases:
+
+### Execution & Automation
+- No automated listing creation (eBay, auction platforms, marketplaces, etc.)
+- No bulk publishing, pricing automation, or inventory export to third-party systems
+- No AI-driven execution steps (batch summaries, listing copy, or sale optimization)
+
+### Partner & Disposition Engine Integration
+- No partner discovery or matching (estate sale companies, auction houses, consignment shops)
+- No outreach workflows (emails, calls, tracking responses)
+- No commission modeling or partner comparison logic
+
+### Financial & Accounting
+- No realized sale price tracking
+- No proceeds accounting, fees, or reconciliation
+- No tax reporting or gain/loss calculations
+
+### Set Valuation
+- No intrinsic valuation for `LTCItemSet`
+- Estimated batch and lot values currently total **items only**
+- Set premiums or set-level valuation logic will be introduced only after a clear valuation model is defined
+
+### Multi-User & Permissions
+- No executor vs. owner role separation
+- No shared editing, approval flows, or audit logs
+- No collaboration or CloudKit conflict resolution specific to batches
+
+### Batch v2 / Future Considerations (Non-Exhaustive)
+- Execution mode (lot checklists, staging, labels, photos during sale)
+- Partner handoff and advisory workflows
+- Estate-level orchestration across multiple batches
+- AI summaries or recommendations layered on top of Batch readiness
+
+Batch v1 should be viewed as a **stable, executor-grade foundation**.  
+All future enhancements should preserve its core design principles:
+**advisor-first, reversible actions, and explicit user control.**
+
 
 ## 1) Purpose
 
