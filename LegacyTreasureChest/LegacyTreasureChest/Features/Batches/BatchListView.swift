@@ -90,7 +90,6 @@ private struct BatchDetailView: View {
                 TextField("Name", text: $batch.name)
                     .onChange(of: batch.name) { _, _ in touchUpdatedAt() }
 
-                // We intentionally edit the raw fields to avoid guessing enum cases.
                 TextField("Status (raw)", text: $batch.statusRaw)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -173,7 +172,7 @@ private struct BatchDetailView: View {
                 LabeledContent("Sets", value: "\(batch.sets.count)")
             }
 
-            // Lots (from B9)
+            // B11: Lots are navigable
             Section("Lots") {
                 if lotGroups.isEmpty {
                     Text("No batch entries yet. Add items and sets, then assign lot numbers.")
@@ -181,44 +180,8 @@ private struct BatchDetailView: View {
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(lotGroups) { group in
-                        DisclosureGroup {
-                            if !group.items.isEmpty {
-                                Text("Items")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .padding(.top, 4)
-
-                                ForEach(group.items) { entry in
-                                    Button {
-                                        selectedBatchItem = entry
-                                    } label: {
-                                        lotRow(
-                                            title: entry.item?.name ?? "Unnamed Item",
-                                            subtitle: entry.dispositionRaw.capitalized
-                                        )
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-
-                            if !group.sets.isEmpty {
-                                Text("Sets")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .padding(.top, 8)
-
-                                ForEach(group.sets) { entry in
-                                    Button {
-                                        selectedBatchSet = entry
-                                    } label: {
-                                        lotRow(
-                                            title: entry.itemSet?.name ?? "Unnamed Set",
-                                            subtitle: entry.dispositionRaw.capitalized
-                                        )
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
+                        NavigationLink {
+                            LotDetailView(batch: batch, lotKey: group.key)
                         } label: {
                             HStack {
                                 Text(group.displayName)
@@ -236,7 +199,7 @@ private struct BatchDetailView: View {
                         }
                     }
 
-                    Text("Tip: Assign a lot number in the entry editor or via swipe actions. Lots become your execution units for tagging, staging, and listing.")
+                    Text("Tip: Use lots as your execution units for tagging, staging, and listing.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .padding(.top, 4)
@@ -426,23 +389,6 @@ private struct BatchDetailView: View {
         return Int(String(digits))
     }
 
-    private func lotRow(title: String, subtitle: String) -> some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .foregroundStyle(.primary)
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            Image(systemName: "chevron.right")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .padding(.vertical, 6)
-    }
-
     private func lotAndDispositionLine(lotNumber: String?, dispositionRaw: String) -> some View {
         let lotKey = normalizeLotKey(lotNumber)
         let lotText = (lotKey == "Unassigned") ? "Lot: Unassigned" : "Lot: \(lotKey)"
@@ -504,6 +450,196 @@ private struct BatchDetailView: View {
             modelContext.delete(entry)
         }
         touchUpdatedAt()
+    }
+}
+
+private struct LotDetailView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Bindable var batch: LiquidationBatch
+    let lotKey: String
+
+    @State private var selectedBatchItem: BatchItem?
+    @State private var selectedBatchSet: BatchSet?
+
+    @State private var showingRenameSheet = false
+
+    var body: some View {
+        Form {
+            Section("Lot") {
+                LabeledContent("Lot", value: displayName)
+                LabeledContent("Items", value: "\(itemsInLot.count)")
+                LabeledContent("Sets", value: "\(setsInLot.count)")
+
+                if lotKey == "Unassigned" {
+                    Text("Unassigned entries have no lot number yet.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Use Rename Lot to change the lot number for everything in this lot.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if !itemsInLot.isEmpty {
+                Section("Items") {
+                    ForEach(itemsInLot) { entry in
+                        Button {
+                            selectedBatchItem = entry
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(entry.item?.name ?? "Unnamed Item")
+                                    .foregroundStyle(.primary)
+                                Text(entry.dispositionRaw.capitalized)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.vertical, 2)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            if !setsInLot.isEmpty {
+                Section("Sets") {
+                    ForEach(setsInLot) { entry in
+                        Button {
+                            selectedBatchSet = entry
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(entry.itemSet?.name ?? "Unnamed Set")
+                                    .foregroundStyle(.primary)
+                                Text(entry.dispositionRaw.capitalized)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.vertical, 2)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            if itemsInLot.isEmpty && setsInLot.isEmpty {
+                Section {
+                    Text("This lot is empty.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .navigationTitle(displayName)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(lotKey == "Unassigned" ? "Assign Lot" : "Rename") {
+                    showingRenameSheet = true
+                }
+            }
+        }
+        .sheet(isPresented: $showingRenameSheet) {
+            LotRenameSheet(
+                currentLot: lotKey,
+                onSave: { newLot in
+                    renameLot(to: newLot)
+                }
+            )
+        }
+        .sheet(item: $selectedBatchItem) { entry in
+            BatchItemEditorSheet(
+                entry: entry,
+                batchName: batch.name,
+                onChanged: { batch.updatedAt = .now }
+            )
+        }
+        .sheet(item: $selectedBatchSet) { entry in
+            BatchSetEditorSheet(
+                entry: entry,
+                batchName: batch.name,
+                onChanged: { batch.updatedAt = .now }
+            )
+        }
+    }
+
+    private var displayName: String {
+        lotKey == "Unassigned" ? "Unassigned" : "Lot \(lotKey)"
+    }
+
+    private var itemsInLot: [BatchItem] {
+        batch.items
+            .filter { normalizeLotKey($0.lotNumber) == lotKey }
+            .sorted { ($0.item?.name ?? "") < ($1.item?.name ?? "") }
+    }
+
+    private var setsInLot: [BatchSet] {
+        batch.sets
+            .filter { normalizeLotKey($0.lotNumber) == lotKey }
+            .sorted { ($0.itemSet?.name ?? "") < ($1.itemSet?.name ?? "") }
+    }
+
+    private func normalizeLotKey(_ raw: String?) -> String {
+        let trimmed = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Unassigned" : trimmed
+    }
+
+    private func renameLot(to newLot: String?) {
+        let normalized = normalizeLotKey(newLot) // returns "Unassigned" if nil/empty
+
+        // Rename in-place: any entry in this lot gets newLot (nil if unassigned)
+        for entry in batch.items where normalizeLotKey(entry.lotNumber) == lotKey {
+            entry.lotNumber = (normalized == "Unassigned") ? nil : normalized
+        }
+        for entry in batch.sets where normalizeLotKey(entry.lotNumber) == lotKey {
+            entry.lotNumber = (normalized == "Unassigned") ? nil : normalized
+        }
+
+        batch.updatedAt = .now
+        // modelContext autosaves; no explicit save required
+    }
+}
+
+private struct LotRenameSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let currentLot: String
+    let onSave: (String?) -> Void
+
+    @State private var lotText: String = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("New Lot Number") {
+                    TextField("e.g., 12", text: $lotText)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
+
+                Section {
+                    Text("Leaving this blank will clear the lot number (move entries to Unassigned).")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("Rename Lot \(currentLot)")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        let trimmed = lotText.trimmingCharacters(in: .whitespacesAndNewlines)
+                        onSave(trimmed.isEmpty ? nil : trimmed)
+                        dismiss()
+                    }
+                }
+            }
+            .onAppear {
+                lotText = (currentLot == "Unassigned") ? "" : currentLot
+            }
+        }
     }
 }
 
