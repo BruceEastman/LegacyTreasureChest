@@ -90,15 +90,29 @@ private struct BatchDetailView: View {
                 TextField("Name", text: $batch.name)
                     .onChange(of: batch.name) { _, _ in touchUpdatedAt() }
 
-                TextField("Status (raw)", text: $batch.statusRaw)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .onChange(of: batch.statusRaw) { _, _ in touchUpdatedAt() }
+                Picker("Status", selection: Binding<LiquidationBatchStatus>(
+                    get: { batch.status },
+                    set: { newValue in
+                        batch.status = newValue
+                        touchUpdatedAt()
+                    }
+                )) {
+                    ForEach(LiquidationBatchStatus.allCases, id: \.self) { option in
+                        Text(option.rawValue).tag(option)
+                    }
+                }
 
-                TextField("Sale Type (raw)", text: $batch.saleTypeRaw)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .onChange(of: batch.saleTypeRaw) { _, _ in touchUpdatedAt() }
+                Picker("Sale Type", selection: Binding<LiquidationSaleType>(
+                    get: { batch.saleType },
+                    set: { newValue in
+                        batch.saleType = newValue
+                        touchUpdatedAt()
+                    }
+                )) {
+                    ForEach(LiquidationSaleType.allCases, id: \.self) { option in
+                        Text(option.rawValue).tag(option)
+                    }
+                }
 
                 Toggle("Target Date", isOn: $hasTargetDate)
                     .onChange(of: hasTargetDate) { _, newValue in
@@ -127,19 +141,19 @@ private struct BatchDetailView: View {
                     )
                 }
 
-                TextField(
-                    "Venue (raw)",
-                    text: Binding(
-                        get: { batch.venueRaw ?? "" },
-                        set: { newValue in
-                            let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                            batch.venueRaw = trimmed.isEmpty ? nil : trimmed
-                            touchUpdatedAt()
-                        }
-                    )
-                )
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
+                Picker("Venue", selection: Binding<VenueType?>(
+                    get: { batch.venue },
+                    set: { newValue in
+                        batch.venue = newValue
+                        touchUpdatedAt()
+                    }
+                )) {
+                    Text("None").tag(Optional<VenueType>.none)
+
+                    ForEach(VenueType.allCases, id: \.self) { option in
+                        Text(option.rawValue).tag(Optional(option))
+                    }
+                }
 
                 TextField(
                     "Provider",
@@ -162,7 +176,7 @@ private struct BatchDetailView: View {
                     Text(batch.updatedAt, style: .date)
                 }
 
-                Text("Note: Status, Sale Type, and Venue are edited as raw values for now. We’ll convert these to pickers once we wire in the exact enum case list safely.")
+                Text("Status, Sale Type, and Venue are now constrained to safe pickers to prevent typos and keep downstream logic reliable.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
