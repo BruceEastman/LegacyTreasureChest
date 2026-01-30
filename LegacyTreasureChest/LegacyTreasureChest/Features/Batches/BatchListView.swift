@@ -25,14 +25,33 @@ struct BatchListView: View {
                                 .font(.headline)
 
                             HStack(spacing: 12) {
-                                Text(batch.statusRaw.capitalized)
+                                Text(batch.status.rawValue)
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
 
-                                Text(batch.saleTypeRaw.capitalized)
+                                Text(batch.saleType.rawValue)
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                             }
+
+                            let lots = lotCounts(for: batch)
+                            let decisions = decisionCounts(for: batch)
+                            let percent = decisions.total == 0 ? 0 : Int((Double(decisions.decided) / Double(decisions.total) * 100).rounded())
+                            let value = estimatedValueItemsOnly(for: batch)
+
+                            HStack(spacing: 12) {
+                                Text("Lots: \(lots.assigned)/\(lots.total)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+
+                                Text("Decisions: \(decisions.decided)/\(decisions.total) (\(percent)%)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            Text(value, format: .currency(code: currencyCode))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
 
                             if let target = batch.targetDate {
                                 Text(target, style: .date)
@@ -67,6 +86,63 @@ struct BatchListView: View {
         }
         // SwiftData saves automatically in most setups; no explicit save required
     }
+    
+    private var currencyCode: String {
+        Locale.current.currency?.identifier ?? "USD"
+    }
+
+    private func normalizeLotKey(_ raw: String?) -> String {
+        let trimmed = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Unassigned" : trimmed
+    }
+
+    private func lotCounts(for batch: LiquidationBatch) -> (assigned: Int, total: Int) {
+        var keys = Set<String>()
+
+        for entry in batch.items {
+            keys.insert(normalizeLotKey(entry.lotNumber))
+        }
+        for entry in batch.sets {
+            keys.insert(normalizeLotKey(entry.lotNumber))
+        }
+
+        let total = keys.count
+        let assigned = keys.contains("Unassigned") ? max(total - 1, 0) : total
+        return (assigned: assigned, total: total)
+    }
+
+    private func decisionCounts(for batch: LiquidationBatch) -> (decided: Int, total: Int) {
+        let itemDecided = batch.items.filter {
+            $0.dispositionRaw.localizedCaseInsensitiveCompare("Undecided") != .orderedSame
+        }.count
+
+        let setDecided = batch.sets.filter {
+            $0.dispositionRaw.localizedCaseInsensitiveCompare("Undecided") != .orderedSame
+        }.count
+
+        let total = batch.items.count + batch.sets.count
+        return (decided: itemDecided + setDecided, total: total)
+    }
+
+    private func effectiveUnitValue(for item: LTCItem) -> Double {
+        if let estimated = item.valuation?.estimatedValue, estimated > 0 {
+            return estimated
+        }
+        return max(item.value, 0)
+    }
+
+    private func effectiveTotalValue(for item: LTCItem) -> Double {
+        let qty = max(item.quantity, 1)
+        return effectiveUnitValue(for: item) * Double(qty)
+    }
+
+    private func estimatedValueItemsOnly(for batch: LiquidationBatch) -> Double {
+        batch.items.reduce(0) { partial, entry in
+            guard let item = entry.item else { return partial }
+            return partial + effectiveTotalValue(for: item)
+        }
+    }
+
 }
 
 private struct BatchDetailView: View {
