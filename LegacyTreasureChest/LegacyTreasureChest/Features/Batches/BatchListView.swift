@@ -183,17 +183,32 @@ private struct BatchDetailView: View {
                         NavigationLink {
                             LotDetailView(batch: batch, lotKey: group.key)
                         } label: {
-                            HStack {
-                                Text(group.displayName)
-                                    .font(.body.weight(.semibold))
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Text(group.displayName)
+                                        .font(.body.weight(.semibold))
 
-                                Spacer()
+                                    Spacer()
 
-                                let itemCount = group.items.count
-                                let setCount = group.sets.count
-                                Text("\(itemCount) item\(itemCount == 1 ? "" : "s"), \(setCount) set\(setCount == 1 ? "" : "s")")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    let itemCount = group.items.count
+                                    let setCount = group.sets.count
+                                    Text("\(itemCount) item\(itemCount == 1 ? "" : "s"), \(setCount) set\(setCount == 1 ? "" : "s")")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                let value = lotItemValue(group.key)
+                                let readiness = lotReadinessCounts(group.key)
+
+                                HStack(spacing: 12) {
+                                    Text(value, format: .currency(code: currencyCode))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+
+                                    Text("Decisions: \(readiness.decided)/\(readiness.total)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
                             .padding(.vertical, 4)
                         }
@@ -451,6 +466,47 @@ private struct BatchDetailView: View {
         }
         touchUpdatedAt()
     }
+    private var currencyCode: String {
+        Locale.current.currency?.identifier ?? "USD"
+    }
+
+    private func effectiveUnitValue(for item: LTCItem) -> Double {
+        if let estimated = item.valuation?.estimatedValue, estimated > 0 {
+            return estimated
+        }
+        return max(item.value, 0)
+    }
+
+    private func effectiveTotalValue(for item: LTCItem) -> Double {
+        let qty = max(item.quantity, 1)
+        return effectiveUnitValue(for: item) * Double(qty)
+    }
+
+    private func lotItemValue(_ lotKey: String) -> Double {
+        batch.items
+            .filter { normalizeLotKey($0.lotNumber) == lotKey }
+            .reduce(0) { partial, entry in
+                guard let item = entry.item else { return partial }
+                return partial + effectiveTotalValue(for: item)
+            }
+    }
+
+    private func lotReadinessCounts(_ lotKey: String) -> (decided: Int, total: Int) {
+        let items = batch.items.filter { normalizeLotKey($0.lotNumber) == lotKey }
+        let sets  = batch.sets.filter  { normalizeLotKey($0.lotNumber) == lotKey }
+
+        let itemDecided = items.filter {
+            $0.dispositionRaw.localizedCaseInsensitiveCompare("Undecided") != .orderedSame
+        }.count
+
+        let setDecided = sets.filter {
+            $0.dispositionRaw.localizedCaseInsensitiveCompare("Undecided") != .orderedSame
+        }.count
+
+        return (decided: itemDecided + setDecided,
+                total: items.count + sets.count)
+    }
+
 }
 
 private struct LotDetailView: View {
