@@ -171,6 +171,82 @@ private struct BatchDetailView: View {
                 LabeledContent("Sets", value: "\(batch.sets.count)")
             }
 
+            // B9: Lot Organization (Items + Sets)
+            Section("Lots") {
+                if lotGroups.isEmpty {
+                    Text("No batch entries yet. Add items and sets, then assign lot numbers.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(lotGroups) { group in
+                        DisclosureGroup {
+                            if group.items.isEmpty && group.sets.isEmpty {
+                                Text("Empty lot.")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                if !group.items.isEmpty {
+                                    Text("Items")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .padding(.top, 4)
+
+                                    ForEach(group.items) { entry in
+                                        Button {
+                                            selectedBatchItem = entry
+                                        } label: {
+                                            lotRow(
+                                                title: entry.item?.name ?? "Unnamed Item",
+                                                subtitle: entry.dispositionRaw.capitalized
+                                            )
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+
+                                if !group.sets.isEmpty {
+                                    Text("Sets")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .padding(.top, 8)
+
+                                    ForEach(group.sets) { entry in
+                                        Button {
+                                            selectedBatchSet = entry
+                                        } label: {
+                                            lotRow(
+                                                title: entry.itemSet?.name ?? "Unnamed Set",
+                                                subtitle: entry.dispositionRaw.capitalized
+                                            )
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack {
+                                Text(group.displayName)
+                                    .font(.body.weight(.semibold))
+
+                                Spacer()
+
+                                let itemCount = group.items.count
+                                let setCount = group.sets.count
+                                Text("\(itemCount) item\(itemCount == 1 ? "" : "s"), \(setCount) set\(setCount == 1 ? "" : "s")")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+
+                    Text("Tip: Assign a lot number in the entry editor. Lots become your execution units for tagging, staging, and listing.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 4)
+                }
+            }
+
             Section("Items in Batch") {
                 Button {
                     showingAddItemsSheet = true
@@ -192,9 +268,7 @@ private struct BatchDetailView: View {
                                     .font(.body)
                                     .foregroundStyle(.primary)
 
-                                Text(entry.dispositionRaw.capitalized)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                lotAndDispositionLine(lotNumber: entry.lotNumber, dispositionRaw: entry.dispositionRaw)
                             }
                             .padding(.vertical, 2)
                         }
@@ -225,9 +299,7 @@ private struct BatchDetailView: View {
                                     .font(.body)
                                     .foregroundStyle(.primary)
 
-                                Text(entry.dispositionRaw.capitalized)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                lotAndDispositionLine(lotNumber: entry.lotNumber, dispositionRaw: entry.dispositionRaw)
                             }
                             .padding(.vertical, 2)
                         }
@@ -238,7 +310,7 @@ private struct BatchDetailView: View {
             }
 
             Section("Scope Builder") {
-                Text("Coming next: choose which items and sets belong in this batch, then generate lot numbers and handling notes.")
+                Text("Coming next: tighter tools for lot assignment (bulk assign, suggested lot names, and staging checklists).")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -273,6 +345,85 @@ private struct BatchDetailView: View {
         }
     }
 
+    // MARK: - Lots
+
+    private var lotGroups: [LotGroup] {
+        var map: [String: LotGroup] = [:]
+
+        for entry in batch.items {
+            let key = normalizeLotKey(entry.lotNumber)
+            map[key, default: LotGroup(key: key, items: [], sets: [])].items.append(entry)
+        }
+
+        for entry in batch.sets {
+            let key = normalizeLotKey(entry.lotNumber)
+            map[key, default: LotGroup(key: key, items: [], sets: [])].sets.append(entry)
+        }
+
+        let groups = Array(map.values).map { g in
+            LotGroup(
+                key: g.key,
+                items: g.items.sorted(by: { ($0.item?.name ?? "") < ($1.item?.name ?? "") }),
+                sets: g.sets.sorted(by: { ($0.itemSet?.name ?? "") < ($1.itemSet?.name ?? "") })
+            )
+        }
+
+        return groups.sorted(by: lotGroupSort)
+    }
+
+    private func normalizeLotKey(_ raw: String?) -> String {
+        let trimmed = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Unassigned" : trimmed
+    }
+
+    private func lotGroupSort(_ a: LotGroup, _ b: LotGroup) -> Bool {
+        if a.key == "Unassigned", b.key != "Unassigned" { return true }
+        if b.key == "Unassigned", a.key != "Unassigned" { return false }
+
+        let aNum = firstInt(in: a.key)
+        let bNum = firstInt(in: b.key)
+
+        if let aNum, let bNum, aNum != bNum {
+            return aNum < bNum
+        }
+
+        return a.key.localizedCaseInsensitiveCompare(b.key) == .orderedAscending
+    }
+
+    private func firstInt(in text: String) -> Int? {
+        let digits = text.compactMap { $0.isNumber ? $0 : nil }
+        guard !digits.isEmpty else { return nil }
+        return Int(String(digits))
+    }
+
+    private func lotRow(title: String, subtitle: String) -> some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .foregroundStyle(.primary)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 6)
+    }
+
+    private func lotAndDispositionLine(lotNumber: String?, dispositionRaw: String) -> some View {
+        let lotKey = normalizeLotKey(lotNumber)
+        let lotText = (lotKey == "Unassigned") ? "Lot: Unassigned" : "Lot: \(lotKey)"
+
+        return Text("\(lotText) • \(dispositionRaw.capitalized)")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+    }
+
+    // MARK: - Updates / Deletes
+
     private func touchUpdatedAt() {
         batch.updatedAt = .now
     }
@@ -293,6 +444,17 @@ private struct BatchDetailView: View {
             modelContext.delete(entry)
         }
         touchUpdatedAt()
+    }
+}
+
+private struct LotGroup: Identifiable {
+    var id: String { key }
+    let key: String
+    var items: [BatchItem]
+    var sets: [BatchSet]
+
+    var displayName: String {
+        key == "Unassigned" ? "Unassigned" : "Lot \(key)"
     }
 }
 
@@ -562,7 +724,6 @@ private struct BatchSetEditorSheet: View {
                 }
 
                 Section("Batch Overrides") {
-                    // Assumes BatchSet uses the same batch override enum (as your current build does).
                     Picker("Disposition", selection: Binding<BatchItemDisposition>(
                         get: { BatchItemDisposition(rawValue: entry.dispositionRaw) ?? .undecided },
                         set: { newValue in
