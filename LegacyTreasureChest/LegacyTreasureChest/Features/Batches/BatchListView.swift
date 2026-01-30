@@ -82,6 +82,8 @@ private struct BatchDetailView: View {
     @State private var selectedBatchItem: BatchItem?
     @State private var selectedBatchSet: BatchSet?
 
+    @State private var lotAssignTarget: LotAssignTarget?
+
     var body: some View {
         Form {
             Section("Batch") {
@@ -171,7 +173,7 @@ private struct BatchDetailView: View {
                 LabeledContent("Sets", value: "\(batch.sets.count)")
             }
 
-            // B9: Lot Organization (Items + Sets)
+            // Lots (from B9)
             Section("Lots") {
                 if lotGroups.isEmpty {
                     Text("No batch entries yet. Add items and sets, then assign lot numbers.")
@@ -180,47 +182,41 @@ private struct BatchDetailView: View {
                 } else {
                     ForEach(lotGroups) { group in
                         DisclosureGroup {
-                            if group.items.isEmpty && group.sets.isEmpty {
-                                Text("Empty lot.")
-                                    .font(.footnote)
+                            if !group.items.isEmpty {
+                                Text("Items")
+                                    .font(.caption)
                                     .foregroundStyle(.secondary)
-                            } else {
-                                if !group.items.isEmpty {
-                                    Text("Items")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .padding(.top, 4)
+                                    .padding(.top, 4)
 
-                                    ForEach(group.items) { entry in
-                                        Button {
-                                            selectedBatchItem = entry
-                                        } label: {
-                                            lotRow(
-                                                title: entry.item?.name ?? "Unnamed Item",
-                                                subtitle: entry.dispositionRaw.capitalized
-                                            )
-                                        }
-                                        .buttonStyle(.plain)
+                                ForEach(group.items) { entry in
+                                    Button {
+                                        selectedBatchItem = entry
+                                    } label: {
+                                        lotRow(
+                                            title: entry.item?.name ?? "Unnamed Item",
+                                            subtitle: entry.dispositionRaw.capitalized
+                                        )
                                     }
+                                    .buttonStyle(.plain)
                                 }
+                            }
 
-                                if !group.sets.isEmpty {
-                                    Text("Sets")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .padding(.top, 8)
+                            if !group.sets.isEmpty {
+                                Text("Sets")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .padding(.top, 8)
 
-                                    ForEach(group.sets) { entry in
-                                        Button {
-                                            selectedBatchSet = entry
-                                        } label: {
-                                            lotRow(
-                                                title: entry.itemSet?.name ?? "Unnamed Set",
-                                                subtitle: entry.dispositionRaw.capitalized
-                                            )
-                                        }
-                                        .buttonStyle(.plain)
+                                ForEach(group.sets) { entry in
+                                    Button {
+                                        selectedBatchSet = entry
+                                    } label: {
+                                        lotRow(
+                                            title: entry.itemSet?.name ?? "Unnamed Set",
+                                            subtitle: entry.dispositionRaw.capitalized
+                                        )
                                     }
+                                    .buttonStyle(.plain)
                                 }
                             }
                         } label: {
@@ -240,7 +236,7 @@ private struct BatchDetailView: View {
                         }
                     }
 
-                    Text("Tip: Assign a lot number in the entry editor. Lots become your execution units for tagging, staging, and listing.")
+                    Text("Tip: Assign a lot number in the entry editor or via swipe actions. Lots become your execution units for tagging, staging, and listing.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .padding(.top, 4)
@@ -273,6 +269,18 @@ private struct BatchDetailView: View {
                             .padding(.vertical, 2)
                         }
                         .buttonStyle(.plain)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button {
+                                presentLotAssignForItem(entry)
+                            } label: {
+                                Label("Assign Lot", systemImage: "tag")
+                            }
+                            Button(role: .destructive) {
+                                clearLotForItem(entry)
+                            } label: {
+                                Label("Clear Lot", systemImage: "xmark.circle")
+                            }
+                        }
                     }
                     .onDelete(perform: deleteBatchItems)
                 }
@@ -304,13 +312,25 @@ private struct BatchDetailView: View {
                             .padding(.vertical, 2)
                         }
                         .buttonStyle(.plain)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button {
+                                presentLotAssignForSet(entry)
+                            } label: {
+                                Label("Assign Lot", systemImage: "tag")
+                            }
+                            Button(role: .destructive) {
+                                clearLotForSet(entry)
+                            } label: {
+                                Label("Clear Lot", systemImage: "xmark.circle")
+                            }
+                        }
                     }
                     .onDelete(perform: deleteBatchSets)
                 }
             }
 
             Section("Scope Builder") {
-                Text("Coming next: tighter tools for lot assignment (bulk assign, suggested lot names, and staging checklists).")
+                Text("Coming next: bulk tools for lot assignment (multi-select, recent lots, and staging checklists).")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -341,6 +361,16 @@ private struct BatchDetailView: View {
                 entry: entry,
                 batchName: batch.name,
                 onChanged: { touchUpdatedAt() }
+            )
+        }
+        .sheet(item: $lotAssignTarget) { target in
+            LotAssignSheet(
+                title: target.title,
+                currentLot: target.currentLot,
+                onSave: { newLot in
+                    target.apply(newLot)
+                    touchUpdatedAt()
+                }
             )
         }
     }
@@ -422,6 +452,36 @@ private struct BatchDetailView: View {
             .foregroundStyle(.secondary)
     }
 
+    // MARK: - Quick Lot Assign
+
+    private func presentLotAssignForItem(_ entry: BatchItem) {
+        let title = entry.item?.name ?? "Item"
+        lotAssignTarget = LotAssignTarget(
+            title: "Assign Lot — \(title)",
+            currentLot: entry.lotNumber,
+            apply: { newLot in entry.lotNumber = newLot }
+        )
+    }
+
+    private func clearLotForItem(_ entry: BatchItem) {
+        entry.lotNumber = nil
+        touchUpdatedAt()
+    }
+
+    private func presentLotAssignForSet(_ entry: BatchSet) {
+        let title = entry.itemSet?.name ?? "Set"
+        lotAssignTarget = LotAssignTarget(
+            title: "Assign Lot — \(title)",
+            currentLot: entry.lotNumber,
+            apply: { newLot in entry.lotNumber = newLot }
+        )
+    }
+
+    private func clearLotForSet(_ entry: BatchSet) {
+        entry.lotNumber = nil
+        touchUpdatedAt()
+    }
+
     // MARK: - Updates / Deletes
 
     private func touchUpdatedAt() {
@@ -455,6 +515,58 @@ private struct LotGroup: Identifiable {
 
     var displayName: String {
         key == "Unassigned" ? "Unassigned" : "Lot \(key)"
+    }
+}
+
+private struct LotAssignTarget: Identifiable {
+    let id = UUID()
+    let title: String
+    let currentLot: String?
+    let apply: (String?) -> Void
+}
+
+private struct LotAssignSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let title: String
+    let currentLot: String?
+    let onSave: (String?) -> Void
+
+    @State private var lotText: String = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Lot Number") {
+                    TextField("e.g., 12", text: $lotText)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
+
+                Section {
+                    Text("Tip: Keep lot numbers simple (1, 2, 3…) so labels and signage stay consistent.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        let trimmed = lotText.trimmingCharacters(in: .whitespacesAndNewlines)
+                        onSave(trimmed.isEmpty ? nil : trimmed)
+                        dismiss()
+                    }
+                }
+            }
+            .onAppear {
+                lotText = currentLot ?? ""
+            }
+        }
     }
 }
 
