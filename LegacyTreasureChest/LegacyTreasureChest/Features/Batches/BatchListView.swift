@@ -70,6 +70,7 @@ struct BatchListView: View {
 }
 
 private struct BatchDetailView: View {
+    @Environment(\.modelContext) private var modelContext
     @Bindable var batch: LiquidationBatch
 
     @State private var hasTargetDate: Bool = false
@@ -189,6 +190,7 @@ private struct BatchDetailView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+                    .onDelete(perform: deleteBatchItems)
                 }
             }
 
@@ -232,7 +234,7 @@ private struct BatchDetailView: View {
             }
         }
         .sheet(isPresented: $showingAddItemsSheet) {
-            AddItemsStubSheet(batchName: batch.name)
+            AddItemsToBatchSheet(batch: batch)
         }
         .sheet(isPresented: $showingAddSetsSheet) {
             AddSetsStubSheet(batchName: batch.name)
@@ -242,24 +244,70 @@ private struct BatchDetailView: View {
     private func touchUpdatedAt() {
         batch.updatedAt = .now
     }
+
+    private func deleteBatchItems(at offsets: IndexSet) {
+        // Remove from batch + delete join records (so they don't orphan)
+        for index in offsets {
+            let entry = batch.items[index]
+            batch.items.remove(at: index)
+            modelContext.delete(entry)
+        }
+        touchUpdatedAt()
+    }
 }
 
-private struct AddItemsStubSheet: View {
+private struct AddItemsToBatchSheet: View {
     @Environment(\.dismiss) private var dismiss
-    let batchName: String
+    @Environment(\.modelContext) private var modelContext
+
+    @Query(sort: \LTCItem.createdAt, order: .reverse) private var items: [LTCItem]
+
+    @Bindable var batch: LiquidationBatch
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    Text("This is a placeholder for the Batch Scope Builder.")
-                        .font(.body)
-                    Text("Next we’ll add a selection UI that lets you choose items from your catalog and create BatchItem join records.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+            List {
+                if items.isEmpty {
+                    ContentUnavailableView(
+                        "No Items Yet",
+                        systemImage: "shippingbox",
+                        description: Text("Add items to your catalog first, then come back to include them in this batch.")
+                    )
+                } else {
+                    ForEach(items) { item in
+                        Button {
+                            addItemToBatch(item)
+                        } label: {
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(item.name)
+                                        .font(.body)
+
+                                    if !item.category.isEmpty {
+                                        Text(item.category)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+
+                                Spacer()
+
+                                if isAlreadyInBatch(item) {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundStyle(.secondary)
+                                } else {
+                                    Image(systemName: "plus.circle")
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isAlreadyInBatch(item))
+                    }
                 }
             }
-            .navigationTitle(batchName.isEmpty ? "Add Items" : "Add Items to \(batchName)")
+            .navigationTitle(batch.name.isEmpty ? "Add Items" : "Add Items to \(batch.name)")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -267,6 +315,24 @@ private struct AddItemsStubSheet: View {
                 }
             }
         }
+    }
+
+    private func isAlreadyInBatch(_ item: LTCItem) -> Bool {
+        batch.items.contains(where: { $0.item?.itemId == item.itemId })
+    }
+
+    private func addItemToBatch(_ item: LTCItem) {
+        guard !isAlreadyInBatch(item) else { return }
+
+        let entry = BatchItem(disposition: .include)
+        entry.batch = batch
+        entry.item = item
+
+        // Make sure the join record is tracked, and visible immediately in the detail view.
+        modelContext.insert(entry)
+        batch.items.append(entry)
+
+        batch.updatedAt = .now
     }
 }
 
