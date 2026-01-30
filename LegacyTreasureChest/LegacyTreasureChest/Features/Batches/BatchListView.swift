@@ -79,6 +79,9 @@ private struct BatchDetailView: View {
     @State private var showingAddItemsSheet = false
     @State private var showingAddSetsSheet = false
 
+    @State private var selectedBatchItem: BatchItem?
+    @State private var selectedBatchSet: BatchSet?
+
     var body: some View {
         Form {
             Section("Batch") {
@@ -181,14 +184,21 @@ private struct BatchDetailView: View {
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(batch.items) { entry in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(entry.item?.name ?? "Unnamed Item")
-                                .font(.body)
+                        Button {
+                            selectedBatchItem = entry
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(entry.item?.name ?? "Unnamed Item")
+                                    .font(.body)
+                                    .foregroundStyle(.primary)
 
-                            Text(entry.dispositionRaw.capitalized)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                                Text(entry.dispositionRaw.capitalized)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.vertical, 2)
                         }
+                        .buttonStyle(.plain)
                     }
                     .onDelete(perform: deleteBatchItems)
                 }
@@ -207,14 +217,21 @@ private struct BatchDetailView: View {
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(batch.sets) { entry in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(entry.itemSet?.name ?? "Unnamed Set")
-                                .font(.body)
+                        Button {
+                            selectedBatchSet = entry
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(entry.itemSet?.name ?? "Unnamed Set")
+                                    .font(.body)
+                                    .foregroundStyle(.primary)
 
-                            Text(entry.dispositionRaw.capitalized)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                                Text(entry.dispositionRaw.capitalized)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.vertical, 2)
                         }
+                        .buttonStyle(.plain)
                     }
                     .onDelete(perform: deleteBatchSets)
                 }
@@ -240,6 +257,20 @@ private struct BatchDetailView: View {
         .sheet(isPresented: $showingAddSetsSheet) {
             AddSetsToBatchSheet(batch: batch)
         }
+        .sheet(item: $selectedBatchItem) { entry in
+            BatchItemEditorSheet(
+                entry: entry,
+                batchName: batch.name,
+                onChanged: { touchUpdatedAt() }
+            )
+        }
+        .sheet(item: $selectedBatchSet) { entry in
+            BatchSetEditorSheet(
+                entry: entry,
+                batchName: batch.name,
+                onChanged: { touchUpdatedAt() }
+            )
+        }
     }
 
     private func touchUpdatedAt() {
@@ -247,7 +278,6 @@ private struct BatchDetailView: View {
     }
 
     private func deleteBatchItems(at offsets: IndexSet) {
-        // Remove from batch + delete join records (so they don't orphan)
         for index in offsets {
             let entry = batch.items[index]
             batch.items.remove(at: index)
@@ -419,6 +449,189 @@ private struct AddSetsToBatchSheet: View {
         batch.sets.append(entry)
 
         batch.updatedAt = .now
+    }
+}
+
+// MARK: - Entry Editors
+
+private struct BatchItemEditorSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Bindable var entry: BatchItem
+
+    let batchName: String
+    let onChanged: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Item") {
+                    LabeledContent("Name", value: entry.item?.name ?? "Unnamed Item")
+                    if let category = entry.item?.category, !category.isEmpty {
+                        LabeledContent("Category", value: category)
+                    }
+                }
+
+                Section("Batch Overrides") {
+                    Picker("Disposition", selection: Binding<BatchItemDisposition>(
+                        get: { entry.disposition },
+                        set: { newValue in
+                            entry.disposition = newValue
+                            onChanged()
+                        }
+                    )) {
+                        ForEach(BatchItemDisposition.allCases, id: \.self) { option in
+                            Text(option.rawValue).tag(option)
+                        }
+                    }
+
+                    TextField("Lot Number", text: optionalTextBinding(
+                        get: { entry.lotNumber },
+                        set: { entry.lotNumber = $0; onChanged() }
+                    ))
+
+                    TextField("Room Group", text: optionalTextBinding(
+                        get: { entry.roomGroup },
+                        set: { entry.roomGroup = $0; onChanged() }
+                    ))
+
+                    let handlingBinding = optionalTextBinding(
+                        get: { entry.handlingNotes },
+                        set: { entry.handlingNotes = $0; onChanged() }
+                    )
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Handling Notes")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        TextEditor(text: handlingBinding)
+                            .frame(minHeight: 80)
+                    }
+
+                    let sellerBinding = optionalTextBinding(
+                        get: { entry.sellerNotes },
+                        set: { entry.sellerNotes = $0; onChanged() }
+                    )
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Seller Notes")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        TextEditor(text: sellerBinding)
+                            .frame(minHeight: 80)
+                    }
+                }
+            }
+            .navigationTitle(batchName.isEmpty ? "Edit Item" : "Edit Item (\(batchName))")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func optionalTextBinding(get: @escaping () -> String?, set: @escaping (String?) -> Void) -> Binding<String> {
+        Binding<String>(
+            get: { get() ?? "" },
+            set: { newValue in
+                let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                set(trimmed.isEmpty ? nil : trimmed)
+            }
+        )
+    }
+}
+
+private struct BatchSetEditorSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Bindable var entry: BatchSet
+
+    let batchName: String
+    let onChanged: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Set") {
+                    LabeledContent("Name", value: entry.itemSet?.name ?? "Unnamed Set")
+                    if let typeRaw = entry.itemSet?.setTypeRaw, !typeRaw.isEmpty {
+                        LabeledContent("Type", value: typeRaw)
+                    }
+                }
+
+                Section("Batch Overrides") {
+                    // Assumes BatchSet uses the same batch override enum (as your current build does).
+                    Picker("Disposition", selection: Binding<BatchItemDisposition>(
+                        get: { BatchItemDisposition(rawValue: entry.dispositionRaw) ?? .undecided },
+                        set: { newValue in
+                            entry.dispositionRaw = newValue.rawValue
+                            onChanged()
+                        }
+                    )) {
+                        ForEach(BatchItemDisposition.allCases, id: \.self) { option in
+                            Text(option.rawValue).tag(option)
+                        }
+                    }
+
+                    TextField("Lot Number", text: optionalTextBinding(
+                        get: { entry.lotNumber },
+                        set: { entry.lotNumber = $0; onChanged() }
+                    ))
+
+                    TextField("Room Group", text: optionalTextBinding(
+                        get: { entry.roomGroup },
+                        set: { entry.roomGroup = $0; onChanged() }
+                    ))
+
+                    let handlingBinding = optionalTextBinding(
+                        get: { entry.handlingNotes },
+                        set: { entry.handlingNotes = $0; onChanged() }
+                    )
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Handling Notes")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        TextEditor(text: handlingBinding)
+                            .frame(minHeight: 80)
+                    }
+
+                    let sellerBinding = optionalTextBinding(
+                        get: { entry.sellerNotes },
+                        set: { entry.sellerNotes = $0; onChanged() }
+                    )
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Seller Notes")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        TextEditor(text: sellerBinding)
+                            .frame(minHeight: 80)
+                    }
+                }
+            }
+            .navigationTitle(batchName.isEmpty ? "Edit Set" : "Edit Set (\(batchName))")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func optionalTextBinding(get: @escaping () -> String?, set: @escaping (String?) -> Void) -> Binding<String> {
+        Binding<String>(
+            get: { get() ?? "" },
+            set: { newValue in
+                let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                set(trimmed.isEmpty ? nil : trimmed)
+            }
+        )
     }
 }
 
