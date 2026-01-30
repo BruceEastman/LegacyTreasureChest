@@ -171,6 +171,27 @@ private struct BatchDetailView: View {
                 LabeledContent("Items", value: "\(batch.items.count)")
                 LabeledContent("Sets", value: "\(batch.sets.count)")
             }
+            
+            Section("Batch Readiness") {
+                LabeledContent("Lots", value: "\(assignedLotCount) assigned (\(totalLotCount) total)")
+                LabeledContent("Entries", value: "\(totalEntries) (Items \(batch.items.count), Sets \(batch.sets.count))")
+
+                let percent = Int((decisionCompletion * 100).rounded())
+                LabeledContent("Decisions", value: "\(decidedEntries)/\(totalEntries) (\(percent)%)")
+
+                if undecidedEntries > 0 {
+                    Text("You still have \(undecidedEntries) undecided entr\(undecidedEntries == 1 ? "y" : "ies"). For execution, try to resolve dispositions so every entry is Include/Exclude/Donate/Trash/Holdback.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                if allEntriesUnassigned && totalEntries > 0 {
+                    Text("All entries are still Unassigned. Assign lot numbers to create execution units (labels, staging areas, listing groups).")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
 
             // B11: Lots are navigable
             Section("Lots") {
@@ -445,6 +466,45 @@ private struct BatchDetailView: View {
 
     // MARK: - Updates / Deletes
 
+    private var totalEntries: Int {
+        batch.items.count + batch.sets.count
+    }
+
+    private var decidedEntries: Int {
+        let itemDecided = batch.items.filter {
+            $0.dispositionRaw.localizedCaseInsensitiveCompare("Undecided") != .orderedSame
+        }.count
+
+        let setDecided = batch.sets.filter {
+            $0.dispositionRaw.localizedCaseInsensitiveCompare("Undecided") != .orderedSame
+        }.count
+
+        return itemDecided + setDecided
+    }
+
+    private var undecidedEntries: Int {
+        max(totalEntries - decidedEntries, 0)
+    }
+
+    private var decisionCompletion: Double {
+        guard totalEntries > 0 else { return 0 }
+        return Double(decidedEntries) / Double(totalEntries)
+    }
+
+    private var totalLotCount: Int {
+        lotGroups.count
+    }
+
+    private var assignedLotCount: Int {
+        lotGroups.filter { $0.key != "Unassigned" }.count
+    }
+
+    private var allEntriesUnassigned: Bool {
+        guard totalEntries > 0 else { return false }
+        return assignedLotCount == 0
+    }
+
+    
     private func touchUpdatedAt() {
         batch.updatedAt = .now
     }
