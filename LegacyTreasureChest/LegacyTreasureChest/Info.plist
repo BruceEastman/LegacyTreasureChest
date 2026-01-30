@@ -19,11 +19,7 @@
     <key>CFBundleShortVersionString</key>
     <string>$(MARKETING_VERSION)</string>
 
-    <!-- App configuration -->
-    <key>GEMINI_MODEL_NAME</key>
-    <string>gemini-2.0-flash-exp</string>
-
-    <!-- Local Network permission (REQUIRED for iPhone → Mac gateway access) -->
+    <!-- App configuration --><!-- Local Network permission (REQUIRED for iPhone → Mac gateway access) -->
     <key>NSLocalNetworkUsageDescription</key>
     <string>
     Legacy Treasure Chest needs access to your local network to connect to your AI Gateway running on your Mac.
