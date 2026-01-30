@@ -526,6 +526,14 @@ private struct LotDetailView: View {
                 LabeledContent("Items", value: "\(itemsInLot.count)")
                 LabeledContent("Sets", value: "\(setsInLot.count)")
 
+                LabeledContent("Estimated Value (items)") {
+                    Text(lotItemValue, format: .currency(code: currencyCode))
+                }
+
+                LabeledContent("Decisions") {
+                    Text("\(readiness.decided)/\(readiness.total)")
+                }
+
                 if lotKey == "Unassigned" {
                     Text("Unassigned entries have no lot number yet.")
                         .font(.footnote)
@@ -588,9 +596,15 @@ private struct LotDetailView: View {
         .navigationTitle(displayName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
                 Button(lotKey == "Unassigned" ? "Assign Lot" : "Rename") {
                     showingRenameSheet = true
+                }
+
+                if lotKey != "Unassigned" {
+                    Button("Clear Lot", role: .destructive) {
+                        renameLot(to: nil)   // moves everything in this lot back to Unassigned
+                    }
                 }
             }
         }
@@ -633,6 +647,38 @@ private struct LotDetailView: View {
             .filter { normalizeLotKey($0.lotNumber) == lotKey }
             .sorted { ($0.itemSet?.name ?? "") < ($1.itemSet?.name ?? "") }
     }
+    
+    private var currencyCode: String {
+        Locale.current.currency?.identifier ?? "USD"
+    }
+
+    private var lotItemValue: Double {
+        itemsInLot.reduce(0) { partial, entry in
+            guard let item = entry.item else { return partial }
+
+            let unit: Double = {
+                if let estimated = item.valuation?.estimatedValue, estimated > 0 { return estimated }
+                return max(item.value, 0)
+            }()
+
+            let qty = max(item.quantity, 1)
+            return partial + (unit * Double(qty))
+        }
+    }
+
+    private var readiness: (decided: Int, total: Int) {
+        let itemDecided = itemsInLot.filter {
+            $0.dispositionRaw.localizedCaseInsensitiveCompare("Undecided") != .orderedSame
+        }.count
+
+        let setDecided = setsInLot.filter {
+            $0.dispositionRaw.localizedCaseInsensitiveCompare("Undecided") != .orderedSame
+        }.count
+
+        return (decided: itemDecided + setDecided,
+                total: itemsInLot.count + setsInLot.count)
+    }
+
 
     private func normalizeLotKey(_ raw: String?) -> String {
         let trimmed = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
