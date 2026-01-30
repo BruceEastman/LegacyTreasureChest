@@ -216,6 +216,7 @@ private struct BatchDetailView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+                    .onDelete(perform: deleteBatchSets)
                 }
             }
 
@@ -237,7 +238,7 @@ private struct BatchDetailView: View {
             AddItemsToBatchSheet(batch: batch)
         }
         .sheet(isPresented: $showingAddSetsSheet) {
-            AddSetsStubSheet(batchName: batch.name)
+            AddSetsToBatchSheet(batch: batch)
         }
     }
 
@@ -250,6 +251,15 @@ private struct BatchDetailView: View {
         for index in offsets {
             let entry = batch.items[index]
             batch.items.remove(at: index)
+            modelContext.delete(entry)
+        }
+        touchUpdatedAt()
+    }
+
+    private func deleteBatchSets(at offsets: IndexSet) {
+        for index in offsets {
+            let entry = batch.sets[index]
+            batch.sets.remove(at: index)
             modelContext.delete(entry)
         }
         touchUpdatedAt()
@@ -328,7 +338,6 @@ private struct AddItemsToBatchSheet: View {
         entry.batch = batch
         entry.item = item
 
-        // Make sure the join record is tracked, and visible immediately in the detail view.
         modelContext.insert(entry)
         batch.items.append(entry)
 
@@ -336,22 +345,56 @@ private struct AddItemsToBatchSheet: View {
     }
 }
 
-private struct AddSetsStubSheet: View {
+private struct AddSetsToBatchSheet: View {
     @Environment(\.dismiss) private var dismiss
-    let batchName: String
+    @Environment(\.modelContext) private var modelContext
+
+    @Query(sort: \LTCItemSet.createdAt, order: .reverse) private var sets: [LTCItemSet]
+
+    @Bindable var batch: LiquidationBatch
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    Text("This is a placeholder for the Batch Scope Builder.")
-                        .font(.body)
-                    Text("Next we’ll add a selection UI that lets you choose sets from your catalog and create BatchSet join records.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+            List {
+                if sets.isEmpty {
+                    ContentUnavailableView(
+                        "No Sets Yet",
+                        systemImage: "shippingbox",
+                        description: Text("Create sets in your catalog first, then come back to include them in this batch.")
+                    )
+                } else {
+                    ForEach(sets) { set in
+                        Button {
+                            addSetToBatch(set)
+                        } label: {
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(set.name)
+                                        .font(.body)
+
+                                    Text(set.setTypeRaw.capitalized)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                Spacer()
+
+                                if isAlreadyInBatch(set) {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundStyle(.secondary)
+                                } else {
+                                    Image(systemName: "plus.circle")
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isAlreadyInBatch(set))
+                    }
                 }
             }
-            .navigationTitle(batchName.isEmpty ? "Add Sets" : "Add Sets to \(batchName)")
+            .navigationTitle(batch.name.isEmpty ? "Add Sets" : "Add Sets to \(batch.name)")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -359,6 +402,23 @@ private struct AddSetsStubSheet: View {
                 }
             }
         }
+    }
+
+    private func isAlreadyInBatch(_ set: LTCItemSet) -> Bool {
+        batch.sets.contains(where: { $0.itemSet?.itemSetId == set.itemSetId })
+    }
+
+    private func addSetToBatch(_ set: LTCItemSet) {
+        guard !isAlreadyInBatch(set) else { return }
+
+        let entry = BatchSet(disposition: .include)
+        entry.batch = batch
+        entry.itemSet = set
+
+        modelContext.insert(entry)
+        batch.sets.append(entry)
+
+        batch.updatedAt = .now
     }
 }
 
