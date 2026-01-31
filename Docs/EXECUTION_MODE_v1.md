@@ -97,6 +97,12 @@ Each checklist item has:
 - Optional executor note
 
 ---
+### “Ready” Semantics (v1)
+
+- “Lot is ready for sale / handoff” is the **final checklist item**
+- Marking it complete indicates executor confidence, not system validation
+- No additional state transitions occur when a lot is marked Ready
+
 
 ## Execution State Model (v1)
 
@@ -111,6 +117,25 @@ Execution state is **separate from planning**.
 v1 may embed this directly on Lot context rather than as a standalone entity.
 
 ---
+### Persistence Rules (v1)
+
+Persisted per checklist item:
+- `completed` (Boolean)
+- `completedAt` (Optional timestamp)
+- `note` (Optional free text)
+
+Derived (not persisted):
+- Lot completion percentage
+- Batch completion percentage
+- Execution warnings
+
+### Execution State Ownership (v1)
+
+- Execution state is owned at the **Lot level**
+- Each Lot has exactly one execution checklist
+- Batch-level execution status is **derived** from its Lots
+- No separate batch execution state is persisted in v1
+
 
 ## What Execution Mode v1 Does NOT Do
 
