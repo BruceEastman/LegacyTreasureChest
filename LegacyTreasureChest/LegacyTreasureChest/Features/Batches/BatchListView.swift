@@ -320,6 +320,10 @@ private struct BatchDetailView: View {
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
+
+                                Text(lotExecutionProgressText(batch: batch, lotKey: group.key))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                             }
                             .padding(.vertical, 4)
                         }
@@ -659,6 +663,24 @@ private struct BatchDetailView: View {
 
 }
 
+private func lotExecutionProgressText(batch: LiquidationBatch, lotKey: String) -> String {
+    // Only real lots can be executed
+    if lotKey == "Unassigned" { return "Execution: —" }
+
+    let total = ExecutionChecklistV1.allItems.count
+    guard total > 0 else { return "Execution: —" }
+
+    guard let state = batch.lotExecutionStates.first(where: { $0.lotNumber == lotKey }) else {
+        return "Execution: 0/\(total) (0%)"
+    }
+
+    let validIds = Set(ExecutionChecklistV1.allItems.map { $0.id })
+    let completed = state.checklistItems.filter { validIds.contains($0.stepId) && $0.isComplete }.count
+    let pct = Int((Double(completed) / Double(total)) * 100.0)
+
+    return "Execution: \(completed)/\(total) (\(pct)%)"
+}
+
 private struct LotDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Bindable var batch: LiquidationBatch
@@ -668,6 +690,30 @@ private struct LotDetailView: View {
     @State private var selectedBatchSet: BatchSet?
 
     @State private var showingRenameSheet = false
+    
+    private var executionTotals: (completed: Int, total: Int, isReady: Bool) {
+        guard lotKey != "Unassigned" else { return (0, 0, false) }
+
+        let total = ExecutionChecklistV1.allItems.count
+        guard total > 0 else { return (0, 0, false) }
+
+        guard let state = batch.lotExecutionStates.first(where: { $0.lotNumber == lotKey }) else {
+            return (0, total, false)
+        }
+
+        let validIds = Set(ExecutionChecklistV1.allItems.map { $0.id })
+        let completed = state.checklistItems.filter { validIds.contains($0.stepId) && $0.isComplete }.count
+        let isReady = state.checklistItems.first(where: { $0.stepId == ExecutionChecklistV1.finalStepId })?.isComplete == true
+
+        return (completed, total, isReady)
+    }
+
+    private var executionPercentText: String {
+        let t = executionTotals
+        guard t.total > 0 else { return "—" }
+        let pct = Int((Double(t.completed) / Double(t.total)) * 100.0)
+        return "\(t.completed)/\(t.total) (\(pct)%)"
+    }
 
     var body: some View {
         Form {
@@ -683,6 +729,22 @@ private struct LotDetailView: View {
                 LabeledContent("Decisions") {
                     Text("\(readiness.decided)/\(readiness.total)")
                 }
+                
+                if lotKey != "Unassigned" {
+                    LabeledContent("Execution") {
+                        Text(executionPercentText)
+                    }
+                }
+
+                
+                if lotKey != "Unassigned" {
+                    NavigationLink {
+                        LotExecutionView(batch: batch, lotNumber: lotKey)
+                    } label: {
+                        Label("Execute Lot Checklist", systemImage: "checklist")
+                    }
+                }
+
 
                 if lotKey == "Unassigned" {
                     Text("Unassigned entries have no lot number yet.")

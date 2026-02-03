@@ -582,6 +582,10 @@ public final class LiquidationBatch {
     @Relationship(deleteRule: .cascade)
     public var sets: [BatchSet] = []
 
+    // Execution Mode v1 (lot-centric checklist state)
+    @Relationship(deleteRule: .cascade)
+    public var lotExecutionStates: [LotExecutionState] = []
+
 
     public var status: LiquidationBatchStatus {
         get { LiquidationBatchStatus(rawValue: statusRaw) ?? .draft }
@@ -715,6 +719,77 @@ public final class BatchSet {
     }
 }
 
+// MARK: - Execution Mode v1 (Lot-centric checklist state)
+
+@Model
+public final class LotExecutionState {
+    @Attribute(.unique) public var lotExecutionStateId: UUID
+
+    /// The lot identifier within a batch (derived from BatchItem.lotNumber / BatchSet.lotNumber).
+    public var lotNumber: String
+
+    public var createdAt: Date
+    public var updatedAt: Date
+
+    /// Parent batch (owns lot execution state)
+    @Relationship(inverse: \LiquidationBatch.lotExecutionStates) public var batch: LiquidationBatch?
+
+    /// Per-checklist-item state (owned)
+    @Relationship(deleteRule: .cascade)
+    public var checklistItems: [LotChecklistItemState] = []
+
+    public init(
+        lotExecutionStateId: UUID = UUID(),
+        lotNumber: String,
+        createdAt: Date = .now,
+        updatedAt: Date = .now
+    ) {
+        self.lotExecutionStateId = lotExecutionStateId
+        self.lotNumber = lotNumber
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+}
+
+@Model
+public final class LotChecklistItemState {
+    @Attribute(.unique) public var lotChecklistItemStateId: UUID
+
+    /// Stable identifier for the standard checklist item (e.g., "ready", "confirm_contents", etc.).
+    public var stepId: String
+
+    /// Persisted completion state (v1 requirement)
+    public var isComplete: Bool
+
+    /// Optional timestamp (v1 requirement)
+    public var completedAt: Date?
+
+    /// Optional executor note (v1 requirement)
+    public var note: String?
+
+    public var createdAt: Date
+    public var updatedAt: Date
+
+    @Relationship(inverse: \LotExecutionState.checklistItems) public var lotState: LotExecutionState?
+
+    public init(
+        lotChecklistItemStateId: UUID = UUID(),
+        stepId: String,
+        isComplete: Bool = false,
+        completedAt: Date? = nil,
+        note: String? = nil,
+        createdAt: Date = .now,
+        updatedAt: Date = .now
+    ) {
+        self.lotChecklistItemStateId = lotChecklistItemStateId
+        self.stepId = stepId
+        self.isComplete = isComplete
+        self.completedAt = completedAt
+        self.note = note
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+}
 
 // MARK: - LEGACY: Liquidate Set (group of items)
 // Kept temporarily for smooth migration from prototype -> Pattern A.
