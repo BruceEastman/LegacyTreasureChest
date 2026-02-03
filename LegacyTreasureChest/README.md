@@ -1,4 +1,52 @@
 # Legacy Treasure Chest
+## Execution Mode v1 (Implemented)
+
+Execution Mode v1 enables a **non-technical executor** to complete a prepared batch using a **lot-centric, checklist-driven workflow**. This phase is intentionally lightweight, local-only, and non-automated.
+
+### Core Characteristics
+- **Lot-centric execution**
+  - Execution is performed at the lot level (derived from batch items and sets).
+- **Standard checklist**
+  - Each lot uses a fixed, non-configurable checklist defined in code.
+- **Local-first persistence**
+  - Stored locally using SwiftData.
+  - No backend calls, no automation, no AI during execution.
+- **Advisor, not operator**
+  - The system records executor actions but does not enforce or automate outcomes.
+
+### What Is Persisted
+For each checklist item in a lot:
+- Completion state (Boolean)
+- Optional completion timestamp
+- Optional executor note
+
+No batch-level execution state is persisted.
+
+### Derived (Not Persisted)
+- Per-lot execution progress (e.g. `3 / 9 (33%)`)
+- Lot readiness (`Ready` is the final checklist item)
+- Batch-level execution progress (derived by scanning lots)
+
+### Completion Semantics
+Execution Mode v1 is considered complete when **all lots** in a batch have their final checklist item:
+
+> **“Lot is ready for sale / handoff”**
+
+marked complete.
+
+“Ready” represents executor confidence only.  
+No system validation or state transition occurs.
+
+### Explicitly Out of Scope (v1)
+- Automation or task orchestration
+- Partner handoff or listing workflows
+- Pricing, export, or labeling features
+- Execution-time AI assistance
+- Batch-level execution state persistence
+
+Execution Mode v1 is intentionally conservative and reversible, serving as a stable foundation for future execution enhancements.
+
+
 ## Batch v1 (Estate Sale Batches) — Completed (January 30 2026)
 
 Batch v1 provides an executor-grade foundation for organizing an estate sale (or similar liquidation event) without automation or AI. The goal is to safely group **Items and Sets** into **Lots**, apply batch-specific overrides, and track readiness.
