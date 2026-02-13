@@ -1373,7 +1373,7 @@ Future enhancements (Millennial/recipient workflow, shared claiming, CloudKit mu
 
 - AI item analysis now runs through the **LTC AI Gateway** backend:
   - iOS uses `AIService` with `BackendAIProvider`.
-  - Backend is a FastAPI app that calls Gemini 2.0 Flash and returns strict JSON.
+  - Backend is a FastAPI app that calls Gemini 2.5 (as of January 2026) and returns strict JSON.
   - No Gemini API keys or secrets are present in the iOS app.
 - The following flows are working end-to-end:
   - `AITestView` (internal lab) – single photo → ItemAnalysis.
