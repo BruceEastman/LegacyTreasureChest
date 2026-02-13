@@ -1,4 +1,37 @@
 # Legacy Treasure Chest
+## Current Status (February 12, 2026)
+
+### Valuation Aggregation Refinement (Batch + Lot)
+
+During real-world household use, a valuation inconsistency was identified:
+
+- Batch totals correctly aggregated individual items.
+- Sets included in a batch were not contributing to batch or lot totals.
+- Member items of a set risked being double-counted if both the set and its items were assigned to the same lot.
+
+This has been corrected.
+
+### What Changed
+
+- **Batch estimated value now includes sets.**
+- **Lot estimated value now includes sets.**
+- If a set and its member items are assigned to the **same lot**, member items are excluded from the item subtotal to prevent double-counting.
+- Lot Detail screen continues to show **individual items only** (explicitly labeled) to maintain structural clarity.
+
+### Architectural Intent
+
+- No new data fields were introduced.
+- No override or sell-mode complexity was added.
+- No automation was introduced.
+- Logic remains deterministic and local.
+- Advisor-first principle preserved.
+
+This refinement hardens Batch v1 behavior without expanding scope.
+
+---
+
+
+
 ## Execution Mode v1 (Implemented)
 
 Execution Mode v1 enables a **non-technical executor** to complete a prepared batch using a **lot-centric, checklist-driven workflow**. This phase is intentionally lightweight, local-only, and non-automated.
