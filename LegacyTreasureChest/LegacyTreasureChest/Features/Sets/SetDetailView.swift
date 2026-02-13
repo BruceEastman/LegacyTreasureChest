@@ -57,6 +57,28 @@ struct SetDetailView: View {
         }
     }
 
+    // MARK: - Local Help gating (Set)
+
+    private var localHelpBriefRecord: LiquidationBriefRecord? {
+        guard let state = itemSet.liquidationState else { return nil }
+        if let active = state.briefs.first(where: { $0.isActive }) { return active }
+        return state.briefs.sorted(by: { $0.createdAt > $1.createdAt }).first
+    }
+
+    private var localHelpPlanRecord: LiquidationPlanRecord? {
+        guard let state = itemSet.liquidationState else { return nil }
+        if let active = state.plans.first(where: { $0.isActive }) { return active }
+        return state.plans.sorted(by: { $0.createdAt > $1.createdAt }).first
+    }
+
+    private var localHelpPrereqsMet: Bool {
+        localHelpBriefRecord != nil && localHelpPlanRecord != nil
+    }
+
+    private var localHelpGateMessage: String {
+        "Local Help requires a Brief and a Plan. Go to Liquidate Set → Generate Brief → Create Plan."
+    }
+
     var body: some View {
         Form {
             Section("Set") {
@@ -129,26 +151,115 @@ struct SetDetailView: View {
                         Text("Edit Set")
                     }
                 }
+            }
 
+            // MARK: - Next Step (parity with Item)
+            Section {
                 NavigationLink {
                     SetLiquidationSectionView(itemSet: itemSet)
                 } label: {
-                    HStack {
-                        Image(systemName: "arrow.right.circle.fill")
-                        Text("Next Step → Liquidate Set")
+                    HStack(spacing: 10) {
+                        Image(systemName: "shippingbox.and.arrow.backward")
+                            .foregroundStyle(Theme.accent)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Liquidate Set")
+                                .font(Theme.bodyFont.weight(.semibold))
+                                .foregroundStyle(Theme.text)
+
+                            Text("Generate a brief, choose a path, and create a checklist plan.")
+                                .font(Theme.secondaryFont)
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+
+                        Spacer()
                     }
+                    .padding(.vertical, 4)
                 }
-                .foregroundStyle(Theme.accent)
+
+                // Local Help (Set scope) — gated until Brief + Plan exist
+                if let state = itemSet.liquidationState,
+                   state.activePlan != nil {
+
+                    NavigationLink {
+                        // Local Help for sets lives inside Execute Plan (partner picker per block)
+                        SetExecutePlanView(itemSet: itemSet)
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "person.2.wave.2")
+                                .foregroundStyle(Theme.accent)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Local Help")
+                                    .font(Theme.bodyFont.weight(.semibold))
+                                    .foregroundStyle(Theme.text)
+
+                                Text("Find partners for this set (advisor mode).")
+                                    .font(Theme.secondaryFont)
+                                    .foregroundStyle(Theme.textSecondary)
+                            }
+
+                            Spacer()
+                        }
+                        .padding(.vertical, 4)
+                    }
+
+                } else {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 10) {
+                            Image(systemName: "person.2.wave.2")
+                                .foregroundStyle(Theme.textSecondary)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Local Help")
+                                    .font(Theme.bodyFont.weight(.semibold))
+                                    .foregroundStyle(Theme.textSecondary)
+
+                                Text("Find partners for this set (advisor mode).")
+                                    .font(Theme.secondaryFont)
+                                    .foregroundStyle(Theme.textSecondary)
+                            }
+
+                            Spacer()
+                        }
+                        .padding(.vertical, 4)
+
+                        Text("Local Help requires a Brief and a Plan. Go to Liquidate Set → Generate Brief → Generate Plan.")
+                            .font(Theme.secondaryFont)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                    .opacity(0.7)
+                }
 
                 NavigationLink {
                     SetExecutePlanView(itemSet: itemSet)
                 } label: {
-                    HStack {
+                    HStack(spacing: 10) {
                         Image(systemName: "play.circle.fill")
-                        Text("Execute Plan")
+                            .foregroundStyle(Theme.accent)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Execute Plan")
+                                .font(Theme.bodyFont.weight(.semibold))
+                                .foregroundStyle(Theme.text)
+
+                            Text("Work the plan one step at a time.")
+                                .font(Theme.secondaryFont)
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+
+                        Spacer()
                     }
+                    .padding(.vertical, 4)
                 }
-                .foregroundStyle(Theme.accent)
+
+            } header: {
+                Text("Next Step")
+                    .ltcSectionHeaderStyle()
+            } footer: {
+                Text("Local Help is enabled after you have both a Brief and a Plan for the set.")
+                    .font(Theme.secondaryFont)
+                    .foregroundStyle(Theme.textSecondary)
             }
 
             Section("Members (\(itemSet.memberships.count))") {
@@ -253,6 +364,10 @@ struct SetDetailView: View {
         itemSet.updatedAt = .now
     }
 }
+
+// MARK: - Set Execute Plan
+// (unchanged below — your existing content continues)
+
 
 // MARK: - Set Execute Plan
 

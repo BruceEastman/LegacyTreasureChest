@@ -36,7 +36,7 @@ enum AIError: LocalizedError, Sendable {
         case .imageEncodingFailed:
             return "Unable to encode image data for AI."
         case .notImplementedYet(let message):
-            return "AI feature not implemented yet: \(message)"
+            return "This AI feature is unavailable right now: \(message)"
         case .underlying(let error):
             return error.localizedDescription
         }

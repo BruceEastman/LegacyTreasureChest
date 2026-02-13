@@ -334,7 +334,7 @@ struct ItemDetailView: View {
 
             // MARK: - Footer
             Section { EmptyView() } footer: {
-                Text("In future versions, you’ll be able to fully manage photos, documents, audio stories, and beneficiaries for this item.")
+                Text("You can add photos, documents, audio stories, and beneficiaries from their sections below.")
                     .font(Theme.secondaryFont)
                     .foregroundStyle(Theme.textSecondary)
                     .padding(.top, Theme.spacing.small)

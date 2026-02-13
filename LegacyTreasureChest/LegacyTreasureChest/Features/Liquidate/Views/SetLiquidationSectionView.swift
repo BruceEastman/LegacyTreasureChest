@@ -55,12 +55,15 @@ struct SetLiquidationSectionView: View {
                     planChecklistEditor(planRecord: plan, itemSet: itemSet)
                         .id(plan.persistentModelID)
 
-                    Button(role: .destructive) {
-                        deletePlan(plan, from: itemSet)
-                    } label: {
-                        Label("Delete Plan (Debug)", systemImage: "trash")
+                    if _isDebugAssertConfiguration() && FeatureFlags().showDebugInfo {
+
+                        Button(role: .destructive) {
+                            deletePlan(plan, from: itemSet)
+                        } label: {
+                            Label("Delete Plan (Debug)", systemImage: "trash")
+                        }
+                        .padding(.top, 6)
                     }
-                    .padding(.top, 6)
                 } else {
                     Text("No plan yet. Generate a brief, then choose a path.")
                         .foregroundStyle(.secondary)

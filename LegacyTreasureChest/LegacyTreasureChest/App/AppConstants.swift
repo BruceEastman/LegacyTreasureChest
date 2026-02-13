@@ -21,7 +21,7 @@ enum AppConstants {
     
     /// Organization / vendor information.
     enum Organization {
-        static let developerName: String = "Bruce Eastman"
+        static let developerName: String = "Legacy Treasure Chest"
         static let companyName: String = "Eastmancro LLC"
     }
     

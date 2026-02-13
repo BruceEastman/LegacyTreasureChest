@@ -3,7 +3,7 @@
 //  LegacyTreasureChest
 //
 //  Disposition Engine UI (v1)
-//  - Item-scoped partner discovery (advisor mode)
+//  - Item-scoped OR Set-scoped partner discovery (advisor mode)
 //  - Editable location + radius
 //  - Calls backend: POST /ai/disposition/partners/search
 //
@@ -12,7 +12,27 @@ import SwiftUI
 import UIKit
 
 struct DispositionPartnersView: View {
-    let item: LTCItem
+
+    // MARK: - Scope
+
+    private enum Scope {
+        case item(LTCItem)
+        case itemSet(LTCItemSet)
+    }
+
+    private let scope: Scope
+
+    // Existing initializer (item)
+    init(item: LTCItem) {
+        self.scope = .item(item)
+    }
+
+    // New initializer (set)
+    init(itemSet: LTCItemSet) {
+        self.scope = .itemSet(itemSet)
+    }
+
+    // MARK: - Location + UI state
 
     @State private var city: String = "Boise"
     @State private var region: String = "ID"
@@ -30,12 +50,56 @@ struct DispositionPartnersView: View {
 
     private let service = DispositionAIService()
 
+    // MARK: - Derived display fields
+
+    private var titleName: String {
+        switch scope {
+        case .item(let item):
+            return item.name
+        case .itemSet(let set):
+            return set.name
+        }
+    }
+
+    private var categoryDisplay: String {
+        switch scope {
+        case .item(let item):
+            return item.category.isEmpty ? "Uncategorized" : item.category
+        case .itemSet(let set):
+            return set.setType.rawValue
+        }
+    }
+
+    private var quantityDisplay: String {
+        switch scope {
+        case .item(let item):
+            return "×\(max(item.quantity, 1))"
+        case .itemSet(let set):
+            return "\(set.memberships.count) items"
+        }
+    }
+
     private var currencyCode: String {
-        item.valuation?.currencyCode ?? Locale.current.currency?.identifier ?? "USD"
+        switch scope {
+        case .item(let item):
+            return item.valuation?.currencyCode ?? Locale.current.currency?.identifier ?? "USD"
+        case .itemSet:
+            return Locale.current.currency?.identifier ?? "USD"
+        }
     }
 
     private var chosenPathDisplay: String {
-        guard let path = item.liquidationState?.activePlan?.chosenPath else { return "Not selected yet" }
+        let chosen: LiquidationPath? = {
+            switch scope {
+            case .item(let item):
+                return item.liquidationState?.activePlan?.chosenPath
+            case .itemSet(let set):
+                return set.liquidationState?.activePlan?.chosenPath
+            }
+        }()
+
+        guard let path = chosen else { return "Not selected yet" }
+
         switch path {
         case .pathA: return "Maximize Price"
         case .pathB: return "Delegate / Consign"
@@ -46,10 +110,31 @@ struct DispositionPartnersView: View {
     }
 
     private var totalValueDisplay: String {
-        let unit = max(item.valuation?.estimatedValue ?? item.value, 0)
-        let qty = Double(max(item.quantity, 1))
-        let total = unit * qty
-        return total.formatted(.currency(code: currencyCode))
+        switch scope {
+        case .item(let item):
+            let unit = max(item.valuation?.estimatedValue ?? item.value, 0)
+            let qty = Double(max(item.quantity, 1))
+            let total = unit * qty
+            return total.formatted(.currency(code: currencyCode))
+
+        case .itemSet(let set):
+            let total = estimateSetTotalValue(set)
+            return total.formatted(.currency(code: currencyCode))
+        }
+    }
+
+    // Mapping for set search request
+    private var setChosenPathForRequest: DispositionChosenPath? {
+        guard case .itemSet(let set) = scope else { return nil }
+        guard let path = set.liquidationState?.activePlan?.chosenPath else { return nil }
+
+        switch path {
+        case .pathA: return .A
+        case .pathB: return .B
+        case .pathC: return .C
+        case .donate: return .donate
+        case .needsInfo: return .needsInfo
+        }
     }
 
     var body: some View {
@@ -61,7 +146,7 @@ struct DispositionPartnersView: View {
                         .font(Theme.titleFont)
                         .foregroundStyle(Theme.text)
 
-                    Text("Find nearby services for this item. You choose what to do next — we don’t auto-contact anyone.")
+                    Text(headerSubtitle)
                         .font(Theme.secondaryFont)
                         .foregroundStyle(Theme.textSecondary)
                 }
@@ -72,9 +157,9 @@ struct DispositionPartnersView: View {
             Section {
                 DisclosureGroup("Search context") {
                     VStack(alignment: .leading, spacing: 10) {
-                        contextRow(label: "Item", value: item.name)
-                        contextRow(label: "Category", value: item.category)
-                        contextRow(label: "Quantity", value: "×\(max(item.quantity, 1))")
+                        contextRow(label: scopeLabel, value: titleName)
+                        contextRow(label: scopeCategoryLabel, value: categoryDisplay)
+                        contextRow(label: scopeQuantityLabel, value: quantityDisplay)
                         contextRow(label: "Est. total value", value: totalValueDisplay)
                         contextRow(label: "Chosen path", value: chosenPathDisplay)
                         Divider().padding(.vertical, 4)
@@ -88,7 +173,7 @@ struct DispositionPartnersView: View {
                 Text("Transparency")
                     .ltcSectionHeaderStyle()
             } footer: {
-                Text("This helps you verify the app is searching using the right item context.")
+                Text("This helps you verify the app is searching using the right context.")
                     .font(Theme.secondaryFont)
                     .foregroundStyle(Theme.textSecondary)
             }
@@ -185,6 +270,38 @@ struct DispositionPartnersView: View {
         .navigationTitle(UserFacingTerms.Disposition.localHelpTitle)
         .navigationBarTitleDisplayMode(.inline)
         .tint(Theme.accent)
+    }
+
+    // MARK: - Header copy labels
+
+    private var headerSubtitle: String {
+        switch scope {
+        case .item:
+            return "Find nearby services for this item. You choose what to do next — we don’t auto-contact anyone."
+        case .itemSet:
+            return "Find nearby services for this set. You choose what to do next — we don’t auto-contact anyone."
+        }
+    }
+
+    private var scopeLabel: String {
+        switch scope {
+        case .item: return "Item"
+        case .itemSet: return "Set"
+        }
+    }
+
+    private var scopeCategoryLabel: String {
+        switch scope {
+        case .item: return "Category"
+        case .itemSet: return "Set type"
+        }
+    }
+
+    private var scopeQuantityLabel: String {
+        switch scope {
+        case .item: return "Quantity"
+        case .itemSet: return "Members"
+        }
     }
 
     // MARK: - UI Pieces
@@ -328,11 +445,9 @@ struct DispositionPartnersView: View {
 
     private func cleanedWhyRecommended(_ raw: String?) -> String? {
         guard var s = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty else { return nil }
-        // Remove the noisy prefix if present.
         if s.lowercased().hasPrefix("matches:") {
             s = s.dropFirst("matches:".count).trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        // Normalize spacing around semicolons.
         s = s.replacingOccurrences(of: " ;", with: ";")
         s = s.replacingOccurrences(of: ";", with: " • ")
         return s
@@ -341,26 +456,20 @@ struct DispositionPartnersView: View {
     private func actionsRow(for partner: DispositionPartnerResult) -> some View {
         HStack(spacing: 12) {
             if let phone = partner.contact.phone, !phone.isEmpty {
-                Button {
-                    callPhone(phone)
-                } label: {
+                Button { callPhone(phone) } label: {
                     Label("Call", systemImage: "phone.fill")
                 }
                 .buttonStyle(.bordered)
             }
 
             if let website = partner.contact.website, !website.isEmpty {
-                Button {
-                    openWebsite(website)
-                } label: {
+                Button { openWebsite(website) } label: {
                     Label("Website", systemImage: "safari")
                 }
                 .buttonStyle(.bordered)
             }
 
-            Button {
-                copyOutreachText(for: partner)
-            } label: {
+            Button { copyOutreachText(for: partner) } label: {
                 Label("Copy", systemImage: "doc.on.doc")
             }
             .buttonStyle(.bordered)
@@ -385,12 +494,27 @@ struct DispositionPartnersView: View {
         )
 
         do {
-            let resp = try await service.searchPartners(
-                item: item,
-                location: loc,
-                radiusMiles: radiusMiles
-            )
-            response = resp
+            switch scope {
+            case .item(let item):
+                let resp = try await service.searchPartners(
+                    item: item,
+                    location: loc,
+                    radiusMiles: radiusMiles
+                )
+                response = resp
+
+            case .itemSet(let set):
+                // v1: use contemporary/local search behavior for sets (local consignment/donation/estate sale).
+                // chosenPath is provided (if available) to allow backend tagging and ranking.
+                let resp = try await service.searchPartners(
+                    itemSet: set,
+                    block: .contemporary,
+                    chosenPath: setChosenPathForRequest,
+                    location: loc,
+                    radiusMiles: radiusMiles
+                )
+                response = resp
+            }
         } catch {
             response = nil
             errorMessage = error.localizedDescription
@@ -419,13 +543,25 @@ struct DispositionPartnersView: View {
     }
 
     private func copyOutreachText(for partner: DispositionPartnerResult) {
-        // v1: simple copy template (we’ll swap to backend /outreach/compose next)
         var lines: [String] = []
         lines.append("Hello \(partner.name),")
         lines.append("")
-        lines.append("I have an item I’m looking to sell:")
-        lines.append("• \(item.name)")
-        if !item.category.isEmpty { lines.append("• Category: \(item.category)") }
+        lines.append("I’m looking for help selling:")
+
+        switch scope {
+        case .item(let item):
+            lines.append("• \(item.name)")
+            if !item.category.isEmpty { lines.append("• Category: \(item.category)") }
+            lines.append("• Quantity: ×\(max(item.quantity, 1))")
+            lines.append("• Est. total value: \(totalValueDisplay)")
+
+        case .itemSet(let set):
+            lines.append("• Set: \(set.name)")
+            lines.append("• Set type: \(set.setType.rawValue)")
+            lines.append("• Members: \(set.memberships.count) items")
+            lines.append("• Est. total value: \(totalValueDisplay)")
+        }
+
         lines.append("")
         lines.append("A few questions:")
         if let qs = partner.questionsToAsk, !qs.isEmpty {
@@ -442,4 +578,15 @@ struct DispositionPartnersView: View {
 
         UIPasteboard.general.string = lines.joined(separator: "\n")
     }
+
+    private func estimateSetTotalValue(_ set: LTCItemSet) -> Double {
+        var total: Double = 0
+        for m in set.memberships {
+            guard let item = m.item else { continue }
+            let qty = Double(max(m.quantityInSet ?? item.quantity, 1))
+            total += max(item.value, 0) * qty
+        }
+        return total
+    }
 }
+

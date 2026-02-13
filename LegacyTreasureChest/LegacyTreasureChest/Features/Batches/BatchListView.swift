@@ -1,6 +1,17 @@
 import SwiftUI
 import SwiftData
 
+fileprivate func estimateSetTotalValue(_ itemSet: LTCItemSet) -> Double {
+    var total: Double = 0
+    for m in itemSet.memberships {
+        guard let item = m.item else { continue }
+        let qty = Double(max(m.quantityInSet ?? item.quantity, 1))
+        total += max(item.value, 0) * qty
+    }
+    return total
+}
+
+
 struct BatchListView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \LiquidationBatch.createdAt, order: .reverse) private var batches: [LiquidationBatch]
@@ -37,7 +48,7 @@ struct BatchListView: View {
                             let lots = lotCounts(for: batch)
                             let decisions = decisionCounts(for: batch)
                             let percent = decisions.total == 0 ? 0 : Int((Double(decisions.decided) / Double(decisions.total) * 100).rounded())
-                            let value = estimatedValueItemsOnly(for: batch)
+                            let value = estimatedValueIncludingSets(for: batch)
 
                             HStack(spacing: 12) {
                                 Text("Lots: \(lots.assigned)/\(lots.total)")
@@ -130,17 +141,61 @@ struct BatchListView: View {
         }
         return max(item.value, 0)
     }
+    private func estimateSetTotalValue(_ itemSet: LTCItemSet) -> Double {
+        var total: Double = 0
+        for m in itemSet.memberships {
+            guard let item = m.item else { continue }
+            let qty = Double(max(m.quantityInSet ?? item.quantity, 1))
+            total += max(item.value, 0) * qty
+        }
+        return total
+    }
+
 
     private func effectiveTotalValue(for item: LTCItem) -> Double {
         let qty = max(item.quantity, 1)
         return effectiveUnitValue(for: item) * Double(qty)
     }
 
-    private func estimatedValueItemsOnly(for batch: LiquidationBatch) -> Double {
-        batch.items.reduce(0) { partial, entry in
-            guard let item = entry.item else { return partial }
-            return partial + effectiveTotalValue(for: item)
+
+    /// Batch estimated value that includes Sets, while preventing double-counting of member items
+    /// when both the Set and its member Items appear in the SAME lot.
+    private func estimatedValueIncludingSets(for batch: LiquidationBatch) -> Double {
+        // Build: lotKey -> setMemberItems that should be excluded from item totals in that same lot
+        var excludedMemberItemsByLot: [String: Set<ObjectIdentifier>] = [:]
+
+        for setEntry in batch.sets {
+            let lotKey = normalizeLotKey(setEntry.lotNumber)
+            guard let itemSet = setEntry.itemSet else { continue }
+
+            var excluded = excludedMemberItemsByLot[lotKey] ?? Set<ObjectIdentifier>()
+            for m in itemSet.memberships {
+                guard let item = m.item else { continue }
+                excluded.insert(ObjectIdentifier(item))
+            }
+            excludedMemberItemsByLot[lotKey] = excluded
         }
+
+        var total: Double = 0
+
+        // 1) Add items, excluding any item that is a member of a set assigned to the same lot
+        for itemEntry in batch.items {
+            guard let item = itemEntry.item else { continue }
+            let lotKey = normalizeLotKey(itemEntry.lotNumber)
+
+            if excludedMemberItemsByLot[lotKey]?.contains(ObjectIdentifier(item)) == true {
+                continue
+            }
+            total += effectiveTotalValue(for: item)
+        }
+
+        // 2) Add sets
+        for setEntry in batch.sets {
+            guard let itemSet = setEntry.itemSet else { continue }
+            total += estimateSetTotalValue(itemSet)
+        }
+
+        return total
     }
 
 }
@@ -308,7 +363,7 @@ private struct BatchDetailView: View {
                                         .foregroundStyle(.secondary)
                                 }
 
-                                let value = lotItemValue(group.key)
+                                let value = lotValueIncludingSets(group.key)
                                 let readiness = lotReadinessCounts(group.key)
 
                                 HStack(spacing: 12) {
@@ -636,13 +691,39 @@ private struct BatchDetailView: View {
         return effectiveUnitValue(for: item) * Double(qty)
     }
 
-    private func lotItemValue(_ lotKey: String) -> Double {
-        batch.items
-            .filter { normalizeLotKey($0.lotNumber) == lotKey }
-            .reduce(0) { partial, entry in
-                guard let item = entry.item else { return partial }
-                return partial + effectiveTotalValue(for: item)
+    private func lotValueIncludingSets(_ lotKey: String) -> Double {
+        let normalizedLotKey = normalizeLotKey(lotKey)
+
+        // Entries assigned to this lot
+        let itemsInLot = batch.items.filter { normalizeLotKey($0.lotNumber) == normalizedLotKey }
+        let setsInLot  = batch.sets.filter  { normalizeLotKey($0.lotNumber) == normalizedLotKey }
+
+        // If a set is in this lot, exclude its member items from the item totals in this lot
+        var excludedItems = Set<ObjectIdentifier>()
+        for setEntry in setsInLot {
+            guard let itemSet = setEntry.itemSet else { continue }
+            for m in itemSet.memberships {
+                guard let item = m.item else { continue }
+                excludedItems.insert(ObjectIdentifier(item))
             }
+        }
+
+        var total: Double = 0
+
+        // 1) Items (excluding those covered by a set in the same lot)
+        for entry in itemsInLot {
+            guard let item = entry.item else { continue }
+            if excludedItems.contains(ObjectIdentifier(item)) { continue }
+            total += effectiveTotalValue(for: item)
+        }
+
+        // 2) Sets
+        for setEntry in setsInLot {
+            guard let itemSet = setEntry.itemSet else { continue }
+            total += estimateSetTotalValue(itemSet)
+        }
+
+        return total
     }
 
     private func lotReadinessCounts(_ lotKey: String) -> (decided: Int, total: Int) {
@@ -722,7 +803,7 @@ private struct LotDetailView: View {
                 LabeledContent("Items", value: "\(itemsInLot.count)")
                 LabeledContent("Sets", value: "\(setsInLot.count)")
 
-                LabeledContent("Estimated Value (items)") {
+                LabeledContent("Estimated Value (individual items only)") {
                     Text(lotItemValue, format: .currency(code: currencyCode))
                 }
 

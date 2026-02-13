@@ -771,45 +771,60 @@ private struct ExtraDetailsEditorView: View {
 
     @Environment(\.dismiss) private var dismiss
     @FocusState private var isFocused: Bool
+    @State private var keyboardInset: CGFloat = 0
+
+    private var keyboardWillChange: NotificationCenter.Publisher {
+        NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)
+    }
+
+    private var keyboardWillHide: NotificationCenter.Publisher {
+        NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)
+    }
+
 
     var body: some View {
         VStack(spacing: 0) {
 
-            // Scrollable content
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 16) {
 
-                    Text(prompt)
-                        .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.textSecondary)
+                Text(prompt)
+                    .font(Theme.secondaryFont)
+                    .foregroundStyle(Theme.textSecondary)
 
-                    ZStack(alignment: .topLeading) {
-                        TextEditor(text: $text)
-                            .font(Theme.bodyFont)
-                            .focused($isFocused)
-                            .frame(minHeight: 220) // guarantees visible typing area
-                            .padding(12)
+                ZStack(alignment: .topLeading) {
+                    TextEditor(text: $text)
+                        .font(Theme.bodyFont)
+                        .focused($isFocused)
+                        .frame(minHeight: 220)
+                        .padding(12)
 
-                        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            Text(placeholder)
-                                .font(Theme.secondaryFont)
-                                .foregroundStyle(Theme.textSecondary.opacity(0.6))
-                                .padding(18)
-                                .onTapGesture { isFocused = true }
-                        }
+                    if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text(placeholder)
+                            .font(Theme.secondaryFont)
+                            .foregroundStyle(Theme.textSecondary.opacity(0.6))
+                            .padding(18)
+                            .onTapGesture { isFocused = true }
                     }
-                    .background(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(Color(.systemBackground))
-                            .shadow(radius: 1)
-                    )
                 }
-                .padding()
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color(.systemBackground))
+                        .shadow(radius: 1)
+                )
             }
+            .padding()
 
-            // Spacer that keeps content above keyboard
-            .safeAreaInset(edge: .bottom) {
-                Color.clear.frame(height: 60)
+            .onReceive(keyboardWillChange) { note in
+                guard
+                    let frame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect
+                else { return }
+
+                // When keyboard is visible, use its height as bottom inset.
+                // (Works well with .ignoresSafeArea(.keyboard))
+                keyboardInset = frame.height
+            }
+            .onReceive(keyboardWillHide) { _ in
+                keyboardInset = 0
             }
         }
         .navigationTitle(title)
@@ -834,8 +849,6 @@ private struct ExtraDetailsEditorView: View {
             }
         }
 
-        // stop SwiftUI from resizing for keyboard
-        .ignoresSafeArea(.keyboard)
 
         // ✅ If user leaves via back swipe / back button, still save.
         .onDisappear {

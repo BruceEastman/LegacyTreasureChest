@@ -120,6 +120,7 @@ struct HomeView: View {
                         .ltcCardBackground()
                     }
 
+                    #if DEBUG
                     // AI Test Lab
                     NavigationLink {
                         AITestView()
@@ -136,6 +137,7 @@ struct HomeView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .ltcCardBackground()
                     }
+                    #endif
 
                     #if DEBUG
                     // Liquidate Sandbox (debug)
@@ -173,6 +175,7 @@ struct HomeView: View {
                     }
                     #endif
 
+                    #if DEBUG
                     // Developer-only reset tool
                     VStack(alignment: .leading, spacing: Theme.spacing.small) {
                         Button {
@@ -196,6 +199,7 @@ struct HomeView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(.top, Theme.spacing.small)
+                    #endif
                 }
                 .padding(.horizontal, Theme.spacing.xl)
                 .padding(.top, Theme.spacing.medium)
