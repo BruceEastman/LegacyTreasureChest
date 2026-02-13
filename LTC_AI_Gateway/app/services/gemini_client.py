@@ -26,27 +26,56 @@ def _gemini_url() -> str:
 
 
 async def _post_gemini(payload: Dict[str, Any]) -> str:
+    import json
+    import asyncio
+
     url = _gemini_url()
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        resp = await client.post(url, json=payload)
+    async def _do_request() -> Dict[str, Any]:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(url, json=payload)
 
-    if resp.status_code >= 400:
-        snippet = resp.text[:800]
-        raise RuntimeError(f"Gemini error {resp.status_code}: {snippet}")
+        if resp.status_code >= 400:
+            snippet = resp.text[:800]
+            raise RuntimeError(f"Gemini error {resp.status_code}: {snippet}")
 
-    data: Dict[str, Any] = resp.json()
+        return resp.json()
 
-    try:
-        candidate = data["candidates"][0]
-        parts = candidate["content"]["parts"]
-        raw_text = next(p["text"] for p in parts if "text" in p)
-    except Exception as exc:  # noqa: BLE001
-        raise RuntimeError("Gemini response missing expected text field.") from exc
+    # Retry once on JSON-format failures (Gemini sometimes truncates or emits invalid JSON)
+    last_exc: Optional[Exception] = None
+    for attempt in range(2):
+        try:
+            data: Dict[str, Any] = await _do_request()
 
-    # Strip code fences / markdown noise, keep raw JSON string.
-    return clean_llm_json(raw_text)
+            raw_text = ""  # ensure defined for error previews
+            try:
+                candidate = data["candidates"][0]
+                parts = candidate["content"]["parts"]
+                raw_text = next(p["text"] for p in parts if "text" in p)
+            except Exception as exc:  # noqa: BLE001
+                raise RuntimeError("Gemini response missing expected text field.") from exc
 
+            try:
+                return clean_llm_json(raw_text)
+            except Exception as exc:  # noqa: BLE001
+                # Most common: json.decoder.JSONDecodeError (truncated/invalid JSON)
+                preview = (raw_text or "")[:800].replace("\n", "\\n")
+                raise RuntimeError(
+                    f"Gemini returned non-JSON or empty JSON candidate. raw_text_preview='{preview}'"
+                ) from exc
+
+        except RuntimeError as exc:
+            last_exc = exc
+            # Only retry for likely transient/format issues, not hard API errors already raised above.
+            if attempt == 0:
+                await asyncio.sleep(0.4)  # small backoff
+                continue
+            raise
+
+    # Should never reach here, but keep mypy happy
+    if last_exc:
+        raise last_exc
+    raise RuntimeError("Gemini call failed for unknown reasons.")
 
 async def call_gemini_for_item_analysis(*, prompt: str, image_base64: str) -> str:
     """Call Gemini with an image + prompt and return cleaned JSON text."""
@@ -68,7 +97,7 @@ async def call_gemini_for_item_analysis(*, prompt: str, image_base64: str) -> st
             "temperature": 0.2,
             "topP": 0.8,
             "topK": 40,
-            "maxOutputTokens": 2048,
+            "maxOutputTokens": 4096,
         },
     }
 
@@ -89,7 +118,7 @@ async def call_gemini_for_item_text_analysis(*, prompt: str) -> str:
             "temperature": 0.2,
             "topP": 0.8,
             "topK": 40,
-            "maxOutputTokens": 2048,
+            "maxOutputTokens": 4096,
         },
     }
 
@@ -119,7 +148,7 @@ async def call_gemini_for_liquidation_brief(*, prompt: str, photo_base64: Option
             "temperature": 0.2,
             "topP": 0.8,
             "topK": 40,
-            "maxOutputTokens": 2048,
+            "maxOutputTokens": 4096,
         },
     }
 

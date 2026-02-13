@@ -389,12 +389,48 @@ def _normalize_liquidation_brief_obj(*, raw_json: str, request: LiquidationBrief
                 opt["effort"] = _normalize_effort_value(opt.get("effort"))
 
             if "netProceeds" in opt:
-                if isinstance(opt["netProceeds"], str):
-                    opt["netProceeds"] = _parse_money_range(opt["netProceeds"])
-                elif opt["netProceeds"] is None:
+                np = opt.get("netProceeds")
+
+                # Case 1: string like "$700-$840" or "700 to 840"
+                if isinstance(np, str):
+                    opt["netProceeds"] = _parse_money_range(np)
+
+                # Case 2: list/tuple like [700, 840]
+                elif isinstance(np, (list, tuple)):
+                    try:
+                        vals = [v for v in np if isinstance(v, (int, float))]
+                        if len(vals) >= 2:
+                            low = float(vals[0])
+                            high = float(vals[1])
+                            if high < low:
+                                low, high = high, low
+                            likely = round((low + high) / 2.0, 2)
+                            opt["netProceeds"] = {
+                                "currencyCode": currency,
+                                "low": low,
+                                "likely": likely,
+                                "high": high,
+                            }
+                        elif len(vals) == 1:
+                            v = float(vals[0])
+                            opt["netProceeds"] = {
+                                "currencyCode": currency,
+                                "low": v,
+                                "likely": v,
+                                "high": v,
+                            }
+                        else:
+                            # no numeric values found
+                            opt["netProceeds"] = {"currencyCode": currency, "low": None, "likely": None, "high": None}
+                    except Exception:
+                        opt["netProceeds"] = {"currencyCode": currency, "low": None, "likely": None, "high": None}
+
+                # Case 3: already a dict/object
+                elif np is None:
                     pass
-                elif isinstance(opt["netProceeds"], dict):
-                    opt["netProceeds"].setdefault("currencyCode", currency)
+                elif isinstance(np, dict):
+                    np.setdefault("currencyCode", currency)
+                    opt["netProceeds"] = np
 
     # Ensure lists exist if omitted (to avoid nulls)
     if obj.get("pathOptions") is None:
@@ -762,6 +798,24 @@ Your previous JSON:
 
 Return STRICT JSON ONLY that fixes the schema errors. No markdown. No backticks.
 """
+def _build_liquidation_brief_repair_prompt(*, original_prompt: str, raw_json: str, validation_error: str) -> str:
+    """
+    Repair prompt for LiquidationBriefDTO JSON.
+
+    We reuse the plan repair prompt builder because it already provides:
+    - strict JSON-only instruction
+    - the original prompt context
+    - the validation error context
+    - the raw JSON to repair
+
+    The model just needs to return JSON that matches LiquidationBriefDTO.
+    """
+    return _build_liquidation_plan_repair_prompt(
+        original_prompt=original_prompt,
+        raw_json=raw_json,
+        validation_error=validation_error,
+    )
+
 
 
 # ---------------------------------------------------------------------------
@@ -1776,6 +1830,9 @@ async def disposition_outreach_compose(payload: DispositionOutreachComposeReques
 
 @router.post("/analyze-item-photo", response_model=ItemAnalysis)
 async def analyze_item_photo(payload: AnalyzeItemPhotoRequest) -> ItemAnalysis:
+    import logging
+    logger = logging.getLogger(__name__)
+
     try:
         base64.b64decode(payload.imageJpegBase64, validate=True)
     except Exception as exc:  # noqa: BLE001
@@ -1789,6 +1846,7 @@ async def analyze_item_photo(payload: AnalyzeItemPhotoRequest) -> ItemAnalysis:
             image_base64=payload.imageJpegBase64,
         )
     except RuntimeError as exc:
+        logger.exception("Gemini call failed in /ai/analyze-item-photo")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     normalized = _normalize_item_analysis_json(raw_json)
@@ -1810,11 +1868,13 @@ async def analyze_item_photo(payload: AnalyzeItemPhotoRequest) -> ItemAnalysis:
             repaired_norm = _normalize_item_analysis_json(repaired)
             analysis = ItemAnalysis.model_validate_json(repaired_norm)
         except Exception as exc:  # noqa: BLE001
+            logger.exception("Gemini repair attempt failed in /ai/analyze-item-photo")
             raise HTTPException(
                 status_code=502,
                 detail=f"Failed to decode ItemAnalysis JSON from Gemini: {ve}",
             ) from exc
     except Exception as exc:  # noqa: BLE001
+        logger.exception("Unexpected JSON validation failure in /ai/analyze-item-photo")
         raise HTTPException(
             status_code=502,
             detail=f"Failed to decode ItemAnalysis JSON from Gemini: {exc}",
@@ -1887,6 +1947,9 @@ async def analyze_item_text(payload: dict) -> ItemAnalysis:
 
 @router.post("/generate-liquidation-brief", response_model=LiquidationBriefDTO)
 async def generate_liquidation_brief(payload: LiquidationBriefRequest) -> LiquidationBriefDTO:
+    import logging
+    logger = logging.getLogger(__name__)
+
     if call_gemini_for_liquidation_brief is None:
         raise HTTPException(status_code=501, detail="Liquidation brief generation is not enabled on this server build.")
 
@@ -1899,11 +1962,12 @@ async def generate_liquidation_brief(payload: LiquidationBriefRequest) -> Liquid
     prompt = _build_liquidation_brief_prompt(payload)
 
     try:
-        raw_json = await call_gemini_for_liquidation_brief(  # type: ignore[misc]
+        raw_json = await call_gemini_for_liquidation_brief(
             prompt=prompt,
             photo_base64=payload.photoJpegBase64,
         )
     except RuntimeError as exc:
+        logger.exception("Gemini call failed in /generate-liquidation-brief")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     # First pass normalize + validate
@@ -1918,24 +1982,26 @@ async def generate_liquidation_brief(payload: LiquidationBriefRequest) -> Liquid
                 raw_json=raw_json,
                 validation_error=str(ve),
             )
-            repaired = await call_gemini_for_liquidation_brief(  # type: ignore[misc]
+            repaired = await call_gemini_for_liquidation_brief(
                 prompt=repair_prompt,
                 photo_base64=payload.photoJpegBase64,
             )
             repaired_obj = _normalize_liquidation_brief_obj(raw_json=repaired, request=payload)
             brief = LiquidationBriefDTO.model_validate(repaired_obj)
         except Exception as exc:  # noqa: BLE001
+            logger.exception("Gemini repair attempt failed in /generate-liquidation-brief")
             raise HTTPException(
                 status_code=502,
                 detail=f"Failed to decode LiquidationBriefDTO JSON from Gemini: {ve}",
             ) from exc
     except Exception as exc:  # noqa: BLE001
+        logger.exception("Unexpected JSON validation failure in /generate-liquidation-brief")
         raise HTTPException(
             status_code=502,
             detail=f"Failed to decode LiquidationBriefDTO JSON from Gemini: {exc}",
         ) from exc
 
-    # Stamp required fields & IDs (belt-and-suspenders)
+    # Stamp required fields & IDs
     now = datetime.now(timezone.utc)
     brief.aiProvider = brief.aiProvider or "gemini"
     brief.aiModel = brief.aiModel or GEMINI_MODEL
@@ -1950,12 +2016,10 @@ async def generate_liquidation_brief(payload: LiquidationBriefRequest) -> Liquid
         if not getattr(opt, "id", None):
             opt.id = str(uuid4())
 
-    # Preserve request inputs (goal/location/constraints) for downstream steps (Disposition Engine, plan generation)
     if payload.inputs is not None and brief.inputs is None:
         brief.inputs = payload.inputs
 
     return brief
-
 
 @router.post("/generate-liquidation-plan", response_model=LiquidationPlanChecklistDTO)
 async def generate_liquidation_plan(payload: LiquidationPlanRequest) -> LiquidationPlanChecklistDTO:

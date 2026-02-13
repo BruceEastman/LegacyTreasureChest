@@ -119,7 +119,7 @@ def clean_llm_json(raw_text: str) -> str:
     - wrapper objects (brief/data/result/etc.)
     - returns canonical JSON via json.dumps
     """
-    if not raw_text:
+    if not raw_text or not raw_text.strip():
         raise ValueError("LLM response is empty.")
 
     text = _strip_code_fences(raw_text)
