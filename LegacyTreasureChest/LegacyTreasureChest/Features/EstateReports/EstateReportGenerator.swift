@@ -20,6 +20,8 @@ enum EstateReportGenerator {
     /// High-level estate summary: totals, paths, beneficiaries, categories, and top-valued items.
     static func generateSnapshotReport(
         items: [LTCItem],
+        itemSets: [LTCItemSet] = [],
+        batches: [LiquidationBatch] = [],
         beneficiaries: [Beneficiary]
     ) -> Data {
         let pageRect = CGRect(x: 0, y: 0, width: 612, height: 792) // US Letter
@@ -31,63 +33,124 @@ enum EstateReportGenerator {
             var cursorY: CGFloat = 40
 
             // Header
+            let generatedDate = currentDateString()
+
             cursorY = drawTitle("Estate Snapshot Report", in: pageRect, y: cursorY)
             cursorY += 6
-            cursorY = drawSubheading(currentDateString(), in: pageRect, y: cursorY)
-            cursorY += 24
-
-            // Compute aggregates once
-            let aggregates = EstateAggregates(items: items, beneficiaries: beneficiaries)
-
-            // Estate Summary
-            cursorY = ensureSpace(for: 140, in: pageRect, context: context, currentY: cursorY)
-            cursorY = drawSectionHeader("Estate Summary", in: pageRect, y: cursorY)
-            cursorY += 4
-
-            let summaryLines = [
-                "Total estate (conservative sale value): \(currencyString(aggregates.totalEstateValue))",
-                "Total items: \(aggregates.totalItems)",
-                "Legacy items: \(aggregates.legacyItemCount) (\(percentString(aggregates.legacyValueShare)) of value)",
-                "Liquidate items: \(aggregates.liquidateItemCount) (\(percentString(aggregates.liquidateValueShare)) of value)"
-            ]
-
-            for line in summaryLines {
-                cursorY = drawBodyText(line, in: pageRect, y: cursorY)
-            }
-
+            cursorY = drawSubheading(generatedDate, in: pageRect, y: cursorY)
             cursorY += 8
+
             cursorY = drawCaptionText(
-                "Totals reflect quantity (unit value × quantity). Items without a named beneficiary are treated as Liquidate items—sold, with proceeds handled by the will or estate plan.",
+                "This report reflects the current state of the estate as of \(generatedDate).",
                 in: pageRect,
                 y: cursorY
             )
 
-            // Beneficiaries (Legacy only)
-            if !aggregates.beneficiarySummaries.isEmpty {
-                cursorY += 20
-                cursorY = ensureSpace(for: CGFloat(40 + aggregates.beneficiarySummaries.count * 20),
-                                      in: pageRect,
-                                      context: context,
-                                      currentY: cursorY)
-                cursorY = drawSectionHeader("Legacy by Beneficiary", in: pageRect, y: cursorY)
-                cursorY += 4
+            cursorY += 16
 
+            // Compute aggregates once
+            let aggregates = EstateAggregates(items: items, itemSets: itemSets, batches: batches, beneficiaries: beneficiaries)
+            func drawKeyValue(_ key: String, _ value: String) {
+                cursorY = drawBodyText("\(key): \(value)", in: pageRect, y: cursorY)
+            }
+
+            func drawBullet(_ text: String) {
+                cursorY = drawBodyText("• \(text)", in: pageRect, y: cursorY)
+            }
+
+
+            // MARK: - Executive Summary
+            cursorY = ensureSpace(for: 160, in: pageRect, context: context, currentY: cursorY)
+            cursorY = drawSectionHeader("Executive Summary", in: pageRect, y: cursorY)
+            cursorY += 4
+
+            drawKeyValue("Total estate (conservative resale)", currencyString(aggregates.totalEstateValue))
+            drawKeyValue("Total cataloged items", "\(aggregates.totalItems)")
+            cursorY += 6
+
+            drawBullet("Legacy: \(aggregates.legacyItemCount) item\(aggregates.legacyItemCount == 1 ? "" : "s") · \(currencyString(aggregates.legacyValue)) (\(percentString(aggregates.legacyValueShare)) of value)")
+            drawBullet("Liquidate: \(aggregates.liquidateItemCount) item\(aggregates.liquidateItemCount == 1 ? "" : "s") · \(currencyString(aggregates.liquidateValue)) (\(percentString(aggregates.liquidateValueShare)) of value)")
+
+            cursorY += 10
+            cursorY = drawCaptionText(
+                "Totals reflect quantity (unit value × quantity). Values use the best available estimate (valuation estimate if present; otherwise the item’s stored value).",
+                in: pageRect,
+                y: cursorY
+            )
+
+            // MARK: - Disposition Summary (Disposition Snapshot v2)
+            cursorY += 18
+            cursorY = ensureSpace(for: 160, in: pageRect, context: context, currentY: cursorY)
+            cursorY = drawSectionHeader("Disposition Summary (Disposition Snapshot v2)", in: pageRect, y: cursorY)
+            cursorY += 4
+
+            cursorY = drawCaptionText(
+                "This section reflects LiquidationState status for Items, Sets, and Batches. Totals are advisory and reflect the catalog as of \(generatedDate).",
+                in: pageRect,
+                y: cursorY
+            )
+            cursorY += 6
+
+            func drawRollup(label: String, rollup: EstateAggregates.DispositionRollup, note: String? = nil) {
+                cursorY = ensureSpace(for: 120, in: pageRect, context: context, currentY: cursorY)
+                cursorY = drawBodyText("\(label): \(rollup.entityCount) · \(currencyString(rollup.totalValue))", in: pageRect, y: cursorY)
+
+                cursorY = drawBodyText(
+                    "Status — Not Started: \(rollup.notStartedCount), Has Brief: \(rollup.hasBriefCount), In Progress: \(rollup.inProgressCount), Completed: \(rollup.completedCount), On Hold: \(rollup.onHoldCount), N/A: \(rollup.notApplicableCount)",
+                    in: pageRect,
+                    y: cursorY
+                )
+
+                cursorY = drawBodyText(
+                    "Records — Active Brief: \(rollup.activeBriefCount), Active Plan: \(rollup.activePlanCount)",
+                    in: pageRect,
+                    y: cursorY
+                )
+
+                if let note {
+                    cursorY = drawCaptionText(note, in: pageRect, y: cursorY)
+                }
+                cursorY += 8
+            }
+
+            drawRollup(label: "Items", rollup: aggregates.itemDispositionRollup)
+
+            drawRollup(
+                label: "Sets",
+                rollup: aggregates.setDispositionRollup,
+                note: "Set value is computed conservatively from member items (valuation estimate if present; otherwise stored item value) × membership quantity."
+            )
+
+            drawRollup(
+                label: "Batches",
+                rollup: aggregates.batchDispositionRollup,
+                note: "Batch value is a staging view based on linked items/sets. Batch-level inclusion/exclusion rules may be refined in a later version."
+            )
+
+            // MARK: - Legacy Allocation by Beneficiary
+            cursorY += 18
+            cursorY = ensureSpace(for: 120, in: pageRect, context: context, currentY: cursorY)
+            cursorY = drawSectionHeader("Legacy Allocation by Beneficiary", in: pageRect, y: cursorY)
+            cursorY += 4
+
+            if aggregates.beneficiarySummaries.isEmpty {
+                cursorY = drawBodyText("None recorded.", in: pageRect, y: cursorY)
+            } else {
                 for summary in aggregates.beneficiarySummaries {
                     let line = "\(summary.name): \(summary.itemCount) item\(summary.itemCount == 1 ? "" : "s") · \(currencyString(summary.totalValue))"
                     cursorY = drawBodyText(line, in: pageRect, y: cursorY)
                 }
             }
 
-            // Categories
-            if !aggregates.categorySummaries.isEmpty {
-                cursorY += 20
-                cursorY = ensureSpace(for: CGFloat(40 + aggregates.categorySummaries.count * 20),
-                                      in: pageRect,
-                                      context: context,
-                                      currentY: cursorY)
-                cursorY = drawSectionHeader("Value by Category", in: pageRect, y: cursorY)
-                cursorY += 4
+            // MARK: - Value by Category
+            cursorY += 18
+            cursorY = ensureSpace(for: 120, in: pageRect, context: context, currentY: cursorY)
+            cursorY = drawSectionHeader("Value by Category", in: pageRect, y: cursorY)
+            cursorY += 4
 
+            if aggregates.categorySummaries.isEmpty {
+                cursorY = drawBodyText("None recorded.", in: pageRect, y: cursorY)
+            } else {
                 for summary in aggregates.categorySummaries {
                     let displayName = summary.name.isEmpty ? "Uncategorized" : summary.name
                     let line = "\(displayName): \(summary.itemCount) item\(summary.itemCount == 1 ? "" : "s") · \(currencyString(summary.totalValue))"
@@ -95,49 +158,55 @@ enum EstateReportGenerator {
                 }
             }
 
-            // Top Legacy Items
-            if !aggregates.topLegacyItems.isEmpty {
-                cursorY += 20
-                cursorY = ensureSpace(for: CGFloat(80 + aggregates.topLegacyItems.count * 20),
-                                      in: pageRect,
-                                      context: context,
-                                      currentY: cursorY)
-                cursorY = drawSectionHeader("Top Legacy Items by Total Value", in: pageRect, y: cursorY)
-                cursorY += 4
+            // MARK: - Highest Value Assets
+            cursorY += 18
+            cursorY = ensureSpace(for: 160, in: pageRect, context: context, currentY: cursorY)
+            cursorY = drawSectionHeader("Highest Value Assets", in: pageRect, y: cursorY)
+            cursorY += 4
 
+            // Legacy
+            cursorY = drawBodyText("Legacy (Top \(min(5, aggregates.topLegacyItems.count))):", in: pageRect, y: cursorY)
+            if aggregates.topLegacyItems.isEmpty {
+                cursorY = drawBodyText("None recorded.", in: pageRect, y: cursorY)
+            } else {
                 for item in aggregates.topLegacyItems {
                     let qty = max(item.quantity, 1)
                     let unit = aggregates.effectiveUnitValue(for: item)
                     let total = aggregates.effectiveTotalValue(for: item)
-                    let totalStr = currencyString(total)
-
                     let unitSuffix = qty > 1 ? " (\(currencyString(unit)) each ×\(qty))" : ""
-                    let line = "• \(item.name) (\(item.category)) – \(totalStr)\(unitSuffix)"
+                    let category = item.category.isEmpty ? "Uncategorized" : item.category
+                    let line = "• \(item.name) (\(category)) – \(currencyString(total))\(unitSuffix)"
                     cursorY = drawBodyText(line, in: pageRect, y: cursorY)
                 }
             }
 
-            // Top Liquidate Items
-            if !aggregates.topLiquidateItems.isEmpty {
-                cursorY += 20
-                cursorY = ensureSpace(for: CGFloat(80 + aggregates.topLiquidateItems.count * 20),
-                                      in: pageRect,
-                                      context: context,
-                                      currentY: cursorY)
-                cursorY = drawSectionHeader("Top Liquidate Items by Total Value", in: pageRect, y: cursorY)
-                cursorY += 4
+            cursorY += 10
+            cursorY = ensureSpace(for: 120, in: pageRect, context: context, currentY: cursorY)
 
+            // Liquidate
+            cursorY = drawBodyText("Liquidate (Top \(min(5, aggregates.topLiquidateItems.count))):", in: pageRect, y: cursorY)
+            if aggregates.topLiquidateItems.isEmpty {
+                cursorY = drawBodyText("None recorded.", in: pageRect, y: cursorY)
+            } else {
                 for item in aggregates.topLiquidateItems {
                     let qty = max(item.quantity, 1)
                     let unit = aggregates.effectiveUnitValue(for: item)
                     let total = aggregates.effectiveTotalValue(for: item)
-                    let totalStr = currencyString(total)
-
                     let unitSuffix = qty > 1 ? " (\(currencyString(unit)) each ×\(qty))" : ""
-                    let line = "• \(item.name) (\(item.category)) – \(totalStr)\(unitSuffix)"
+                    let category = item.category.isEmpty ? "Uncategorized" : item.category
+                    let line = "• \(item.name) (\(category)) – \(currencyString(total))\(unitSuffix)"
                     cursorY = drawBodyText(line, in: pageRect, y: cursorY)
                 }
             }
+
+            // MARK: - Footer Metadata
+            cursorY += 22
+            cursorY = ensureSpace(for: 80, in: pageRect, context: context, currentY: cursorY)
+            cursorY = drawCaptionText(
+                "Generated on-device · Report schema: Exports.v1 · Snapshot: Disposition.v2 · \(generatedDate)",
+                in: pageRect,
+                y: cursorY
+            )
         }
 
         return data
@@ -153,12 +222,22 @@ enum EstateReportGenerator {
             context.beginPage()
             var cursorY: CGFloat = 40
 
-            let aggregates = EstateAggregates(items: items, beneficiaries: [])
+            let aggregates = EstateAggregates(items: items, itemSets: [], batches: [], beneficiaries: [])
 
             // Header
+            let generatedDate = currentDateString()
+
             cursorY = drawTitle("Detailed Inventory Report", in: pageRect, y: cursorY)
             cursorY += 6
-            cursorY = drawSubheading(currentDateString(), in: pageRect, y: cursorY)
+            cursorY = drawSubheading(generatedDate, in: pageRect, y: cursorY)
+            cursorY += 8
+
+            cursorY = drawCaptionText(
+                "This report reflects the current state of the estate as of \(generatedDate).",
+                in: pageRect,
+                y: cursorY
+            )
+
             cursorY += 16
 
             cursorY = drawCaptionText(
@@ -197,10 +276,19 @@ enum EstateReportGenerator {
             }
 
             for item in sortedItems {
-                // New page if needed
-                cursorY = ensureSpace(for: 22, in: pageRect, context: context, currentY: cursorY) { newY in
-                    // On new page, redraw table header
-                    _ = drawTableHeader(at: newY)
+
+                // Check space before drawing row
+                let previousY = cursorY
+                cursorY = ensureSpace(
+                    for: 22,
+                    in: pageRect,
+                    context: context,
+                    currentY: cursorY
+                )
+
+                // If we started a new page, redraw table header properly
+                if cursorY == 40 && previousY != 40 {
+                    cursorY = drawTableHeader(at: cursorY)
                 }
 
                 let path = aggregates.isLegacy(item) ? "Legacy" : "Liquidate"
@@ -246,11 +334,14 @@ enum EstateReportGenerator {
 
     private struct EstateAggregates {
         let items: [LTCItem]
+        let itemSets: [LTCItemSet]
+        let batches: [LiquidationBatch]
         let beneficiaries: [Beneficiary]
 
         let totalItems: Int
         let totalEstateValue: Double
 
+        // v1 heuristic (beneficiary-based) still used for beneficiary/category/top-item sections
         let legacyItems: [LTCItem]
         let liquidateItems: [LTCItem]
         let legacyItemCount: Int
@@ -266,8 +357,30 @@ enum EstateReportGenerator {
         let topLegacyItems: [LTCItem]
         let topLiquidateItems: [LTCItem]
 
-        init(items: [LTCItem], beneficiaries: [Beneficiary]) {
+        // Disposition Snapshot v2 (state-based)
+        let itemDispositionRollup: DispositionRollup
+        let setDispositionRollup: DispositionRollup
+        let batchDispositionRollup: DispositionRollup
+
+        struct DispositionRollup {
+            let entityCount: Int
+            let totalValue: Double
+
+            let notStartedCount: Int
+            let hasBriefCount: Int
+            let inProgressCount: Int
+            let completedCount: Int
+            let onHoldCount: Int
+            let notApplicableCount: Int
+
+            let activeBriefCount: Int
+            let activePlanCount: Int
+        }
+
+        init(items: [LTCItem], itemSets: [LTCItemSet], batches: [LiquidationBatch], beneficiaries: [Beneficiary]) {
             self.items = items
+            self.itemSets = itemSets
+            self.batches = batches
             self.beneficiaries = beneficiaries
 
             self.totalItems = items.count
@@ -314,13 +427,18 @@ enum EstateReportGenerator {
             }
             .sorted { $0.totalValue > $1.totalValue }
 
-            // Top items by TOTAL value
+            // Top items by TOTAL value (item-based)
             let sortedByTotalValue = items.sorted {
                 Self.effectiveTotalValueStatic(for: $0) > Self.effectiveTotalValueStatic(for: $1)
             }
 
             self.topLegacyItems = Array(sortedByTotalValue.filter { !$0.itemBeneficiaries.isEmpty }.prefix(5))
             self.topLiquidateItems = Array(sortedByTotalValue.filter { $0.itemBeneficiaries.isEmpty }.prefix(5))
+
+            // Disposition Snapshot v2 rollups
+            self.itemDispositionRollup = Self.rollupForItems(items)
+            self.setDispositionRollup = Self.rollupForSets(itemSets)
+            self.batchDispositionRollup = Self.rollupForBatches(batches)
         }
 
         func effectiveUnitValue(for item: LTCItem) -> Double {
@@ -346,8 +464,140 @@ enum EstateReportGenerator {
             let qty = max(item.quantity, 1)
             return effectiveUnitValueStatic(for: item) * Double(qty)
         }
-    }
 
+        private static func rollupForItems(_ items: [LTCItem]) -> DispositionRollup {
+            var totalValue: Double = 0
+            var notStarted = 0, hasBrief = 0, inProgress = 0, completed = 0, onHold = 0, notApplicable = 0
+            var activeBriefs = 0, activePlans = 0
+
+            for item in items {
+                totalValue += effectiveTotalValueStatic(for: item)
+
+                let state = item.liquidationState
+                let status = state?.status ?? .notStarted
+
+                switch status {
+                case .notStarted: notStarted += 1
+                case .hasBrief: hasBrief += 1
+                case .inProgress: inProgress += 1
+                case .completed: completed += 1
+                case .onHold: onHold += 1
+                case .notApplicable: notApplicable += 1
+                }
+
+                if state?.activeBrief != nil { activeBriefs += 1 }
+                if state?.activePlan != nil { activePlans += 1 }
+            }
+
+            return DispositionRollup(
+                entityCount: items.count,
+                totalValue: totalValue,
+                notStartedCount: notStarted,
+                hasBriefCount: hasBrief,
+                inProgressCount: inProgress,
+                completedCount: completed,
+                onHoldCount: onHold,
+                notApplicableCount: notApplicable,
+                activeBriefCount: activeBriefs,
+                activePlanCount: activePlans
+            )
+        }
+
+        private static func effectiveTotalValueForSetStatic(_ itemSet: LTCItemSet) -> Double {
+            var total: Double = 0
+            for m in itemSet.memberships {
+                guard let item = m.item else { continue }
+                let qty = Double(max(m.quantityInSet ?? item.quantity, 1))
+                total += effectiveUnitValueStatic(for: item) * qty
+            }
+            return max(total, 0)
+        }
+
+        private static func rollupForSets(_ sets: [LTCItemSet]) -> DispositionRollup {
+            var totalValue: Double = 0
+            var notStarted = 0, hasBrief = 0, inProgress = 0, completed = 0, onHold = 0, notApplicable = 0
+            var activeBriefs = 0, activePlans = 0
+
+            for set in sets {
+                totalValue += effectiveTotalValueForSetStatic(set)
+
+                let state = set.liquidationState
+                let status = state?.status ?? .notStarted
+
+                switch status {
+                case .notStarted: notStarted += 1
+                case .hasBrief: hasBrief += 1
+                case .inProgress: inProgress += 1
+                case .completed: completed += 1
+                case .onHold: onHold += 1
+                case .notApplicable: notApplicable += 1
+                }
+
+                if state?.activeBrief != nil { activeBriefs += 1 }
+                if state?.activePlan != nil { activePlans += 1 }
+            }
+
+            return DispositionRollup(
+                entityCount: sets.count,
+                totalValue: totalValue,
+                notStartedCount: notStarted,
+                hasBriefCount: hasBrief,
+                inProgressCount: inProgress,
+                completedCount: completed,
+                onHoldCount: onHold,
+                notApplicableCount: notApplicable,
+                activeBriefCount: activeBriefs,
+                activePlanCount: activePlans
+            )
+        }
+
+        private static func rollupForBatches(_ batches: [LiquidationBatch]) -> DispositionRollup {
+            var totalValue: Double = 0
+            var notStarted = 0, hasBrief = 0, inProgress = 0, completed = 0, onHold = 0, notApplicable = 0
+            var activeBriefs = 0, activePlans = 0
+
+            for batch in batches {
+                for bi in batch.items {
+                    if let item = bi.item {
+                        totalValue += effectiveTotalValueStatic(for: item)
+                    }
+                }
+                for bs in batch.sets {
+                    if let set = bs.itemSet {
+                        totalValue += effectiveTotalValueForSetStatic(set)
+                    }
+                }
+
+                let state = batch.liquidationState
+                let status = state?.status ?? .notStarted
+
+                switch status {
+                case .notStarted: notStarted += 1
+                case .hasBrief: hasBrief += 1
+                case .inProgress: inProgress += 1
+                case .completed: completed += 1
+                case .onHold: onHold += 1
+                case .notApplicable: notApplicable += 1
+                }
+
+                if state?.activeBrief != nil { activeBriefs += 1 }
+                if state?.activePlan != nil { activePlans += 1 }
+            }
+
+            return DispositionRollup(
+                entityCount: batches.count,
+                totalValue: totalValue,
+                notStartedCount: notStarted,
+                hasBriefCount: hasBrief,
+                inProgressCount: inProgress,
+                completedCount: completed,
+                onHoldCount: onHold,
+                notApplicableCount: notApplicable,
+                activeBriefCount: activeBriefs,
+                activePlanCount: activePlans
+            )
+        }
+    }
     // MARK: - Drawing Helpers
 
     @discardableResult

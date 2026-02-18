@@ -22,6 +22,13 @@ struct EstateReportsView: View {
     @Query(sort: \Beneficiary.createdAt, order: .forward)
     private var beneficiaries: [Beneficiary]
 
+    // NEW: include Sets + Batches for Disposition Snapshot v2
+    @Query(sort: \LTCItemSet.createdAt, order: .forward)
+    private var itemSets: [LTCItemSet]
+
+    @Query(sort: \LiquidationBatch.createdAt, order: .forward)
+    private var batches: [LiquidationBatch]
+
     @State private var isGenerating: Bool = false
     @State private var shareURL: URL?
     @State private var showShareSheet: Bool = false
@@ -74,7 +81,7 @@ struct EstateReportsView: View {
                 .font(Theme.bodyFont)
                 .foregroundStyle(Theme.textSecondary)
 
-            Text("Values are conservative resale estimates. For sets, totals are calculated as unit value × quantity.")
+            Text("Values are conservative resale estimates. Totals reflect quantity (unit value × quantity) where applicable.")
                 .font(Theme.secondaryFont)
                 .foregroundStyle(Theme.textSecondary)
         }
@@ -99,7 +106,7 @@ struct EstateReportsView: View {
                 .ltcSectionHeaderStyle()
 
             VStack(alignment: .leading, spacing: Theme.spacing.medium) {
-                Text("A high-level summary of your estate value, Legacy items, Liquidate items, categories, and top-valued items. Totals reflect quantity where applicable.")
+                Text("A high-level summary of your estate value and disposition readiness. Includes rollups for Items, Sets, and Batches where available.")
                     .font(Theme.secondaryFont)
                     .foregroundStyle(Theme.textSecondary)
 
@@ -163,6 +170,8 @@ struct EstateReportsView: View {
         DispatchQueue.global(qos: .userInitiated).async {
             let data = EstateReportGenerator.generateSnapshotReport(
                 items: items,
+                itemSets: itemSets,
+                batches: batches,
                 beneficiaries: beneficiaries
             )
             DispatchQueue.main.async {
@@ -223,11 +232,10 @@ private struct FileShareSheet: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> UIActivityViewController {
         let controller = UIActivityViewController(activityItems: items, applicationActivities: nil)
 
-        // Hint: keep only PDF-like options more visible (optional; iOS decides)
         controller.excludedActivityTypes = [
             .assignToContact,
             .addToReadingList,
-            .openInIBooks // sometimes confusing; optional
+            .openInIBooks
         ]
         return controller
     }
@@ -236,3 +244,4 @@ private struct FileShareSheet: UIViewControllerRepresentable {
         // no-op
     }
 }
+

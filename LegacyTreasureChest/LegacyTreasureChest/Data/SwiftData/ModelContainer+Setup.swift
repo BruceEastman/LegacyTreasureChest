@@ -38,6 +38,7 @@ extension ModelContainer {
             // MARK: - Liquidation Batches (future, referenced by models)
             LiquidationBatch.self,
             BatchItem.self,
+            BatchSet.self,              // ✅ ADD THIS (matches LiquidationBatch.sets)
 
             // MARK: - LEGACY Liquidation (kept for transition)
             LTCSet.self,
@@ -61,3 +62,4 @@ extension ModelContainer {
         return container
     }
 }
+
