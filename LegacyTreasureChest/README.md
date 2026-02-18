@@ -1,4 +1,46 @@
 # Legacy Treasure Chest
+---
+
+## Estate Snapshot — Disposition Snapshot v2 (Current State)
+
+As of this build, the Estate Snapshot Report reflects the unified **LiquidationState (Pattern A)** model across:
+
+- Items  
+- Sets  
+- Batches  
+
+### Snapshot Includes
+
+- Estate total (item-based, conservative value × quantity)
+- Beneficiary rollups (Legacy items)
+- Category rollups
+- Top-valued items (Legacy and Liquidate)
+- **Disposition Summary (v2)**
+  - Status counts:
+    - Not Started
+    - Has Brief
+    - In Progress
+    - Completed
+    - On Hold
+    - Not Applicable
+  - Active Brief count
+  - Active Plan count
+  - Value rollups for:
+    - Items
+    - Sets (conservative value derived from member items × membership quantity)
+    - Batches (staging view of linked items/sets)
+
+### Advisory Positioning
+
+Snapshot reflects the **current catalog state** at time of generation.
+
+- Reports are generated on-device.
+- No historical archive is maintained.
+- Regeneration at a later date may produce different results if the underlying inventory has changed.
+- Legacy Treasure Chest provides advisory reporting and does not function as a legal record system.
+
+---
+
 ## Current Status (February 12, 2026)
 
 ### Valuation Aggregation Refinement (Batch + Lot)
