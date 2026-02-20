@@ -230,6 +230,16 @@ struct ItemAudioSection: View {
                 Text(formattedDuration(recording.duration))
                     .font(Theme.secondaryFont)
                     .foregroundStyle(Theme.textSecondary)
+
+                // Show summary only when ready (clean UI, export-aligned)
+                if (recording.summaryStatusRaw ?? "").lowercased() == "ready",
+                   let s = recording.summaryText,
+                   !s.isEmpty {
+                    Text(s)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
             }
 
             Spacer()
@@ -244,7 +254,6 @@ struct ItemAudioSection: View {
             .tint(Theme.destructive)
         }
     }
-
     // MARK: - Actions
 
     private func handleRecordButtonTap() {
@@ -279,6 +288,54 @@ struct ItemAudioSection: View {
         }
     }
 
+    // MARK: - Audio Summary (Backend)
+
+    /// IMPORTANT: This must be the Mac mini LAN IP when running on a real iPhone.
+    /// Example: http://192.168.4.27:8000/ai/summarize-audio
+
+    private struct SummarizeAudioRequest: Codable {
+        let audioBase64: String
+        let mimeType: String
+        let itemName: String?
+        let additionalContext: String?
+    }
+
+    private struct SummarizeAudioResponse: Codable {
+        let summaryText: String
+    }
+
+    private func requestAudioSummary(audioFileURL: URL, itemName: String?) async throws -> String {
+        let data = try Data(contentsOf: audioFileURL)
+        let b64 = data.base64EncodedString()
+
+        let reqBody = SummarizeAudioRequest(
+            audioBase64: b64,
+            mimeType: "audio/mp4",
+            itemName: itemName,
+            additionalContext: nil
+        )
+
+        let provider = BackendAIProvider()
+        let endpoint = provider.baseURL.appendingPathComponent("ai/summarize-audio")
+        var request = URLRequest(url: endpoint) 
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(reqBody)
+
+        let (respData, resp) = try await URLSession.shared.data(for: request)
+        guard let http = resp as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+        guard (200...299).contains(http.statusCode) else {
+            let body = String(data: respData, encoding: .utf8) ?? "<non-utf8>"
+            throw NSError(domain: "AudioSummary", code: http.statusCode, userInfo: [
+                NSLocalizedDescriptionKey: body
+            ])
+        }
+
+        return try JSONDecoder().decode(SummarizeAudioResponse.self, from: respData).summaryText
+    }
+    
     private func startRecording() {
         do {
             let url = try audioManager.startRecording()
@@ -311,6 +368,30 @@ struct ItemAudioSection: View {
         )
         recording.item = item
         modelContext.insert(recording)
+        try? modelContext.save()
+        
+        recording.summaryText = nil
+        recording.summaryStatusRaw = "pending"
+        recording.summaryGeneratedAt = nil
+        Task {
+            do {
+                let summary = try await requestAudioSummary(audioFileURL: url, itemName: item.name)
+
+                await MainActor.run {
+                    recording.summaryText = summary
+                    recording.summaryStatusRaw = "ready"
+                    recording.summaryGeneratedAt = .now
+                    recording.updatedAt = .now
+                    try? modelContext.save()
+                }
+            } catch {
+                await MainActor.run {
+                    recording.summaryStatusRaw = "failed"
+                    recording.updatedAt = .now
+                    try? modelContext.save()
+                }
+                print("❌ Audio summary generation failed: \(error)")            }
+        }
 
         // Optionally bump the item's updatedAt.
         item.updatedAt = .now

@@ -1119,7 +1119,22 @@ public final class AudioRecording {
     @Attribute(.unique) public var audioRecordingId: UUID
     public var filePath: String
     public var duration: Double
+
+    /// Optional full transcription of the recording (may be longer form).
     public var transcription: String?
+
+    /// Short, export-safe preview of the audio note (1–2 sentences max).
+    /// Generated at record time (preferred), may be nil if not yet generated.
+    public var summaryText: String?
+
+    /// Tracks summary generation lifecycle.
+    /// Optional for SwiftData migration safety: nil is treated as "missing".
+    /// Expected values when set: "missing" | "ready" | "failed"
+    public var summaryStatusRaw: String?
+
+    /// When the summaryText was generated.
+    public var summaryGeneratedAt: Date?
+
     public var createdAt: Date
     public var updatedAt: Date
 
@@ -1130,6 +1145,9 @@ public final class AudioRecording {
         filePath: String,
         duration: Double,
         transcription: String? = nil,
+        summaryText: String? = nil,
+        summaryStatusRaw: String? = "missing",
+        summaryGeneratedAt: Date? = nil,
         createdAt: Date = .now,
         updatedAt: Date = .now
     ) {
@@ -1137,6 +1155,9 @@ public final class AudioRecording {
         self.filePath = filePath
         self.duration = duration
         self.transcription = transcription
+        self.summaryText = summaryText
+        self.summaryStatusRaw = summaryStatusRaw
+        self.summaryGeneratedAt = summaryGeneratedAt
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

@@ -12,7 +12,7 @@ struct BackendAIProvider: AIProvider {
 
     // MARK: - Configuration
 
-    private let baseURL: URL
+    let baseURL: URL
     private let urlSession: URLSession
 
     private static var defaultBaseURL: URL {

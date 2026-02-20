@@ -40,7 +40,11 @@ from app.models_disposition import (
     DispositionPartnersSearchResponse,
 )
 
-from app.services.gemini_client import GEMINI_MODEL, call_gemini_for_item_analysis
+from app.services.gemini_client import (
+    GEMINI_MODEL,
+    call_gemini_for_item_analysis,
+    call_gemini_for_audio_summary,
+)
 
 # Optional Gemini functions (DO NOT crash server if missing)
 try:
@@ -1731,6 +1735,19 @@ async def disposition_outreach_compose(payload: DispositionOutreachComposeReques
         ),
     )
 
+from pydantic import BaseModel, Field
+from typing import Optional
+
+
+class SummarizeAudioRequest(BaseModel):
+    audioBase64: str = Field(..., description="Base64-encoded audio data.")
+    mimeType: str = Field("audio/mp4", description="MIME type, e.g. audio/mp4 or audio/m4a.")
+    itemName: Optional[str] = Field(None, description="Optional item name for context.")
+    additionalContext: Optional[str] = Field(None, description="Optional additional context.")
+
+
+class SummarizeAudioResponse(BaseModel):
+    summaryText: str
 
 # ---------------------------------------------------------------------------
 # Endpoints (existing)
@@ -1852,6 +1869,54 @@ async def analyze_item_text(payload: dict) -> ItemAnalysis:
     analysis = _apply_value_policy(analysis)
     return analysis
 
+
+@router.post("/summarize-audio", response_model=SummarizeAudioResponse)
+async def summarize_audio(payload: SummarizeAudioRequest) -> SummarizeAudioResponse:
+    import logging
+    logger = logging.getLogger(__name__)
+
+    # Validate base64
+    try:
+        base64.b64decode(payload.audioBase64, validate=True)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail="audioBase64 is not valid base64") from exc
+
+    mime = (payload.mimeType or "audio/mp4").strip().lower()
+    allowed = {"audio/mp4", "audio/m4a", "audio/x-m4a", "audio/wav", "audio/mpeg"}
+    if mime not in allowed:
+        raise HTTPException(status_code=400, detail=f"mimeType '{mime}' is not supported")
+
+    item_line = f"Item: {payload.itemName}\n" if payload.itemName else ""
+    extra_line = f"Context: {payload.additionalContext}\n" if payload.additionalContext else ""
+
+    prompt = (
+        "You are summarizing a short owner-recorded provenance note for an estate inventory item.\n"
+        "Return a concise, professional summary in 1–2 sentences.\n"
+        "Do NOT include bullet points, headers, or quotes.\n"
+        "Do NOT speculate beyond what is stated.\n"
+        "Write in neutral third-person (e.g., 'Owner notes that...').\n\n"
+        f"{item_line}{extra_line}"
+        "Summary:"
+    )
+
+    try:
+        text = await call_gemini_for_audio_summary(
+            prompt=prompt,
+            audio_base64=payload.audioBase64,
+            mime_type=mime,
+        )
+    except RuntimeError as exc:
+        logger.exception("Gemini call failed in /ai/summarize-audio")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    cleaned = " ".join((text or "").split())
+    if len(cleaned) > 320:
+        cleaned = cleaned[:317].rstrip() + "..."
+
+    if not cleaned:
+        raise HTTPException(status_code=502, detail="Empty summary returned from AI")
+
+    return SummarizeAudioResponse(summaryText=cleaned)
 
 @router.post("/generate-liquidation-brief", response_model=LiquidationBriefDTO)
 async def generate_liquidation_brief(payload: LiquidationBriefRequest) -> LiquidationBriefDTO:
