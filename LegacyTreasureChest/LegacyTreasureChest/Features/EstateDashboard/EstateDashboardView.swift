@@ -420,14 +420,12 @@ struct EstateDashboardView: View {
 
             VStack(alignment: .leading, spacing: Theme.spacing.medium) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Generate printable PDFs for your executor, attorney, or family.")
-                        .font(Theme.secondaryFont)
+                    Text("Generate professional reports and packet bundles for executors, family members, and external businesses.")                        .font(Theme.secondaryFont)
                         .foregroundStyle(Theme.textSecondary)
 
-                    Text("These reports summarize your Legacy vs Liquidate plan and your conservative sale values.")
+                    Text("Each export reflects your current catalog state and presents advisory value ranges for professional discussion.")
                         .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.textSecondary)
-                }
+                        .foregroundStyle(Theme.textSecondary)                }
 
                 Divider()
 
@@ -441,6 +439,29 @@ struct EstateDashboardView: View {
                                 .font(Theme.bodyFont.weight(.semibold))
                                 .foregroundStyle(Theme.text)
                             Text("One-page readiness summary")
+                                .font(Theme.secondaryFont)
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                    .padding(.vertical, 6)
+                }
+                
+                Divider()
+
+                NavigationLink {
+                    OutreachPacketExportView()
+                } label: {
+                    HStack(spacing: Theme.spacing.small) {
+                        Image(systemName: "shippingbox")
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Outreach Packet")
+                                .font(Theme.bodyFont.weight(.semibold))
+                                .foregroundStyle(Theme.text)
+                            Text("Range-only export for consignment or professional evaluation")
                                 .font(Theme.secondaryFont)
                                 .foregroundStyle(Theme.textSecondary)
                         }

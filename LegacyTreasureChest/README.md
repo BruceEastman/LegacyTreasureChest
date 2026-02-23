@@ -1,5 +1,106 @@
 # Legacy Treasure Chest
+
+
+# ✅ What Was Accomplished (Session Summary)
+
+### Backend
+
+* Added `_post_gemini_text` for non-JSON Gemini responses
+* Added `call_gemini_for_audio_summary`
+* Implemented `POST /ai/summarize-audio`
+* Validated base64 + MIME allowlist
+* Clean 502 error handling
+* Endpoint visible in `/docs`
+
+### iOS
+
+* Extended `AudioRecording` model with:
+
+  * `summaryText`
+  * `summaryStatusRaw`
+  * `summaryGeneratedAt`
+* Asynchronous summary generation after recording save
+* Proper status lifecycle: `pending → ready/failed`
+* Cleaned debug UI
+* Removed hardcoded endpoint
+* Rewired to `BackendAIProvider.defaultBaseURL`
+* Confirmed end-to-end: iPhone → Mac mini → Gemini → SwiftData
+
+### Architecture
+
+* No branching logic added
+* No duplication of base URL
+* No blocking UI
+* No export-layer coupling yet
+
+This is production-grade groundwork.
+
 ---
+
+# 📌 What Remains (Export Layer Context)
+
+## Audio
+
+* Add summary usage to Outreach Packet PDF (Audio Appendix)
+* Decide: regenerate summary if missing during export? (Probably no — advisory system)
+
+## Export Layer
+
+* Finalize Outreach Packet v1
+* Implement Packet Summary Block (cover page aggregation)
+* Add asset bundling (PDF + audio files + documents)
+* Standardize bundle naming convention
+* Create export orchestration service (single pathway)
+
+## Clean Architecture
+
+* Consider moving audio summary call out of View layer and into:
+
+  * ItemAudioService
+  * or BackendAIProvider extension
+* Add retry mechanism (optional)
+* Add summary regeneration trigger (future)
+
+---
+
+## Audio Summary Pipeline (v1)
+
+### Status
+
+Complete and functioning end-to-end (local development).
+
+### Flow
+
+1. User records audio story.
+2. Audio file saved locally under Media/Audio.
+3. `AudioRecording` inserted with `summaryStatusRaw = "pending"`.
+4. iOS asynchronously:
+
+   * Reads file
+   * Base64 encodes
+   * Calls `/ai/summarize-audio`
+5. Backend sends audio + prompt to Gemini.
+6. Gemini returns 1–2 sentence summary.
+7. Summary persisted to SwiftData.
+8. Status updated to `ready` or `failed`.
+
+### Design Principles
+
+* Non-blocking UI
+* Advisory only (no forced regeneration)
+* No historical versions
+* Single baseURL source (BackendAIProvider)
+* Clean failure handling
+
+### Future Use
+
+* Outreach Packet Audio Appendix
+* Beneficiary Packet emotional context
+* Search indexing (future)
+
+---
+
+
 
 ## Estate Snapshot — Disposition Snapshot v2 (Current State)
 

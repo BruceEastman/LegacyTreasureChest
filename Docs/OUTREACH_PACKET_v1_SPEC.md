@@ -1,9 +1,20 @@
+Absolutely. Below is your **updated Outreach Packet v1 Specification**, revised to reflect:
+
+* ✅ Audio summary pipeline completed (record-time generation + persistent storage)
+* ✅ Backend endpoint implemented
+* ✅ BaseURL unified (no hardcoded endpoints)
+* ✅ On-device bundle architecture confirmed
+* 🔜 Remaining implementation steps clearly defined
+
+I have only updated sections that required revision and added a clean implementation status section at the bottom.
+
+---
 
 # Legacy Treasure Chest
 
 # Outreach Packet v1 Specification
 
-**Status:** Draft – Ready for Implementation
+**Status:** Ready for Implementation (Audio Infrastructure Complete)
 **Scope:** Audience-Specific Export (External Business)
 **Export Model:** Bundle (PDF + optional assets)
 **Generation:** On-device only
@@ -61,7 +72,11 @@ OutreachPacket_[RecipientOrTarget]_[YYYY-MM-DD]/
 
 Even when no assets exist beyond the PDF, a bundle is generated.
 
-No remote hosting. No links. No authentication required to open.
+No remote hosting.
+No links.
+No authentication required to open.
+
+Bundle generation is handled fully on-device.
 
 ---
 
@@ -80,7 +95,9 @@ v1 supports:
 
 * Batch (may contain multiple sets and loose items)
 * Set (single set context)
-* Multiple sets within a single batch are supported
+* Multiple sets within a single batch
+
+LiquidationTarget aggregation is already supported via existing valuation rollup infrastructure.
 
 ---
 
@@ -90,13 +107,15 @@ External exports use:
 
 **ValuePolicy: Range Only**
 
-* No exact values displayed.
-* Conservative value range shown per item/set.
-* Conservative total range shown at packet level.
+* No exact values displayed
+* Conservative value range shown per item/set
+* Conservative total range shown at packet level
 
 Disclaimer language required:
 
 > Values shown are advisory estimates for discussion purposes and are not guarantees of sale price.
+
+This aligns with LTC’s advisory-only positioning and avoids anchoring conflicts.
 
 ---
 
@@ -104,9 +123,11 @@ Disclaimer language required:
 
 ## 6.1 Photos
 
-* Primary photo embedded in PDF Item Card.
-* Additional photos may be embedded or included later if needed.
-* Originals not required in v1.
+* Primary photo embedded in PDF Item Card
+* Additional photos optional for v1
+* Originals not required in bundle
+
+---
 
 ## 6.2 Audio
 
@@ -115,31 +136,48 @@ Audio files are included in `/Audio` folder when present.
 Each included audio file:
 
 * Named with stable index prefix: `01_ItemName.m4a`
-* Referenced clearly inside PDF.
+* Referenced clearly inside PDF
 
-### Audio Summary Policy (Locked)
+### Audio Summary Policy (Implemented)
 
-* AI-generated summary created at **record time**
-* Stored persistently with item
+Audio summaries are:
+
+* Generated via Gemini endpoint `/ai/summarize-audio`
+* Triggered at record time (asynchronous, non-blocking)
+* Persisted in SwiftData:
+
+  * `summaryText`
+  * `summaryStatusRaw`
+  * `summaryGeneratedAt`
 * 1–2 sentence summary maximum
-* Used in PDF as contextual preview
+
+No summary generation occurs during export.
+
+If summary missing or failed:
+
+* PDF omits summary text
+* Audio file still included
 
 PDF displays:
 
 * Item title
 * Recording duration
-* “Owner’s Note (AI summary)”
+* “Owner’s Note (AI Summary)”
 * Filename reference
 
 Full transcript not included.
+
+---
 
 ## 6.3 Documents
 
 If items contain attached documents (appraisals, certificates, receipts):
 
-* Include original PDF files in `/Documents`
+* Include original files in `/Documents`
 * Reference filename in Item Card
 * Do not modify or rewrite documents
+
+Documents remain unaltered source artifacts.
 
 ---
 
@@ -163,7 +201,7 @@ Displays:
 * Loose item count
 * Set count
 * Total conservative value range (entire packet)
-* One-line orientation statement:
+* Orientation statement
 
 Example:
 
@@ -203,7 +241,7 @@ Each item includes:
 * Description (concise)
 * Quantity
 * Conservative value range
-* Owner’s Note (AI summary) if audio exists
+* Owner’s Note (AI summary) if available
 * Asset indicators:
 
   * “Audio included”
@@ -230,8 +268,8 @@ Optional section listing:
 
 Purpose:
 
-* Allows PDF to stand alone if audio not opened
-* Helps attorneys or evaluators skim
+* Allows PDF to stand alone
+* Enables evaluators to skim quickly
 
 ---
 
@@ -241,7 +279,7 @@ Optional listing:
 
 * Item title
 * Document filename
-* Document type (if stored)
+* Document type
 
 ---
 
@@ -268,7 +306,7 @@ Text template:
 
 * Default from Owner Profile
 * Export-time override allowed
-* Optional “Save as default” option if profile missing
+* Optional “Save as default” option
 
 ---
 
@@ -290,53 +328,64 @@ It is not an operational packet.
 
 # 10. Non-Goals (v1)
 
-* No embedded audio inside PDF
+* No embedded audio playback in PDF
 * No remote hosting links
 * No cloud export
 * No electronic signature workflow
 * No auto-email sending
-* No pricing negotiation tools
+* No negotiation tools
 
 ---
 
 # 11. Architectural Components (Reusable)
 
-This packet relies on shared export infrastructure:
+Relies on shared export infrastructure:
 
-* PacketComposer
-* ValueBlock (Range mode)
-* ItemCard component
-* SetSummaryCard component
-* AssetCollector
-* BundleAssembler
-* ShareSheet presenter
+* `PacketComposer`
+* `ValueBlock` (Range mode)
+* `ItemCard`
+* `SetSummaryCard`
+* `AssetCollector`
+* `BundleAssembler`
+* `ShareSheetPresenter`
 
-No packet-specific rendering engine.
+BaseURL abstraction via `BackendAIProvider` already unified.
+
+Audio summary infrastructure complete.
 
 ---
 
-# 12. Implementation Readiness Check
+# 12. Implementation Readiness Check (Updated)
 
-Before coding begins, confirm:
+## Completed
 
-* Audio summaries exist as stored item metadata
-* Owner Profile fields exist or are stubbed
-* Range rollup function available for:
+* Audio summaries stored in SwiftData
+* Backend endpoint implemented and validated
+* Range rollup infrastructure exists
+* LiquidationTarget abstraction exists
+* Bundle model locked
 
-  * Item
-  * Set
-  * LiquidationTarget (aggregate)
+## Remaining Before Implementation
+
+* Confirm Owner Profile model fields
+* Confirm aggregate rollup function for full LiquidationTarget
+* Implement:
+
+  * PacketComposer
+  * BundleAssembler
+  * PDF layout rendering
+  * ShareSheet integration
 
 ---
 
 # 13. Future Compatibility
 
-This structure directly supports:
+Structure supports:
 
-* Beneficiary Packet (different tone, different value policy)
-* Consideration Packet (discussion-focused)
-* Executor Master Packet (full estate view)
-* Disposition Execution Packet (checklist-enabled)
+* Beneficiary Packet (emotional tone, different value policy)
+* Consideration Packet
+* Executor Master Packet
+* Disposition Execution Packet
 
 No structural rewrite required.
 
@@ -344,7 +393,10 @@ No structural rewrite required.
 
 ## Status
 
-Outreach Packet v1 is now fully specified.
+Outreach Packet v1 is fully specified.
+
+Audio infrastructure complete.
+Ready to begin PacketComposer implementation.
 
 ---
 
