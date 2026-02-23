@@ -68,6 +68,9 @@ struct OutreachItemSnapshot: Identifiable {
     let quantity: Int
     let valueRange: OutreachValueRange
 
+    /// Relative path (Media/Images/...) for the primary image to embed in the PDF, if available.
+    let primaryImageRelativePath: String?
+
     /// Best available export-safe summary (1–2 sentences), if present.
     let ownerNoteSummary: String?
 

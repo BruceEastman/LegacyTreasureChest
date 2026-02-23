@@ -112,6 +112,9 @@ enum OutreachPacketComposer {
         let totalEstimated = unitEstimated * Double(qty)
         let range = OutreachValuePolicy.range(forEstimatedValue: totalEstimated)
 
+        // Primary image (embed in PDF)
+        let primaryImagePath = selectPrimaryImageRelativePath(for: item)
+
         // Audio flags + summary selection
         let recordings = item.audioRecordings
         let hasAudio = !recordings.isEmpty
@@ -127,10 +130,19 @@ enum OutreachPacketComposer {
             description: description,
             quantity: qty,
             valueRange: range,
+            primaryImageRelativePath: primaryImagePath,
             ownerNoteSummary: summary,
             hasAudio: hasAudio,
             hasDocuments: hasDocuments
         )
+    }
+
+    private static func selectPrimaryImageRelativePath(for item: LTCItem) -> String? {
+        // Stable choice: earliest created image (or nil if none)
+        let sorted = item.images.sorted { $0.createdAt < $1.createdAt }
+        guard let first = sorted.first else { return nil }
+        let rel = first.filePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        return rel.isEmpty ? nil : rel
     }
 
     private static func bestAvailableAudioSummary(from recordings: [AudioRecording]) -> String? {
@@ -243,7 +255,7 @@ enum OutreachPacketComposer {
         return result
     }
 
-    /// NOTE: kept name for backward compatibility — now includes *both* audio and documents indexes.
+    /// NOTE: kept name for backward compatibility — includes *both* audio and documents indexes.
     static func composeWithAudioIndex(target: Target) -> OutreachPacketSnapshot {
         let base = compose(target: target)
 

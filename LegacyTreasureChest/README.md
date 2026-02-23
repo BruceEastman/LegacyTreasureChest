@@ -1,5 +1,93 @@
 # Legacy Treasure Chest
 
+---
+
+## Status Update — Outreach Packet v1 (External Business Export)2-23-2025
+
+Outreach Packet v1 is now functionally complete.
+
+### Purpose
+A professional, range-only export bundle designed for external business discussions, including:
+- Auction houses
+- Estate sale companies
+- Dealers
+- Consignment partners
+
+### Architecture
+OutreachPacket_<Target>_<YYYY-MM-DD>/
+├── Packet.pdf
+├── /Audio (if present)
+└── /Documents (if present)
+
+### Included Content
+
+- Cover page with Packet Summary Block
+- Sets (if applicable)
+- Loose items
+- Conservative value ranges (no exact values)
+- Audio summaries (1–2 sentence AI-generated preview)
+- Audio Appendix (with file references)
+- Documents Appendix (with file references)
+- Advisory footer (every page)
+
+### Guardrails
+
+- No checklist state
+- No internal liquidation strategy
+- No beneficiary assignments
+- No exact value anchoring
+- No cloud hosting
+- No automatic sending
+
+### Implementation Components
+
+- `OutreachPacketComposer`
+- `OutreachPacketPDFRenderer`
+- `OutreachPacketBundleBuilder`
+- `OutreachPacketExportView`
+
+### Design Principle
+
+Advisor, not operator.
+
+All exports reflect the current catalog state and are generated entirely on-device.
+
+---
+### Included Content
+
+- Cover page with Packet Summary Block
+- Sets (if applicable)
+- Loose items
+- Conservative value ranges (no exact values)
+- Audio summaries (1–2 sentence AI-generated preview)
+- Audio Appendix (with file references)
+- Documents Appendix (with file references)
+- Advisory footer (every page)
+
+### Guardrails
+
+- No checklist state
+- No internal liquidation strategy
+- No beneficiary assignments
+- No exact value anchoring
+- No cloud hosting
+- No automatic sending
+
+### Implementation Components
+
+- `OutreachPacketComposer`
+- `OutreachPacketPDFRenderer`
+- `OutreachPacketBundleBuilder`
+- `OutreachPacketExportView`
+
+### Design Principle
+
+Advisor, not operator.
+
+All exports reflect the current catalog state and are generated entirely on-device.
+
+---
+**Export Model:** Bundle-based (on-device only)
 
 # ✅ What Was Accomplished (Session Summary)
 

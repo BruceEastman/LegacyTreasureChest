@@ -4,6 +4,7 @@
 //
 //  Renders Outreach Packet PDF (on-device).
 //  v1: Cover page + sets/items listing + Audio Appendix + Documents Appendix.
+//  Enhancement: render primary image thumbnail in each item card when available.
 //
 
 import Foundation
@@ -60,8 +61,8 @@ enum OutreachPacketPDFRenderer {
                     cursorY += 4
 
                     for item in set.items {
-                        cursorY = ensureSpace(for: 86, in: pageRect, context: context, currentY: cursorY)
-                        cursorY = drawItemLine(item, in: pageRect, y: cursorY)
+                        cursorY = ensureSpace(for: itemCardNeededHeight(item), in: pageRect, context: context, currentY: cursorY)
+                        cursorY = drawItemCard(item, in: pageRect, y: cursorY)
                     }
 
                     cursorY += 10
@@ -75,8 +76,8 @@ enum OutreachPacketPDFRenderer {
                 cursorY += 6
 
                 for item in snapshot.looseItems {
-                    cursorY = ensureSpace(for: 86, in: pageRect, context: context, currentY: cursorY)
-                    cursorY = drawItemLine(item, in: pageRect, y: cursorY)
+                    cursorY = ensureSpace(for: itemCardNeededHeight(item), in: pageRect, context: context, currentY: cursorY)
+                    cursorY = drawItemCard(item, in: pageRect, y: cursorY)
                 }
             }
 
@@ -145,9 +146,59 @@ enum OutreachPacketPDFRenderer {
         return data
     }
 
-    private static func drawItemLine(_ item: OutreachItemSnapshot, in rect: CGRect, y: CGFloat) -> CGFloat {
+    // MARK: - Item Card Rendering (with optional thumbnail)
+
+    private static func itemCardNeededHeight(_ item: OutreachItemSnapshot) -> CGFloat {
+        // Reserve extra height if image is present.
+        // Keep conservative; PDF renderer is line-based and text may wrap.
+        return item.primaryImageRelativePath == nil ? 92 : 118
+    }
+
+    private static func drawItemCard(_ item: OutreachItemSnapshot, in rect: CGRect, y: CGFloat) -> CGFloat {
+        let leftMargin: CGFloat = 40
+        let rightMargin: CGFloat = 40
+        let cardWidth = rect.width - leftMargin - rightMargin
+
+        let thumbnailSize: CGFloat = 92
+        let thumbnailPadding: CGFloat = 12
+
+        let hasImage = (item.primaryImageRelativePath?.isEmpty == false)
+        let thumbX = rect.minX + leftMargin
+        let thumbY = y + 2
+
+        let textX: CGFloat = hasImage ? (thumbX + thumbnailSize + thumbnailPadding) : thumbX
+        let textMaxWidth: CGFloat = hasImage
+            ? (cardWidth - thumbnailSize - thumbnailPadding)
+            : cardWidth
+
         var cursorY = y
-        cursorY = drawBodyText("• \(item.name) — \(rangeString(item.valueRange))", in: rect, y: cursorY)
+
+        // Draw thumbnail (if available)
+        if hasImage, let rel = item.primaryImageRelativePath, let uiImage = MediaStorage.loadImage(from: rel) {
+            let thumbRect = CGRect(x: thumbX, y: thumbY, width: thumbnailSize, height: thumbnailSize)
+
+            // White background + subtle border for professionalism
+            UIColor.white.setFill()
+            UIBezierPath(rect: thumbRect).fill()
+
+            UIColor(white: 0.85, alpha: 1.0).setStroke()
+            let border = UIBezierPath(roundedRect: thumbRect, cornerRadius: 6)
+            border.lineWidth = 1
+            border.stroke()
+
+            // Aspect-fit draw
+            let fitted = aspectFitRect(for: uiImage.size, in: thumbRect.insetBy(dx: 4, dy: 4))
+            uiImage.draw(in: fitted)
+        }
+
+        // Title line
+        cursorY = drawBodyText(
+            "• \(item.name) — \(rangeString(item.valueRange))",
+            in: rect,
+            x: textX,
+            maxWidth: textMaxWidth,
+            y: cursorY
+        )
 
         let metaParts: [String] = [
             item.category.isEmpty ? nil : item.category,
@@ -157,15 +208,45 @@ enum OutreachPacketPDFRenderer {
         ].compactMap { $0 }
 
         if !metaParts.isEmpty {
-            cursorY = drawCaptionText(metaParts.joined(separator: " · "), in: rect, y: cursorY)
+            cursorY = drawCaptionText(
+                metaParts.joined(separator: " · "),
+                in: rect,
+                x: textX,
+                maxWidth: textMaxWidth,
+                y: cursorY
+            )
         }
 
         if let note = item.ownerNoteSummary, !note.isEmpty {
-            cursorY = drawCaptionText("Owner’s Note (AI Summary): \(note)", in: rect, y: cursorY)
+            cursorY = drawCaptionText(
+                "Owner’s Note (AI Summary): \(note)",
+                in: rect,
+                x: textX,
+                maxWidth: textMaxWidth,
+                y: cursorY
+            )
+        }
+
+        // Ensure we clear the thumbnail height so the next item doesn't overlap.
+        if hasImage {
+            let minBottom = thumbY + thumbnailSize + 6
+            cursorY = max(cursorY, minBottom)
         }
 
         return cursorY + 2
     }
+
+    private static func aspectFitRect(for imageSize: CGSize, in bounds: CGRect) -> CGRect {
+        guard imageSize.width > 0, imageSize.height > 0 else { return bounds }
+        let scale = min(bounds.width / imageSize.width, bounds.height / imageSize.height)
+        let w = imageSize.width * scale
+        let h = imageSize.height * scale
+        let x = bounds.midX - (w / 2)
+        let y = bounds.midY - (h / 2)
+        return CGRect(x: x, y: y, width: w, height: h)
+    }
+
+    // MARK: - Footer
 
     private static func drawFooter(in rect: CGRect, generatedAt: Date) {
         let footer = "Generated on-device · Outreach Packet v1 · \(dateString(generatedAt))"
@@ -216,36 +297,44 @@ enum OutreachPacketPDFRenderer {
 
     @discardableResult
     private static func drawBodyText(_ text: String, in rect: CGRect, y: CGFloat) -> CGFloat {
+        drawBodyText(text, in: rect, x: rect.minX + 40, maxWidth: rect.width - 80, y: y)
+    }
+
+    @discardableResult
+    private static func drawBodyText(_ text: String, in rect: CGRect, x: CGFloat, maxWidth: CGFloat, y: CGFloat) -> CGFloat {
         let attributes: [NSAttributedString.Key: Any] = [
             .font: UIFont.systemFont(ofSize: 12),
             .foregroundColor: UIColor.black
         ]
-        let maxWidth = rect.width - 80
         let boundingRect = text.boundingRect(
             with: CGSize(width: maxWidth, height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
             attributes: attributes,
             context: nil
         )
-        let textRect = CGRect(x: rect.minX + 40, y: y, width: maxWidth, height: boundingRect.height)
+        let textRect = CGRect(x: x, y: y, width: maxWidth, height: boundingRect.height)
         (text as NSString).draw(in: textRect, withAttributes: attributes)
         return y + boundingRect.height + 2
     }
 
     @discardableResult
     private static func drawCaptionText(_ text: String, in rect: CGRect, y: CGFloat) -> CGFloat {
+        drawCaptionText(text, in: rect, x: rect.minX + 40, maxWidth: rect.width - 80, y: y)
+    }
+
+    @discardableResult
+    private static func drawCaptionText(_ text: String, in rect: CGRect, x: CGFloat, maxWidth: CGFloat, y: CGFloat) -> CGFloat {
         let attributes: [NSAttributedString.Key: Any] = [
             .font: UIFont.systemFont(ofSize: 11),
             .foregroundColor: UIColor.darkGray
         ]
-        let maxWidth = rect.width - 80
         let boundingRect = text.boundingRect(
             with: CGSize(width: maxWidth, height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
             attributes: attributes,
             context: nil
         )
-        let textRect = CGRect(x: rect.minX + 40, y: y, width: maxWidth, height: boundingRect.height)
+        let textRect = CGRect(x: x, y: y, width: maxWidth, height: boundingRect.height)
         (text as NSString).draw(in: textRect, withAttributes: attributes)
         return y + boundingRect.height + 2
     }
