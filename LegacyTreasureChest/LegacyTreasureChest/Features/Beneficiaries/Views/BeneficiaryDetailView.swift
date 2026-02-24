@@ -36,6 +36,7 @@ struct BeneficiaryDetailView: View {
     var body: some View {
         List {
             beneficiaryHeaderSection
+            exportSection
             assignedItemsSection
         }
         .scrollContentBackground(.hidden)
@@ -124,6 +125,41 @@ struct BeneficiaryDetailView: View {
             .padding(.vertical, Theme.spacing.small)
         } header: {
             Text("Beneficiary")
+                .ltcSectionHeaderStyle()
+        }
+    }
+    
+    private var exportSection: some View {
+        Section {
+            let itemsForExport = links.compactMap { $0.item }
+            NavigationLink {
+                BeneficiaryPacketExportView(
+                    preset: .beneficiary(
+                        name: beneficiary.name,   // assumes Beneficiary has `name`
+                        items: itemsForExport
+                    )
+                )
+            } label: {
+                HStack(spacing: Theme.spacing.small) {
+                    Image(systemName: "archivebox")
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Beneficiary Packet")
+                            .font(Theme.bodyFont.weight(.semibold))
+                            .foregroundStyle(Theme.text)
+                        Text("ZIP bundle for this beneficiary (PDF + optional media)")
+                            .font(Theme.secondaryFont)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                .padding(.vertical, 6)
+            }
+            .disabled(itemsForExport.isEmpty)
+        } header: {
+            Text("Export")
                 .ltcSectionHeaderStyle()
         }
     }

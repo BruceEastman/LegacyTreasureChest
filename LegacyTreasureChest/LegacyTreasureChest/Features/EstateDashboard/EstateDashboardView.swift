@@ -472,6 +472,29 @@ struct EstateDashboardView: View {
                     }
                     .padding(.vertical, 6)
                 }
+                
+                Divider()
+
+                NavigationLink {
+                    BeneficiaryPacketExportView()
+                } label: {
+                    HStack(spacing: Theme.spacing.small) {
+                        Image(systemName: "archivebox")
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Beneficiary Packet")
+                                .font(Theme.bodyFont.weight(.semibold))
+                                .foregroundStyle(Theme.text)
+                            Text("ZIP bundle for family members (PDF + optional media)")
+                                .font(Theme.secondaryFont)
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                    .padding(.vertical, 6)
+                }
 
                 NavigationLink {
                     EstateReportsView()
