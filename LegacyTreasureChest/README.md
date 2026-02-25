@@ -1,5 +1,33 @@
 # Legacy Treasure Chest
 
+
+## Beneficiary Packet v1 (Family / Heirs)
+
+**Purpose:** A personal, legacy-forward export bundle for family members and heirs.
+
+**Export model:** ZIP bundle  
+`BeneficiaryPacket_<Name>_<YYYY-MM-DD>.zip`
+
+**Contents:**
+- `Packet.pdf` (always)
+- `Audio/` (optional)
+- `Documents/` (optional)
+- `Images/` (selected images by default; optional full-resolution)
+
+**Guardrails (bundle size):**
+- Soft warning: ≥ 50MB
+- Strong warning: ≥ 100MB
+- Hard block: ≥ 250MB (requires explicit override via Files/AirDrop)
+
+**User controls (before generation):**
+- Toggle: Audio
+- Toggle: Documents
+- Toggle: Full-resolution images
+- Preflight estimated bundle size + share recommendation (Mail vs Files/AirDrop)
+
+**Entry points:**
+- Estate Dashboard → Export & Share → Beneficiary Packet
+- Beneficiary Detail → Export → Beneficiary Packet (prefilled beneficiary + assigned items)
 ---
 
 ## Status Update — Outreach Packet v1 (External Business Export)2-23-2025

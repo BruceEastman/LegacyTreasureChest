@@ -495,6 +495,30 @@ struct EstateDashboardView: View {
                     }
                     .padding(.vertical, 6)
                 }
+                
+                Divider()
+
+                NavigationLink {
+                    ExecutorMasterPacketExportView()
+                } label: {
+                    HStack(spacing: Theme.spacing.small) {
+                        Image(systemName: "tray.full")
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Executor Master Packet")
+                                .font(Theme.bodyFont.weight(.semibold))
+                                .foregroundStyle(Theme.text)
+                            Text("ZIP bundle for executor/attorney/CPA (Snapshot + Inventory + optional media)")
+                                .font(Theme.secondaryFont)
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                    .padding(.vertical, 6)
+                }
+
 
                 NavigationLink {
                     EstateReportsView()

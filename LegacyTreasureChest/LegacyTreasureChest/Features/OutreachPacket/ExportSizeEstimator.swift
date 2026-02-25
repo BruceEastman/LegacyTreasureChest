@@ -56,15 +56,57 @@ enum ExportSizeEstimator {
         pdfBytes: Int64,
         options: BeneficiaryPacketComposer.InclusionOptions
     ) -> Estimate {
-        let audio = options.includeAudio ? sumFileSizes(relativePaths: snapshot.audioIndex.map { $0.relativePath },
-                                                        resolver: { MediaStorage.audioURL(from: $0) }) : 0
+        let audio = options.includeAudio ? sumFileSizes(
+            relativePaths: snapshot.audioIndex.map { $0.relativePath },
+            resolver: { MediaStorage.audioURL(from: $0) }
+        ) : 0
 
-        let docs = options.includeDocuments ? sumFileSizes(relativePaths: snapshot.documentIndex.map { $0.relativePath },
-                                                          resolver: { MediaStorage.absoluteURL(from: $0) }) : 0
+        let docs = options.includeDocuments ? sumFileSizes(
+            relativePaths: snapshot.documentIndex.map { $0.relativePath },
+            resolver: { MediaStorage.absoluteURL(from: $0) }
+        ) : 0
 
         // Images: snapshot.imageIndex already reflects “selected vs full-res” choice in the composer
-        let images = sumFileSizes(relativePaths: snapshot.imageIndex.map { $0.relativePath },
-                                  resolver: { MediaStorage.absoluteURL(from: $0) })
+        let images = sumFileSizes(
+            relativePaths: snapshot.imageIndex.map { $0.relativePath },
+            resolver: { MediaStorage.absoluteURL(from: $0) }
+        )
+
+        let total = pdfBytes + audio + docs + images
+
+        return Estimate(
+            totalBytes: total,
+            pdfBytes: pdfBytes,
+            audioBytes: audio,
+            documentBytes: docs,
+            imageBytes: images
+        )
+    }
+
+    // NEW: Executor Master Packet estimator
+    static func estimateExecutorMasterPacket(
+        snapshot: ExecutorMasterPacketComposer.Snapshot,
+        pdfBytes: Int64,
+        options: ExecutorMasterPacketComposer.InclusionOptions
+    ) -> Estimate {
+        let audio = options.includeAudio ? sumFileSizes(
+            relativePaths: snapshot.audioIndex.map { $0.relativePath },
+            resolver: { MediaStorage.audioURL(from: $0) }
+        ) : 0
+
+        // Supporting docs are normal item documents in storage; just a different folder name in the bundle.
+        let docs = options.includeSupportingDocs ? sumFileSizes(
+            relativePaths: snapshot.documentIndex.map { $0.relativePath },
+            resolver: { MediaStorage.absoluteURL(from: $0) }
+        ) : 0
+
+        let images: Int64 = {
+            guard options.includeImages else { return 0 }
+            return sumFileSizes(
+                relativePaths: snapshot.imageIndex.map { $0.relativePath },
+                resolver: { MediaStorage.absoluteURL(from: $0) }
+            )
+        }()
 
         let total = pdfBytes + audio + docs + images
 
