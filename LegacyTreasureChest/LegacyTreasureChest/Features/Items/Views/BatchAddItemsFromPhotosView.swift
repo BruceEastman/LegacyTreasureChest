@@ -152,11 +152,11 @@ struct BatchAddItemsFromPhotosView: View {
                         if let value = analysis.valueHints {
                             // Show either range or single estimate.
                             if let low = value.valueLow, let high = value.valueHigh {
-                                Text("Estimated: \(Int(low))–\(Int(high)) \(value.currencyCode)")
+                                Text("Estimated: \(CurrencyFormat.dollarsRange(low: low, high: high))")
                                     .font(Theme.secondaryFont)
                                     .foregroundStyle(Theme.textSecondary)
                             } else if let est = value.estimatedValue {
-                                Text("Estimated: \(Int(est)) \(value.currencyCode)")
+                                Text("Estimated: \(CurrencyFormat.dollars(est))")
                                     .font(Theme.secondaryFont)
                                     .foregroundStyle(Theme.textSecondary)
                             }

@@ -100,8 +100,7 @@ struct BeneficiaryDetailView: View {
                             .font(Theme.secondaryFont)
                             .foregroundStyle(Theme.textSecondary)
                         Spacer()
-                        Text(totalValue, format: .currency(code: currencyCode))
-                            .font(Theme.bodyFont.weight(.semibold))
+                        CurrencyText.view(totalValue)                            .font(Theme.bodyFont.weight(.semibold))
                             .foregroundStyle(Theme.text)
                     }
                 }
@@ -222,7 +221,7 @@ struct BeneficiaryDetailView: View {
 
                 HStack(spacing: Theme.spacing.small) {
                     if item.value > 0 {
-                        Text(item.value, format: .currency(code: currencyCode))
+                        CurrencyText.view(item.value)
                             .font(Theme.secondaryFont)
                             .foregroundStyle(Theme.text)
                     }

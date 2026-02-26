@@ -115,12 +115,10 @@ struct DispositionPartnersView: View {
             let unit = max(item.valuation?.estimatedValue ?? item.value, 0)
             let qty = Double(max(item.quantity, 1))
             let total = unit * qty
-            return total.formatted(.currency(code: currencyCode))
-
+            return CurrencyText.string(total)
         case .itemSet(let set):
             let total = estimateSetTotalValue(set)
-            return total.formatted(.currency(code: currencyCode))
-        }
+            return CurrencyText.string(total)        }
     }
 
     // Mapping for set search request

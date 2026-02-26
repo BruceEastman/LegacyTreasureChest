@@ -359,21 +359,10 @@ enum OutreachPacketPDFRenderer {
     // MARK: - Formatting
 
     private static func rangeString(_ range: OutreachValueRange) -> String {
-        if range.isEmpty { return "$0–$0" }
-        return "\(currencyString(range.low))–\(currencyString(range.high))"
+        if range.isEmpty { return "—" }
+        return CurrencyFormat.dollarsRange(low: range.low, high: range.high)
     }
-
-    private static let currencyFormatter: NumberFormatter = {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.locale = Locale.current
-        return formatter
-    }()
-
-    private static func currencyString(_ value: Double) -> String {
-        currencyFormatter.string(from: NSNumber(value: value)) ?? String(format: "$%.2f", value)
-    }
-
+    
     private static func dateString(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium

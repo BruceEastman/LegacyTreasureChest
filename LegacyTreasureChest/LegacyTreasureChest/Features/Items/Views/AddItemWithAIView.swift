@@ -175,13 +175,16 @@ struct AddItemWithAIView: View {
 
                 TextField(
                     "Estimated Value (each)",
-                    value: $value,
-                    format: .currency(code: currencyCode)
+                    value: Binding<Int>(
+                        get: { Int((value ?? 0).rounded()) },
+                        set: { value = Double($0) }
+                    ),
+                    format: .currency(code: currencyCode).precision(.fractionLength(0))
                 )
-                .keyboardType(.decimalPad)
-
+                .keyboardType(.numberPad)
+                
                 if quantity > 1, unitValue > 0 {
-                    Text("Total: \(totalValue, format: .currency(code: currencyCode)) (\(unitValue, format: .currency(code: currencyCode)) each)")
+                    Text("Total: \(CurrencyFormat.dollars(totalValue)) (\(CurrencyFormat.dollars(unitValue)) each)")
                         .font(Theme.secondaryFont)
                         .foregroundStyle(Theme.textSecondary)
                 }

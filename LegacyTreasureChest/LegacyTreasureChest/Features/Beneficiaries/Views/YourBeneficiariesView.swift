@@ -177,8 +177,7 @@ struct YourBeneficiariesView: View {
                         Spacer()
 
                         if item.value > 0 {
-                            Text(item.value, format: .currency(code: currencyCode))
-                                .font(Theme.secondaryFont)
+                            CurrencyText.view(item.value)                                .font(Theme.secondaryFont)
                                 .foregroundStyle(Theme.text)
                         }
                     }
@@ -236,8 +235,7 @@ struct YourBeneficiariesView: View {
                     }
 
                     if totalValue > 0 {
-                        Text(totalValue, format: .currency(code: currencyCode))
-                            .font(Theme.secondaryFont.weight(.semibold))
+                        CurrencyText.view(totalValue)                            .font(Theme.secondaryFont.weight(.semibold))
                             .foregroundStyle(Theme.text)
                     }
                 }

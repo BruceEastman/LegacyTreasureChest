@@ -354,17 +354,10 @@ enum BeneficiaryPacketPDFRenderer {
 
     // MARK: - Formatting
 
-    private static let currencyFormatter: NumberFormatter = {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.locale = Locale.current
-        return formatter
-    }()
-
     private static func currencyString(_ value: Double) -> String {
-        currencyFormatter.string(from: NSNumber(value: value)) ?? String(format: "$%.2f", value)
+        CurrencyFormat.dollars(value)
     }
-
+    
     private static func dateString(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium

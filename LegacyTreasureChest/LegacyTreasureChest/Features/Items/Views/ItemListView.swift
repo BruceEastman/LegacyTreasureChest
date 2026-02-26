@@ -153,7 +153,7 @@ struct ItemsListView: View {
 
                 // Show value if it's greater than zero
                 if item.value > 0 {
-                    Text(item.value, format: .currency(code: currencyCode))
+                    CurrencyText.view(item.value)
                         .font(Theme.secondaryFont)
                         .foregroundStyle(Theme.textSecondary)
                 }

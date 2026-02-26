@@ -1,5 +1,329 @@
 # Legacy Treasure Chest
 
+---
+
+# 🔄 2026-02-25 — UI Refinement Pass v1.1 (Currency & Dashboard Stabilization)
+
+## Status: Presentation Maturity Phase
+
+This session focused exclusively on **system-wide UI polish and formatting consistency**.
+No new features were added.
+
+Primary goal: remove false precision, standardize currency formatting, and stabilize layout behavior across views and dashboard summaries.
+
+---
+
+# 💰 1. Currency Formatting Standardization (System-Wide)
+
+## Problem
+
+Currency values were inconsistently formatted:
+
+* Two decimal places displayed throughout the app (`$42,500.00`)
+* Duplicate `NumberFormatter` implementations across:
+
+  * `EstateReportGenerator`
+  * `BeneficiaryPacketPDFRenderer`
+  * `OutreachPacketPDFRenderer`
+* SwiftUI views used `.currency(code:)` directly, allowing decimals
+* Implicit false precision for advisory AI valuations
+
+This implied appraisal-level precision that LTC does not claim.
+
+---
+
+## Decision
+
+LTC now displays:
+
+* **Whole-dollar values only**
+* No cents anywhere in UI or PDFs
+* Consistent display across:
+
+  * SwiftUI views
+  * Estate Snapshot PDF
+  * Detailed Inventory PDF
+  * Outreach Packet
+  * Beneficiary Packet
+  * Executor packet components
+
+---
+
+## Implementation
+
+### 1️⃣ Centralized Currency Utility
+
+Introduced shared formatting utility (`CurrencyText` / `CurrencyFormat`) used by:
+
+* All SwiftUI views
+* All PDF renderers
+
+Removed duplicated `NumberFormatter` logic from:
+
+* `EstateReportGenerator`
+* `BeneficiaryPacketPDFRenderer`
+* `OutreachPacketPDFRenderer`
+
+All formatting now routes through a single source of truth.
+
+---
+
+### 2️⃣ SwiftUI View Updates
+
+Replaced patterns like:
+
+```swift
+Text(item.value, format: .currency(code: currencyCode))
+```
+
+With:
+
+```swift
+CurrencyText.view(item.value)
+```
+
+And replaced:
+
+```swift
+total.formatted(.currency(code: currencyCode))
+```
+
+With centralized formatting equivalents.
+
+Editable `TextField` currency inputs were updated to:
+
+* Integer-based bindings
+* `.precision(.fractionLength(0))`
+* `.numberPad` keyboard where appropriate
+
+---
+
+## Result
+
+* No false precision
+* Stable whole-dollar formatting
+* Professional advisory presentation
+* Single currency formatting source
+
+---
+
+# 🧭 2. Estate Dashboard — High-Value Liquidate Items Layout Refinement
+
+## Problem
+
+The High-Value Liquidate section suffered from:
+
+* Title column collapse (showing “P …”)
+* Value splitting across lines (`$42,50` + `0`)
+* Horizontal compression conflicts
+* Overly tight row structure
+
+This reduced readability and executive clarity.
+
+---
+
+## Design Change
+
+Re-architected `highValueItemRow(for:)`:
+
+### Old Layout
+
+```
+Thumbnail | Title/Category | Spacer | Value
+```
+
+This caused compression conflicts.
+
+### New Layout
+
+```
+Thumbnail | Title
+           Category
+           Value
+```
+
+Value now appears **beneath the description**, eliminating layout contention.
+
+---
+
+## Improvements
+
+* Larger thumbnail (56pt)
+* Title limited to 2 lines
+* Category single line
+* Value placed below description
+* Monospaced digits for visual stability
+* No horizontal squeeze behavior
+
+---
+
+## Result
+
+* Clean, stable dashboard layout
+* High-value items now read like curated highlights
+* Professional, executive-grade presentation
+* Responsive across device sizes
+
+---
+
+# 📌 Architectural State After This Pass
+
+LTC is now:
+
+* Feature complete (current phase)
+* Presentation stabilized
+* Currency precision standardized
+* PDF and UI formatting aligned
+* Layout compression issues resolved
+
+
+
+# ✅ Executor Master Packet v1 — COMPLETE
+
+**Status:** Production-ready (On-device generation)
+**Location:** Estate Dashboard → Export & Share → Executor Master Packet
+**Export Model:** ZIP Bundle (2 PDFs + optional media)
+**Philosophy:** Formal, operational export for executor / attorney / CPA use
+
+---
+
+## Purpose
+
+The **Executor Master Packet** provides a structured, professional-grade export suitable for:
+
+* Executor
+* Attorney
+* CPA
+* Estate planning review
+* Financial oversight
+
+It is designed to be:
+
+* Clear
+* Complete
+* Non-emotional
+* Operationally useful
+* Generated entirely on-device (no cloud dependency)
+
+---
+
+## What the Packet Contains (v1)
+
+### Always Included (Required)
+
+1. **ExecutorSnapshot.pdf**
+
+   * Estate totals
+   * Category summaries
+   * Disposition summary
+   * Beneficiary overview
+   * Top-valued assets
+   * Timestamp + advisory disclaimer
+
+2. **DetailedInventory.pdf**
+
+   * Full item list
+   * Category
+   * Quantity
+   * Estimated value
+   * Estate path (Legacy / Liquidate)
+   * Assigned beneficiary (if applicable)
+
+---
+
+### Optional Inclusions (User Toggles)
+
+* Audio recordings
+* Supporting documents
+* Images
+
+  * Primary images only (default)
+  * Full-resolution images (optional)
+
+Assets are included in structured subfolders inside the bundle:
+
+```
+ExecutorMasterPacket_<Name>_<YYYY-MM-DD>/
+    ExecutorSnapshot.pdf
+    DetailedInventory.pdf
+    Audio/
+    SupportingDocs/
+    Images/
+```
+
+---
+
+## Guardrails & Share Controls
+
+Export size is estimated before generation.
+
+Guardrails:
+
+* ≥ 50MB → Soft warning
+* ≥ 100MB → Strong warning
+* ≥ 250MB → Hard block
+
+Share intent options:
+
+* Mail / Messages
+* Files / AirDrop (allows explicit override of hard block)
+
+Preflight now includes realistic PDF size estimation (background generation).
+
+---
+
+## Architecture Notes
+
+Files added:
+
+* `ExecutorMasterPacketExportView.swift`
+* `ExecutorMasterPacketComposer.swift`
+* `ExecutorMasterPacketBundleBuilder.swift`
+
+Reuses:
+
+* `EstateReportGenerator`
+* `ExportSizeEstimator`
+* Existing guardrail and share infrastructure
+
+Pattern parity with:
+
+* Beneficiary Packet
+* Outreach Packet
+
+No schema changes required.
+
+No cloud dependency.
+
+---
+
+## Design Intent
+
+The Executor Master Packet represents the **most complete formal export in LTC v1**.
+
+It is not:
+
+* A contract
+* A formal appraisal
+* A binding estate plan
+
+It is:
+
+* An advisory estate state snapshot
+* A structured operational reference
+* A professional discussion document
+
+---
+
+## Production Gate Status
+
+* ✅ Beneficiary Packet v1 — Complete
+* ✅ Outreach Packet v1 — Complete
+* ✅ Executor Master Packet v1 — Complete
+
+Exports v1 feature set is now functionally complete.
+
+---
 
 ## Beneficiary Packet v1 (Family / Heirs)
 

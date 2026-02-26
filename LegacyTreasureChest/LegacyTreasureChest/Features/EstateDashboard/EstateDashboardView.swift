@@ -86,7 +86,7 @@ struct EstateDashboardView: View {
 
             VStack(alignment: .leading, spacing: Theme.spacing.medium) {
                 VStack(alignment: .leading, spacing: Theme.spacing.small) {
-                    Text(totalEstateValue, format: .currency(code: currencyCode))
+                    CurrencyText.view(totalEstateValue)
                         .font(Theme.titleFont)
                         .foregroundStyle(Theme.text)
 
@@ -160,8 +160,7 @@ struct EstateDashboardView: View {
                     .font(Theme.bodyFont.weight(.semibold))
                     .foregroundStyle(Theme.text)
                 Spacer()
-                Text(value, format: .currency(code: currencyCode))
-                    .font(Theme.bodyFont.weight(.semibold))
+                CurrencyText.view(value)                    .font(Theme.bodyFont.weight(.semibold))
                     .foregroundStyle(Theme.text)
             }
 
@@ -264,8 +263,7 @@ struct EstateDashboardView: View {
 
                         Spacer()
 
-                        Text(summary.totalValue, format: .currency(code: currencyCode))
-                            .font(Theme.bodyFont.weight(.semibold))
+                        CurrencyText.view(summary.totalValue)                            .font(Theme.bodyFont.weight(.semibold))
                             .foregroundStyle(Theme.text)
                     }
                     .padding(.vertical, 4)
@@ -312,18 +310,19 @@ struct EstateDashboardView: View {
         let unit = effectiveUnitValue(for: item)
         let total = unit * Double(qty)
 
-        return HStack(spacing: Theme.spacing.medium) {
+        return HStack(alignment: .top, spacing: Theme.spacing.medium) {
+            // Thumbnail
             if let firstImage = item.images.first,
                let uiImage = MediaStorage.loadImage(from: firstImage.filePath) {
                 Image(uiImage: uiImage)
                     .resizable()
                     .scaledToFill()
-                    .frame(width: 44, height: 44)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .frame(width: 56, height: 56)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             } else {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(Color(.secondarySystemBackground))
-                    .frame(width: 44, height: 44)
+                    .frame(width: 56, height: 56)
                     .overlay {
                         Image(systemName: "shippingbox")
                             .font(.system(size: 18))
@@ -331,39 +330,43 @@ struct EstateDashboardView: View {
                     }
             }
 
-            VStack(alignment: .leading, spacing: 4) {
+            // Text stack (title, category, value)
+            VStack(alignment: .leading, spacing: 6) {
                 Text(item.name)
                     .font(Theme.bodyFont)
                     .foregroundStyle(Theme.text)
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
 
-                if qty > 1 {
-                    Text("\(item.category) • ×\(qty)")
-                        .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.textSecondary)
-                } else {
-                    Text(item.category)
-                        .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.textSecondary)
+                Text(qty > 1 ? "\(item.category) • ×\(qty)" : item.category)
+                    .font(Theme.secondaryFont)
+                    .foregroundStyle(Theme.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                // Value shown under description (stable, no squeeze)
+                HStack(spacing: 8) {
+                    CurrencyText.view(total)
+                        .font(Theme.secondaryFont.weight(.semibold))
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(1)
+                        .monospacedDigit()
+
+                    if qty > 1 {
+                        Text("(\(CurrencyText.string(unit)) each)")
+                            .font(Theme.secondaryFont)
+                            .foregroundStyle(Theme.textSecondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
                 }
             }
-
-            Spacer()
-
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(total, format: .currency(code: currencyCode))
-                    .font(Theme.bodyFont.weight(.semibold))
-                    .foregroundStyle(Theme.text)
-
-                if qty > 1 {
-                    Text("\(unit, format: .currency(code: currencyCode)) each")
-                        .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.textSecondary)
-                }
-            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
     }
-
+    
     private var nextStepsSection: some View {
         Group {
             if let message = nextStepsMessage {

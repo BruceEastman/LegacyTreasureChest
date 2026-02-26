@@ -324,7 +324,7 @@ struct SetDetailView: View {
                     .foregroundStyle(Theme.textSecondary)
 
                 if item.value > 0 {
-                    Text(total, format: .currency(code: currencyCode))
+                    CurrencyText.view(total)
                         .font(Theme.secondaryFont)
                         .foregroundStyle(Theme.textSecondary)
                 }

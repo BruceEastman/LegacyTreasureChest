@@ -132,15 +132,18 @@ struct AddItemView: View {
 
                 TextField(
                     "Estimated Unit Value",
-                    value: $value,
-                    format: .currency(code: currencyCode)
+                    value: Binding<Int>(
+                        get: { Int((value ?? 0).rounded()) },
+                        set: { value = Double($0) }
+                    ),
+                    format: .currency(code: currencyCode).precision(.fractionLength(0))
                 )
-                .keyboardType(.decimalPad)
-
+                .keyboardType(.numberPad)
+                
                 if quantity > 1 {
                     let unit = max(value ?? 0, 0)
                     let total = unit * Double(quantity)
-                    Text("Total: \(total, format: .currency(code: currencyCode)) (\(unit, format: .currency(code: currencyCode)) each)")
+                    Text("Total: \(CurrencyFormat.dollars(total)) (\(CurrencyFormat.dollars(unit)) each)")
                         .font(Theme.secondaryFont)
                         .foregroundStyle(Theme.textSecondary)
                 }

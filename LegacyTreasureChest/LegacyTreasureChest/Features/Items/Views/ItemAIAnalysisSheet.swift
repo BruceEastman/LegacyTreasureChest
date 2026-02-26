@@ -158,7 +158,7 @@ struct ItemAIAnalysisSheet: View {
 
                 if item.value > 0 {
                     let currencyCode = Locale.current.currency?.identifier ?? "USD"
-                    Text(item.value, format: .currency(code: currencyCode))
+                    CurrencyText.view(item.value)
                         .font(Theme.secondaryFont)
                         .foregroundStyle(Theme.textSecondary)
                 }

@@ -60,7 +60,7 @@ struct BatchListView: View {
                                     .foregroundStyle(.secondary)
                             }
 
-                            Text(value, format: .currency(code: currencyCode))
+                            CurrencyText.view(value)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
 
@@ -367,8 +367,7 @@ private struct BatchDetailView: View {
                                 let readiness = lotReadinessCounts(group.key)
 
                                 HStack(spacing: 12) {
-                                    Text(value, format: .currency(code: currencyCode))
-                                        .font(.caption)
+                                    CurrencyText.view(value)                                        .font(.caption)
                                         .foregroundStyle(.secondary)
 
                                     Text("Decisions: \(readiness.decided)/\(readiness.total)")
@@ -804,7 +803,7 @@ private struct LotDetailView: View {
                 LabeledContent("Sets", value: "\(setsInLot.count)")
 
                 LabeledContent("Estimated Value (individual items only)") {
-                    Text(lotItemValue, format: .currency(code: currencyCode))
+                    CurrencyText.view(lotItemValue)
                 }
 
                 LabeledContent("Decisions") {

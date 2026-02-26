@@ -743,17 +743,10 @@ enum EstateReportGenerator {
 
     // MARK: - Formatting Helpers
 
-    private static let currencyFormatter: NumberFormatter = {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.locale = Locale.current
-        return formatter
-    }()
-
     private static func currencyString(_ value: Double) -> String {
-        currencyFormatter.string(from: NSNumber(value: value)) ?? String(format: "$%.2f", value)
+        CurrencyFormat.dollars(value)
     }
-
+    
     private static func percentString(_ share: Double) -> String {
         let percent = Int((share * 100).rounded())
         return "\(percent)%"
