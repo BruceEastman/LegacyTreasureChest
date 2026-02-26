@@ -1,5 +1,40 @@
 # Legacy Treasure Chest
 
+
+---
+
+## 2026-02-26 — AI Analysis Hardening Pass (Frontend + Backend)
+
+### Summary
+
+Production hardening of AI analysis workflow after real-world usage surfaced intermittent 502 failures from Gemini response validation.
+
+### Backend Improvements
+
+- Fixed schema repair issue in `/ai/analyze-item-photo`.
+- Coerced `style` field from `[String]` → `String` before `ItemAnalysis` validation.
+- Eliminates repeat 502 failures caused by valid but mismatched Gemini output.
+- No architectural changes; minimal normalization layer hardening.
+
+### Frontend Improvements
+
+Unified graceful failure handling across:
+
+- Add Item with AI
+- Batch Add Items from Photos
+- Item AI Analysis Sheet
+
+Changes:
+- Removed raw backend `HTTP 502` body text from UI.
+- Added user-friendly error message.
+- Added controlled **“Try Again”** button.
+- Maintains advisor-not-operator principle (no automatic retries).
+
+### Result
+
+- AI analysis failures are now recoverable.
+- No sensitive backend details exposed to end users.
+- UX is resilient without expanding system complexity
 ---
 
 # 🔄 2026-02-25 — UI Refinement Pass v1.1 (Currency & Dashboard Stabilization)
