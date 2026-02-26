@@ -203,6 +203,19 @@ struct AddItemWithAIView: View {
                     Text(errorMessage)
                         .foregroundStyle(Theme.destructive)
                         .font(Theme.secondaryFont)
+
+                    if !isAnalyzing {
+                        Button(action: {
+                            Task {
+                                await runAnalysis()
+                            }
+                        }) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "arrow.clockwise")
+                                Text("Try Again")
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -260,12 +273,16 @@ struct AddItemWithAIView: View {
             analysisResult = result
             applyAnalysisToForm(result)
         } catch {
-            errorMessage = error.localizedDescription
+            // Log full error for debugging
+            print("AI analysis error:", error)
+
+            // User-friendly message (no raw 502 text)
+            errorMessage = "AI analysis didn’t succeed this time. Nothing was saved. Please try again."
         }
 
         isAnalyzing = false
     }
-
+    
     private func applyAnalysisToForm(_ analysis: ItemAnalysis) {
         // Populate form fields from AI results, but let the user edit them.
         if name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {

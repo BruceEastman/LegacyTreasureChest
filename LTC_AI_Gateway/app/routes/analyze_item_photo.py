@@ -1776,8 +1776,21 @@ async def analyze_item_photo(payload: AnalyzeItemPhotoRequest) -> ItemAnalysis:
 
     normalized = _normalize_item_analysis_json(raw_json)
 
+    def _coerce_item_analysis_style_field(json_str: str) -> str:
+        # Gemini sometimes emits `style` as a list of tags; our schema expects a string.
+        # Keep this local and minimal to avoid changing the model or wider pipeline.
+        try:
+            obj = json.loads(json_str)
+            style = obj.get("style")
+            if isinstance(style, list):
+                obj["style"] = " · ".join(str(s).strip() for s in style if str(s).strip())
+                return json.dumps(obj, ensure_ascii=False)
+        except Exception:
+            pass
+        return json_str
+
     try:
-        analysis = ItemAnalysis.model_validate_json(normalized)
+        analysis = ItemAnalysis.model_validate_json(_coerce_item_analysis_style_field(normalized))
     except ValidationError as ve:
         # One repair attempt with explicit error context
         try:
@@ -1791,7 +1804,7 @@ async def analyze_item_photo(payload: AnalyzeItemPhotoRequest) -> ItemAnalysis:
                 image_base64=payload.imageJpegBase64,
             )
             repaired_norm = _normalize_item_analysis_json(repaired)
-            analysis = ItemAnalysis.model_validate_json(repaired_norm)
+            analysis = ItemAnalysis.model_validate_json(_coerce_item_analysis_style_field(repaired_norm))
         except Exception as exc:  # noqa: BLE001
             logger.exception("Gemini repair attempt failed in /ai/analyze-item-photo")
             raise HTTPException(
@@ -1807,7 +1820,6 @@ async def analyze_item_photo(payload: AnalyzeItemPhotoRequest) -> ItemAnalysis:
 
     analysis = _apply_value_policy(analysis)
     return analysis
-
 
 @router.post("/analyze-item-text", response_model=ItemAnalysis)
 async def analyze_item_text(payload: dict) -> ItemAnalysis:

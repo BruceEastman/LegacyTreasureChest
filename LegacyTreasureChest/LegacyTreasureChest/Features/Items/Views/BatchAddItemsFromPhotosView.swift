@@ -172,10 +172,24 @@ struct BatchAddItemsFromPhotosView: View {
                                 .font(Theme.secondaryFont)
                                 .foregroundStyle(Theme.textSecondary)
                         }
-                    } else if let error = draft.errorMessage {
-                        Text("Analysis failed: \(error)")
-                            .font(Theme.secondaryFont)
-                            .foregroundStyle(Theme.destructive)
+                    } else if draft.errorMessage != nil {
+                        VStack(alignment: .leading, spacing: Theme.spacing.small) {
+                            Text("AI analysis didn’t succeed. Nothing was saved.")
+                                .font(Theme.secondaryFont)
+                                .foregroundStyle(Theme.destructive)
+
+                            Button(action: {
+                                Task {
+                                    await analyzeDraft(at: index)
+                                }
+                            }) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "arrow.clockwise")
+                                    Text("Try Again")
+                                }
+                                .font(Theme.secondaryFont)
+                            }
+                        }
                     } else {
                         Text("Waiting for analysis…")
                             .font(Theme.secondaryFont)
@@ -258,12 +272,14 @@ struct BatchAddItemsFromPhotosView: View {
             let result = try await AIService.shared.analyzeItemPhoto(image, hints: hints)
             drafts[index].analysis = result
         } catch {
-            drafts[index].errorMessage = error.localizedDescription
+            // Keep full detail for debugging, but show a user-friendly message in the UI.
+            print("Batch analyzeItemPhoto failed:", error)
+            drafts[index].errorMessage = "AI analysis didn’t succeed this time. Nothing was saved. Tap Try Again."
         }
 
         drafts[index].isAnalyzing = false
     }
-
+    
     // MARK: - Import
 
     private func importSelectedDrafts() async {

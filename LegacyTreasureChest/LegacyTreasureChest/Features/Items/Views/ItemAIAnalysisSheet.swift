@@ -64,13 +64,26 @@ struct ItemAIAnalysisSheet: View {
                     analyzeButton
 
                     if let errorMessage {
-                        Text(errorMessage)
-                            .font(Theme.secondaryFont)
-                            .foregroundStyle(Theme.destructive)
-                            .padding()
-                            .ltcCardBackground()
-                    }
+                        VStack(alignment: .leading, spacing: Theme.spacing.small) {
+                            Text(errorMessage)
+                                .font(Theme.secondaryFont)
+                                .foregroundStyle(Theme.destructive)
 
+                            if !isAnalyzing {
+                                Button(action: {
+                                    Task { await runAnalysis() }
+                                }) {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "arrow.clockwise")
+                                        Text("Try Again")
+                                            .font(Theme.secondaryFont.weight(.semibold))
+                                    }
+                                }
+                            }
+                        }
+                        .padding()
+                        .ltcCardBackground()
+                    }
                     if let result = analysisResult {
                         analysisCard(result)
 
@@ -601,17 +614,20 @@ struct ItemAIAnalysisSheet: View {
                 analysisResult = result
             }
         } catch {
+            // Keep full detail for debugging, but avoid surfacing raw 502/body in the UI.
+            print("ItemAIAnalysisSheet runAnalysis error:", error)
+
             let message = error.localizedDescription
             if message.contains("/ai/analyze-item-text") || message.contains("404") {
-                errorMessage = "Text-only analysis isn’t enabled on the backend yet. Add the /ai/analyze-item-text endpoint, then try again. Photo analysis will continue to work."
+                errorMessage = "Text-only analysis isn’t enabled on the backend yet. Photo analysis will continue to work."
             } else {
-                errorMessage = message
+                errorMessage = "AI analysis didn’t succeed this time. Nothing was saved. Please try again."
             }
         }
 
         isAnalyzing = false
     }
-
+    
     private func applyAnalysis(_ analysis: ItemAnalysis) {
         item.name = analysis.title
         item.category = analysis.category
