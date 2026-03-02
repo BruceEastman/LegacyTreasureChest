@@ -335,13 +335,6 @@ struct ItemDetailView: View {
                 }
             }
 
-            // MARK: - Footer
-            Section { EmptyView() } footer: {
-                Text("You can add photos, documents, audio stories, and beneficiaries from their sections below.")
-                    .font(Theme.secondaryFont)
-                    .foregroundStyle(Theme.textSecondary)
-                    .padding(.top, Theme.spacing.small)
-            }
         }
         .scrollContentBackground(.hidden)
         .background(Theme.background)

@@ -532,7 +532,7 @@ struct EstateDashboardView: View {
                             Text("Detailed Inventory Report")
                                 .font(Theme.bodyFont.weight(.semibold))
                                 .foregroundStyle(Theme.text)
-                            Text("Full item list with path and beneficiary")
+                            Text("Complete inventory with disposition and beneficiaries")
                                 .font(Theme.secondaryFont)
                                 .foregroundStyle(Theme.textSecondary)
                         }

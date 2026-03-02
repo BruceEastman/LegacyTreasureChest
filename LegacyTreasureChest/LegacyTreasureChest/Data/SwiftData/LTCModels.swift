@@ -1295,4 +1295,19 @@ extension LTCItem {
         "Decor",
         "Other"
     ]
+    static func normalizeCategory(_ raw: String?) -> String {
+        let trimmed = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "Uncategorized" }
+
+        // Exact match
+        if baseCategories.contains(trimmed) { return trimmed }
+
+        // Case-insensitive match (e.g., "electronics" -> "Electronics")
+        if let matched = baseCategories.first(where: { $0.caseInsensitiveCompare(trimmed) == .orderedSame }) {
+            return matched
+        }
+
+        // Do not create new categories from AI output
+        return "Uncategorized"
+    }
 }

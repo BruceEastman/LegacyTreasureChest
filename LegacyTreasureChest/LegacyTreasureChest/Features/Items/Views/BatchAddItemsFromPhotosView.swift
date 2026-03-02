@@ -353,7 +353,7 @@ struct BatchAddItemsFromPhotosView: View {
         let item = LTCItem(
             name: analysis.title,
             itemDescription: fullDescription,
-            category: analysis.category,
+            category: LTCItem.normalizeCategory(analysis.category),
             value: 0,
             quantity: 1
         )

@@ -307,9 +307,6 @@ private struct BatchDetailView: View {
                     Text(batch.updatedAt, style: .date)
                 }
 
-                Text("Status, Sale Type, and Venue are now constrained to safe pickers to prevent typos and keep downstream logic reliable.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
             }
 
             Section("Contents") {
@@ -474,12 +471,6 @@ private struct BatchDetailView: View {
                     }
                     .onDelete(perform: deleteBatchSets)
                 }
-            }
-
-            Section("Scope Builder") {
-                Text("Coming next: bulk tools for lot assignment (multi-select, recent lots, and staging checklists).")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
             }
         }
         .navigationTitle(batch.name.isEmpty ? "Batch" : batch.name)
