@@ -90,6 +90,11 @@ struct ItemDocumentsSection: View {
                     .foregroundStyle(Theme.textSecondary)
             }
 
+            Text("Tip: Use your iPhone’s built-in scanner in Notes or Files to create a PDF, then attach it here.")
+                .font(Theme.secondaryFont)
+                .foregroundStyle(Theme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
             Button {
                 isImporterPresented = true
             } label: {
@@ -104,7 +109,6 @@ struct ItemDocumentsSection: View {
         }
         .padding(.vertical, 4)
     }
-
     // MARK: - Populated State
 
     private var populatedStateContent: some View {

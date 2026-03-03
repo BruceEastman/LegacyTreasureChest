@@ -26,7 +26,7 @@ Empower users (primarily Boomers) to:
 
 **AI Integration:**
 - **Apple Intelligence** (on-device, primary): Audio transcription, writing enhancement
-- **Gemini 2.0 Flash** (cloud, optional): Image analysis, marketplace listings
+- **Gemini 2.5** (cloud, optional): Image analysis, marketplace listings
 - Privacy-first: User controls via feature flags
 
 ## Core Modules

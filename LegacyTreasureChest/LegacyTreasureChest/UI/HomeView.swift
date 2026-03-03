@@ -81,7 +81,7 @@ struct HomeView: View {
                 .padding(.horizontal, Theme.spacing.xl)
                 .padding(.top, Theme.spacing.small)
 
-                // MARK: – Sets (NEW)
+                // MARK: – Sets
 
                 NavigationLink {
                     SetsListView()
@@ -97,13 +97,34 @@ struct HomeView: View {
                 .padding(.horizontal, Theme.spacing.xl)
                 .padding(.top, Theme.spacing.small)
 
-                // MARK: – Tools & Labs
+                // MARK: – Getting Started & Help (user-facing)
 
+                NavigationLink {
+                    HelpView()
+                } label: {
+                    Text("Getting Started & Help")
+                        .font(Theme.bodyFont.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Theme.accent.opacity(0.18))
+                        .foregroundStyle(Theme.text)
+                        .cornerRadius(16)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .strokeBorder(Theme.accent.opacity(0.35), lineWidth: 1)
+                        )
+                }
+                .padding(.horizontal, Theme.spacing.xl)
+                .padding(.top, Theme.spacing.small)
+
+                // MARK: – Internal Tools & Labs (DEBUG only)
+
+                #if DEBUG
                 VStack(alignment: .leading, spacing: Theme.spacing.small) {
                     Text("Tools & Labs")
                         .ltcSectionHeaderStyle()
 
-                    // Estate Reports entry point
+                    // Estate Reports entry point (debug convenience)
                     NavigationLink {
                         EstateReportsView()
                     } label: {
@@ -120,7 +141,6 @@ struct HomeView: View {
                         .ltcCardBackground()
                     }
 
-                    #if DEBUG
                     // AI Test Lab
                     NavigationLink {
                         AITestView()
@@ -137,9 +157,7 @@ struct HomeView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .ltcCardBackground()
                     }
-                    #endif
 
-                    #if DEBUG
                     // Liquidate Sandbox (debug)
                     NavigationLink {
                         LiquidateSandboxView()
@@ -173,9 +191,7 @@ struct HomeView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .ltcCardBackground()
                     }
-                    #endif
 
-                    #if DEBUG
                     // Developer-only reset tool
                     VStack(alignment: .leading, spacing: Theme.spacing.small) {
                         Button {
@@ -199,10 +215,10 @@ struct HomeView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(.top, Theme.spacing.small)
-                    #endif
                 }
                 .padding(.horizontal, Theme.spacing.xl)
                 .padding(.top, Theme.spacing.medium)
+                #endif
 
                 if let message = resetErrorMessage {
                     Text(message)

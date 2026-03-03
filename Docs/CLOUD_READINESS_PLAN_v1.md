@@ -120,7 +120,7 @@ Quota tracking will be:
 
 #### Default Daily Limits
 
-* AI calls: 50/day/device
+* AI calls: 200/day/device
 * Places searches: 30/day/device
 
 Response when exceeded:
