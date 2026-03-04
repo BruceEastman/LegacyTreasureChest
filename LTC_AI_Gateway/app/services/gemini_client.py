@@ -10,15 +10,34 @@ from app.utils.json_cleaner import clean_llm_json
 
 load_dotenv()
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+def _sanitize_env(name: str, value: Optional[str]) -> str:
+    """
+    Secrets/env vars sometimes include trailing newlines (very common with Secret Manager or copy/paste).
+    For URL-building inputs, we strip whitespace/newlines and reject non-printable characters.
+    """
+    v = (value or "").strip()
+    if not v:
+        return ""
+
+    # Reject non-printable ASCII/control chars (includes newline if somehow still present)
+    # This prevents httpx.InvalidURL and makes failures obvious in logs.
+    for ch in v:
+        if ord(ch) < 32 or ord(ch) == 127:
+            raise RuntimeError(f"{name} contains a non-printable character (e.g., newline).")
+    return v
+
+
+GEMINI_API_KEY = _sanitize_env("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY"))
 # Allow overriding the model via environment, default to a stable flash model.
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-exp")
+GEMINI_MODEL = _sanitize_env("GEMINI_MODEL", os.getenv("GEMINI_MODEL", "gemini-2.0-flash-exp"))
 
 if not GEMINI_API_KEY:
-    raise RuntimeError("GEMINI_API_KEY is not set in environment (.env)")
+    raise RuntimeError("GEMINI_API_KEY is not set in environment (.env / Secret Manager)")
 
 
 def _gemini_url() -> str:
+    # Build a URL with sanitized values (no whitespace/newlines).
     return (
         "https://generativelanguage.googleapis.com/v1beta/models/"
         f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
@@ -26,7 +45,6 @@ def _gemini_url() -> str:
 
 
 async def _post_gemini(payload: Dict[str, Any]) -> str:
-    import json
     import asyncio
 
     url = _gemini_url()
@@ -76,6 +94,7 @@ async def _post_gemini(payload: Dict[str, Any]) -> str:
     if last_exc:
         raise last_exc
     raise RuntimeError("Gemini call failed for unknown reasons.")
+
 
 async def _post_gemini_text(payload: Dict[str, Any]) -> str:
     """
@@ -147,6 +166,7 @@ async def call_gemini_for_audio_summary(*, prompt: str, audio_base64: str, mime_
     }
 
     return await _post_gemini_text(payload)
+
 
 async def call_gemini_for_item_analysis(*, prompt: str, image_base64: str) -> str:
     """Call Gemini with an image + prompt and return cleaned JSON text."""
