@@ -15,11 +15,29 @@ struct BackendAIProvider: AIProvider {
     let baseURL: URL
     private let urlSession: URLSession
 
-    private static var defaultBaseURL: URL {
+    /// Cloud Run base URL (Release/TestFlight default)
+    private static var cloudBaseURL: URL {
+        URL(string: "https://ltc-ai-gateway-530541590215.us-west1.run.app")!
+    }
+
+    /// Local dev base URL (Debug default)
+    private static var localDevBaseURL: URL {
         #if targetEnvironment(simulator)
         return URL(string: "http://127.0.0.1:8000")!
         #else
+        // Your Mac on the LAN when running FastAPI locally
         return URL(string: "http://192.168.4.27:8000")!
+        #endif
+    }
+
+    /// Default selection:
+    /// - Debug: local dev server (simulator/device)
+    /// - Release: Cloud Run
+    private static var defaultBaseURL: URL {
+        #if DEBUG
+        return localDevBaseURL
+        #else
+        return cloudBaseURL
         #endif
     }
 

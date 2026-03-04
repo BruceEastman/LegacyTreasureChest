@@ -1,5 +1,353 @@
 # Legacy Treasure Chest
 
+# 🚀 Step 3B — Cloud Run Deployment Complete (LTC_AI_Gateway)
+
+**Status:** ✅ Production Cloud Backend Live
+**Date:** 2026-03-04
+**Scope:** Cloud externalization of FastAPI backend
+**Philosophy Preserved:** Stateless, advisory-only, no user accounts, no server-side storage
+
+---
+
+## 1. Cloud Architecture Achieved
+
+Legacy Treasure Chest now runs its AI backend on **Google Cloud Run**.
+
+### Production Service
+
+```
+Service Name: ltc-ai-gateway
+Region: us-west1
+URL: https://ltc-ai-gateway-530541590215.us-west1.run.app
+Health Endpoint: /health
+```
+
+Health check verified:
+
+```
+HTTP 200
+{"status":"ok"}
+```
+
+This confirms:
+
+* Container builds correctly
+* Secrets injected successfully
+* Runtime environment stable
+* Public invocation working
+
+---
+
+## 2. Infrastructure Decisions (Locked)
+
+### Cloud Provider
+
+* Google Cloud Platform
+* Cloud Run (fully managed, stateless)
+
+### Backend Design
+
+* FastAPI
+* Uvicorn container
+* No database
+* No user authentication (TestFlight phase)
+* No server-side item storage
+* Stateless request/response model
+
+### Container Strategy
+
+* `gcloud run deploy --source=.` flow
+* Artifact Registry (Docker)
+* Cloud Build for container builds
+
+---
+
+## 3. Security Model
+
+### Secret Management
+
+All sensitive keys moved to **Secret Manager**:
+
+| Secret Name                 | Injected As             |
+| --------------------------- | ----------------------- |
+| `ltc-gemini-api-key`        | `GEMINI_API_KEY`        |
+| `ltc-google-places-api-key` | `GOOGLE_PLACES_API_KEY` |
+
+Secrets are:
+
+* Not stored in repo
+* Not stored in container
+* Injected at runtime only
+
+---
+
+### Org Policy Override (Project-Scoped)
+
+To allow public Cloud Run invocation:
+
+Project-level overrides applied for:
+
+* `iam.allowedPolicyMemberDomains`
+* `iam.managed.allowedPolicyMembers`
+
+This allows:
+
+```
+allUsers → roles/run.invoker
+```
+
+Only for project:
+
+```
+legacy-treasure-chest
+```
+
+No org-wide weakening of security.
+
+---
+
+## 4. IAM Permissions Stabilized
+
+Resolved required service account permissions for:
+
+* Cloud Build → push to Artifact Registry
+* Compute SA → read source zips + write logs
+* Cloud Run service agent → push images
+* Secret Manager access at runtime
+
+All required IAM bindings are now correctly configured.
+
+---
+
+## 5. Public Invocation Enabled
+
+Cloud Run service is publicly callable:
+
+```
+allUsers → roles/run.invoker
+```
+
+This allows:
+
+* iOS device calls
+* TestFlight distribution
+* No auth flow required (v1 constraint preserved)
+
+---
+
+## 6. Budget & Cost Controls
+
+Budget created: **$50 alert**
+
+Environment guardrails:
+
+* `LTC_AI_PER_MINUTE_LIMIT`
+* Kill switches:
+
+  * `LTC_DISABLE_ALL_AI`
+  * `LTC_DISABLE_GEMINI`
+  * `LTC_DISABLE_PLACES`
+
+Cloud Run limits:
+
+* Concurrency: 20
+* Min instances: 0
+* Max instances: 2
+
+Note:
+
+> In-memory rate limiting resets on cold start (acceptable for v1).
+
+---
+
+## 7. iOS Integration Updated
+
+`BackendAIProvider.swift` updated with build-configuration routing:
+
+| Build Type           | Backend       |
+| -------------------- | ------------- |
+| Debug                | Local FastAPI |
+| Release / TestFlight | Cloud Run     |
+
+This enables:
+
+* Local dev workflow unchanged
+* Cloud demo capability from physical iPhone
+* Clean separation of environments
+
+No runtime toggle UI required.
+
+---
+
+## 8. Current Production State
+
+LTC now has:
+
+* ✅ Live cloud backend
+* ✅ Secret-managed AI keys
+* ✅ Public HTTP endpoint
+* ✅ Budget alerts
+* ✅ Health monitoring
+* ✅ Device-ready demo capability
+
+This marks transition from:
+
+> “Local-only development system”
+> to
+> “Externally callable cloud-backed AI system”
+
+---
+
+# 🔜 What This Unlocks
+
+Now possible:
+
+* TestFlight external distribution
+* Real-device cloud demo
+* Controlled external trials
+* Quota & usage monitoring
+* Gradual auth layer introduction (future)
+* Rate limiting hardening (future)
+* Monitoring & structured logging expansion
+
+---
+
+# ⚙️ Documentation Files To Update
+
+You likely want to update:
+
+1. `README.md` (top section summary)
+2. `CLOUD_READINESS_PLAN_v1.md`
+3. `ARCHITECTURE.md`
+4. `EXTERNALIZATION_PLAN_v1_3.md`
+5. `ROADMAP.md` (mark Step 3B complete)
+
+---
+
+If you’d like, I can now:
+
+* Produce a **separate architecture delta section**
+* Or produce a **Cloud Run deployment appendix**
+* Or prepare a clean **“Cloud Externalization Gate Complete” milestone entry**
+* Or help define the next logical production gate
+
+This was a major structural shift for LTC. You handled a full DevOps cycle end-to-end.
+
+
+# 🟢 Production Readiness – Phase 1 Complete 3-2-2025
+
+## Step 2 – In-App Help & Executor Clarity
+
+**Status:** Complete
+**Scope:** UI + Copy Only
+**Backend Changes:** None
+**Architecture Changes:** None
+
+---
+
+## Objective
+
+Strengthen first-time user clarity and executor confidence prior to cloud deployment and TestFlight preparation.
+
+This phase focused on eliminating ambiguity in:
+
+* How to start using LTC
+* What the system does (and does not do)
+* How to attach critical documentation
+* How scanning works in a practical, non-technical way
+
+---
+
+## Implemented
+
+### 1️⃣ Home Screen Improvements
+
+* Added **“Getting Started & Help”** card to Home (user-facing).
+* Positioned as a primary support surface (not inside internal Tools).
+* Styled distinctly from workflow actions (e.g., Sets).
+
+---
+
+### 2️⃣ HelpView.swift (Executor-Focused Help)
+
+Structured in action-first order:
+
+1. **Getting Started (First 5 Minutes)**
+
+   * Explicit instruction to tap “View Your Items”
+   * Inline icon guidance for:
+
+     * Photo-based add
+     * * button add
+2. **Recommended Workflow**
+
+   * Clean, numbered estate progression
+3. **What This App Is**
+4. **What This App Is Not**
+5. **Scanning & Documents**
+
+   * Dedicated navigation to deeper guidance
+6. **Advisor Philosophy**
+
+Tone: calm, professional, non-marketing.
+
+---
+
+### 3️⃣ ScannerHelpView.swift (Dedicated Help Screen)
+
+Created separate screen to reduce cognitive overload.
+
+Clarifies:
+
+* When documents matter
+* Simple attach flow
+* Optional folder + naming structure (LTC Documents)
+* Practical scanning technique tips
+* How to move misfiled PDFs
+
+Positioned as guidance — not required system behavior.
+
+---
+
+### 4️⃣ Contextual Microcopy (ItemDocumentsSection)
+
+Added empty-state guidance:
+
+> Tip: Use your iPhone’s built-in scanner in Notes or Files to create a PDF, then attach it here.
+
+This reduces friction at the moment of action rather than relying solely on Help navigation.
+
+---
+
+## Design Philosophy Reinforced
+
+* Advisor, not operator
+* No automation of external systems
+* No silent cloud storage
+* No feature creep
+* Executor-grade clarity over feature density
+
+---
+
+## Why This Phase Matters
+
+Before moving to cloud deployment and TestFlight:
+
+* First-time user experience must be calm and obvious.
+* Documentation capture (receipts, appraisals, provenance) must feel manageable.
+* Executor trust must be established through clarity and structure.
+
+This phase meaningfully reduces onboarding friction without increasing technical complexity.
+
+---
+
+## Production Readiness Status
+
+Phase 1: User Clarity & Help
+→ **Complete**
+
+Next milestone:
+Cloud externalization preparation and TestFlight readiness.
 
 ---
 
