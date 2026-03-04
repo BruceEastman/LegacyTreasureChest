@@ -11,14 +11,27 @@ import Foundation
 // MARK: - AIError
 
 /// Errors specific to the AI layer (separate from AppError).
+/// Step 4 adds normalized, user-safe network/backend error cases.
 enum AIError: LocalizedError, Sendable {
     case providerNotConfigured
     case featureDisabled(String)
     case invalidRequest(String)
+
+    // Legacy (kept, but should not contain raw server content)
     case invalidResponse(String)
     case decodingFailed(String)
+
     case imageEncodingFailed
     case notImplementedYet(String)
+
+    // Step 4 normalized cases (user-safe)
+    case offline(requestID: String)
+    case timeout(requestID: String)
+    case rateLimited(requestID: String)
+    case temporarilyUnavailable(requestID: String)   // kill switch / 503
+    case serviceUnavailable(requestID: String)       // backend down / 5xx / transport
+    case unexpectedResponse(requestID: String)       // decode mismatch, empty body, etc.
+
     case underlying(Error)
 
     var errorDescription: String? {
@@ -29,20 +42,39 @@ enum AIError: LocalizedError, Sendable {
             return "AI feature is disabled: \(message)"
         case .invalidRequest(let message):
             return "AI request is invalid: \(message)"
-        case .invalidResponse(let message):
-            return "Unexpected AI response: \(message)"
-        case .decodingFailed(let message):
-            return "Failed to decode AI response: \(message)"
+        case .invalidResponse:
+            // Avoid leaking internal details (Step 4)
+            return "We couldn’t complete that request."
+        case .decodingFailed:
+            // Avoid leaking internal details (Step 4)
+            return "We couldn’t understand the response from the AI service."
         case .imageEncodingFailed:
             return "Unable to encode image data for AI."
         case .notImplementedYet(let message):
             return "This AI feature is unavailable right now: \(message)"
+
+        case .offline(let requestID):
+            return "You appear to be offline. (Ref: \(short(requestID)))"
+        case .timeout(let requestID):
+            return "That took too long. Please try again. (Ref: \(short(requestID)))"
+        case .rateLimited(let requestID):
+            return "Too many requests in a short time. Please wait a moment. (Ref: \(short(requestID)))"
+        case .temporarilyUnavailable(let requestID):
+            return "AI is temporarily unavailable. Please try again soon. (Ref: \(short(requestID)))"
+        case .serviceUnavailable(let requestID):
+            return "The AI service is currently unavailable. Please try again. (Ref: \(short(requestID)))"
+        case .unexpectedResponse(let requestID):
+            return "We hit an unexpected response. Please try again. (Ref: \(short(requestID)))"
+
         case .underlying(let error):
             return error.localizedDescription
         }
     }
-}
 
+    private func short(_ id: String) -> String {
+        String(id.prefix(8))
+    }
+}
 // MARK: - Item Hints
 
 /// Optional hints we can send along with an item photo to guide the model.

@@ -73,7 +73,6 @@ struct BackendAIProvider: AIProvider {
     func analyzeItemText(
         hints: ItemAIHints
     ) async throws -> ItemAnalysis {
-        // New endpoint (additive; does not change existing behavior)
         let requestBody = AnalyzeItemTextRequest(hints: hints)
 
         let response: ItemAnalysis = try await postJSON(
@@ -146,42 +145,165 @@ struct BackendAIProvider: AIProvider {
         let trimmedPath = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let url = baseURL.appendingPathComponent(trimmedPath)
 
+        let requestID = UUID().uuidString
+
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        request.timeoutInterval = 35  // predictable, conservative
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        // Headers discipline
+        request.setValue(LTCDeviceIdentity.deviceID(), forHTTPHeaderField: "X-LTC-Device-ID")
+        request.setValue(requestID, forHTTPHeaderField: "X-Request-ID")
 
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         request.httpBody = try encoder.encode(body)
 
-        let (data, response) = try await urlSession.data(for: request)
+        // Conservative retry policy: at most 1 retry on transient failures.
+        let maxAttempts = 2
+        var lastError: Error?
 
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw AIError.invalidResponse("No HTTPURLResponse received from backend.")
+        for attempt in 1...maxAttempts {
+            do {
+                let (data, response) = try await urlSession.data(for: request)
+
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    throw AIError.unexpectedResponse(requestID: requestID)
+                }
+
+                let responseRequestID =
+                    httpResponse.value(forHTTPHeaderField: "X-Request-ID") ??
+                    httpResponse.value(forHTTPHeaderField: "x-request-id") ??
+                    requestID
+
+                if (200..<300).contains(httpResponse.statusCode) {
+                    guard !data.isEmpty else {
+                        throw AIError.unexpectedResponse(requestID: responseRequestID)
+                    }
+
+                    let decoder = makeLenientISO8601Decoder()
+                    do {
+                        return try decoder.decode(ResponseBody.self, from: data)
+                    } catch {
+                        // No raw body leakage to user
+                        #if DEBUG
+                        let bodyPreview = String(data: data, encoding: .utf8) ?? "<non-UTF8 body>"
+                        print("⚠️ Backend decode failed [\(responseRequestID)] \(url.absoluteString)\n\(bodyPreview)")
+                        #endif
+                        throw AIError.unexpectedResponse(requestID: responseRequestID)
+                    }
+                }
+
+                // Non-2xx handling (normalized)
+                let status = httpResponse.statusCode
+
+                // Try to detect a structured server error (best-effort, not required)
+                let envelope = decodeErrorEnvelope(from: data)
+
+                // Kill switch / temporarily disabled (server-side)
+                if status == 503 {
+                    throw AIError.temporarilyUnavailable(requestID: responseRequestID)
+                }
+
+                if status == 429 {
+                    throw AIError.rateLimited(requestID: responseRequestID)
+                }
+
+                // Transient backend errors: allow retry on 502/503 only
+                if (status == 502 || status == 503),
+                   attempt < maxAttempts {
+                    try await backoffSleep(forAttempt: attempt)
+                    continue
+                }
+
+                // Other cases: map to “service unavailable” (calm, non-technical)
+                #if DEBUG
+                if let env = envelope {
+                    print("⚠️ Backend error [\(responseRequestID)] HTTP \(status): \(env.debugSummary)")
+                } else {
+                    let bodyPreview = String(data: data, encoding: .utf8) ?? "<non-UTF8 body>"
+                    print("⚠️ Backend error [\(responseRequestID)] HTTP \(status)\n\(bodyPreview)")
+                }
+                #endif
+
+                throw AIError.serviceUnavailable(requestID: responseRequestID)
+
+            } catch {
+                lastError = error
+
+                // If already normalized, do not wrap
+                if let ai = error as? AIError { throw ai }
+
+                // Transport error normalization
+                if let urlError = error as? URLError {
+                    // Offline: never retry
+                    if urlError.code == .notConnectedToInternet {
+                        throw AIError.offline(requestID: requestID)
+                    }
+
+                    // Timeout: one retry max
+                    if urlError.code == .timedOut {
+                        if attempt < maxAttempts {
+                            try await backoffSleep(forAttempt: attempt)
+                            continue
+                        }
+                        throw AIError.timeout(requestID: requestID)
+                    }
+
+                    // Other transient network conditions: one retry max
+                    if isRetryableTransportError(urlError),
+                       attempt < maxAttempts {
+                        try await backoffSleep(forAttempt: attempt)
+                        continue
+                    }
+
+                    // Default: treat as unavailable (calm)
+                    throw AIError.serviceUnavailable(requestID: requestID)
+                }
+
+                // Any other unexpected failure: calm response
+                throw AIError.serviceUnavailable(requestID: requestID)
+            }
         }
 
-        guard (200..<300).contains(httpResponse.statusCode) else {
-            let bodyPreview = String(data: data, encoding: .utf8) ?? "<non-UTF8 body>"
-            throw AIError.invalidResponse(
-                "Backend error HTTP \(httpResponse.statusCode). Body: \(bodyPreview)"
-            )
+        // Should not normally reach here
+        #if DEBUG
+        if let lastError {
+            print("⚠️ Backend request failed after retries [\(requestID)]: \(lastError)")
         }
+        #endif
+        throw AIError.serviceUnavailable(requestID: requestID)
+    }
 
-        if data.isEmpty {
-            throw AIError.invalidResponse(
-                "Backend returned HTTP \(httpResponse.statusCode) with EMPTY body for \(path)."
-            )
+    private func isRetryableTransportError(_ error: URLError) -> Bool {
+        switch error.code {
+        case .networkConnectionLost,
+             .cannotFindHost,
+             .cannotConnectToHost,
+             .dnsLookupFailed,
+             .internationalRoamingOff,
+             .dataNotAllowed,
+             .secureConnectionFailed,
+             .cannotLoadFromNetwork:
+            return true
+        default:
+            return false
         }
+    }
 
-        let decoder = makeLenientISO8601Decoder()
+    private func backoffSleep(forAttempt attempt: Int) async throws {
+        // Simple, predictable backoff: ~0.6s then ~1.2s (we only do 2 attempts anyway)
+        let base: UInt64 = (attempt == 1) ? 600_000_000 : 1_200_000_000
+        try await Task.sleep(nanoseconds: base)
+    }
 
+    private func decodeErrorEnvelope(from data: Data) -> BackendErrorEnvelope? {
+        guard !data.isEmpty else { return nil }
         do {
-            return try decoder.decode(ResponseBody.self, from: data)
+            return try JSONDecoder().decode(BackendErrorEnvelope.self, from: data)
         } catch {
-            let bodyPreview = String(data: data, encoding: .utf8) ?? "<non-UTF8 body>"
-            throw AIError.decodingFailed(
-                "Failed to decode backend AI response into \(ResponseBody.self): \(error.localizedDescription). Body: \(bodyPreview)"
-            )
+            return nil
         }
     }
 
@@ -219,4 +341,20 @@ private struct AnalyzeItemPhotoRequest: Encodable {
 
 private struct AnalyzeItemTextRequest: Encodable {
     let hints: ItemAIHints
+}
+
+// MARK: - Error Envelope (best-effort)
+
+private struct BackendErrorEnvelope: Decodable {
+    // Common patterns: FastAPI often uses "detail"
+    let detail: String?
+    let message: String?
+    let error: String?
+    let requestId: String?
+    let request_id: String?
+
+    var debugSummary: String {
+        let parts = [error, message, detail].compactMap { $0 }.joined(separator: " | ")
+        return parts.isEmpty ? "<no message>" : parts
+    }
 }
