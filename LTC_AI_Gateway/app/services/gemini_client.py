@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import os
 from typing import Any, Dict, Optional
 
@@ -10,8 +9,6 @@ from dotenv import load_dotenv
 from app.utils.json_cleaner import clean_llm_json
 
 load_dotenv()
-
-logger = logging.getLogger(__name__)
 
 
 def _sanitize_env(name: str, value: Optional[str]) -> str:
@@ -48,6 +45,13 @@ GEMINI_MODEL = _sanitize_env("GEMINI_MODEL", os.getenv("GEMINI_MODEL", "gemini-2
 if not GEMINI_API_KEY:
     raise RuntimeError("GEMINI_API_KEY is not set in environment (.env / Secret Manager)")
 
+# Cloud Run log-friendly startup sanity check (does NOT reveal key)
+print(
+    f"[gemini_client] GEMINI_API_KEY len={len(GEMINI_API_KEY)} prefix={GEMINI_API_KEY[:4]} "
+    f"GEMINI_MODEL={GEMINI_MODEL}",
+    flush=True,
+)
+
 
 def _gemini_url() -> str:
     return (
@@ -67,8 +71,11 @@ async def _post_gemini(payload: Dict[str, Any]) -> str:
 
         if resp.status_code >= 400:
             snippet = resp.text[:1200]
-            # Log a single line with the upstream details so Cloud Run shows the real cause.
-            logger.error("Gemini upstream error status=%s body_snippet=%r", resp.status_code, snippet)
+            # Force visibility in Cloud Run logs
+            print(
+                f"[gemini_client] GEMINI_UPSTREAM_ERROR status={resp.status_code} body_snippet={snippet!r}",
+                flush=True,
+            )
             raise RuntimeError(f"Gemini error {resp.status_code}: {snippet}")
 
         return resp.json()
@@ -84,14 +91,14 @@ async def _post_gemini(payload: Dict[str, Any]) -> str:
                 parts = candidate["content"]["parts"]
                 raw_text = next(p["text"] for p in parts if "text" in p)
             except Exception as exc:  # noqa: BLE001
-                logger.error("Gemini response missing expected text field. data_keys=%s", list(data.keys()))
+                print("[gemini_client] Gemini response missing expected text field.", flush=True)
                 raise RuntimeError("Gemini response missing expected text field.") from exc
 
             try:
                 return clean_llm_json(raw_text)
             except Exception as exc:  # noqa: BLE001
                 preview = (raw_text or "")[:800].replace("\n", "\\n")
-                logger.error("Gemini returned invalid JSON. raw_text_preview=%r", preview)
+                print(f"[gemini_client] Gemini returned invalid JSON. preview={preview!r}", flush=True)
                 raise RuntimeError(
                     f"Gemini returned non-JSON or empty JSON candidate. raw_text_preview='{preview}'"
                 ) from exc
@@ -119,7 +126,10 @@ async def _post_gemini_text(payload: Dict[str, Any]) -> str:
 
         if resp.status_code >= 400:
             snippet = resp.text[:1200]
-            logger.error("Gemini upstream error status=%s body_snippet=%r", resp.status_code, snippet)
+            print(
+                f"[gemini_client] GEMINI_UPSTREAM_ERROR status={resp.status_code} body_snippet={snippet!r}",
+                flush=True,
+            )
             raise RuntimeError(f"Gemini error {resp.status_code}: {snippet}")
 
         return resp.json()
@@ -134,7 +144,7 @@ async def _post_gemini_text(payload: Dict[str, Any]) -> str:
                 parts = candidate["content"]["parts"]
                 raw_text = next(p["text"] for p in parts if "text" in p)
             except Exception as exc:  # noqa: BLE001
-                logger.error("Gemini response missing expected text field. data_keys=%s", list(data.keys()))
+                print("[gemini_client] Gemini response missing expected text field.", flush=True)
                 raise RuntimeError("Gemini response missing expected text field.") from exc
 
             return (raw_text or "").strip()
