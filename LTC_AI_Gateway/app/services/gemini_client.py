@@ -13,18 +13,36 @@ load_dotenv()
 
 def _sanitize_env(name: str, value: Optional[str]) -> str:
     """
-    Secrets/env vars sometimes include trailing newlines (very common with Secret Manager or copy/paste).
-    For URL-building inputs, we strip whitespace/newlines and reject non-printable characters.
+    Secrets/env vars sometimes include trailing newlines (very common with Secret Manager or copy/paste),
+    or (more rarely) stray control characters like \\r embedded in the value.
+
+    We normalize safely:
+      - Strip leading/trailing whitespace
+      - Remove *common* whitespace/control chars anywhere: \\r, \\n, \\t
+      - Reject any remaining non-printable ASCII/control chars
     """
-    v = (value or "").strip()
+    v = (value or "")
     if not v:
         return ""
 
-    # Reject non-printable ASCII/control chars (includes newline if somehow still present)
-    # This prevents httpx.InvalidURL and makes failures obvious in logs.
+    # First, strip leading/trailing whitespace
+    v = v.strip()
+
+    # Then, remove common control characters anywhere in the string.
+    # This is intentionally tolerant for secrets injected with formatting artifacts.
+    v = v.replace("\r", "").replace("\n", "").replace("\t", "")
+
+    if not v:
+        return ""
+
+    # Reject remaining non-printable ASCII/control chars (0x00-0x1F and 0x7F)
     for ch in v:
-        if ord(ch) < 32 or ord(ch) == 127:
-            raise RuntimeError(f"{name} contains a non-printable character (e.g., newline).")
+        o = ord(ch)
+        if o < 32 or o == 127:
+            raise RuntimeError(
+                f"{name} contains non-printable control characters after normalization."
+            )
+
     return v
 
 
