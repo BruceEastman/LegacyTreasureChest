@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import logging
 import os
+import re
 from typing import Any, Dict, Optional
 
 import httpx
@@ -10,16 +12,18 @@ from app.utils.json_cleaner import clean_llm_json
 
 load_dotenv()
 
+logger = logging.getLogger(__name__)
+
 
 def _sanitize_env(name: str, value: Optional[str]) -> str:
     """
-    Secrets/env vars sometimes include trailing newlines (very common with Secret Manager or copy/paste),
+    Secrets/env vars sometimes include trailing newlines (common with Secret Manager or copy/paste),
     or (more rarely) stray control characters like \\r embedded in the value.
 
-    We normalize safely:
-      - Strip leading/trailing whitespace
-      - Remove *common* whitespace/control chars anywhere: \\r, \\n, \\t
-      - Reject any remaining non-printable ASCII/control chars
+    Normalize safely:
+      - strip leading/trailing whitespace
+      - remove common control chars anywhere: \\r, \\n, \\t
+      - reject any remaining non-printable ASCII/control chars
     """
     v = (value or "")
     if not v:
@@ -31,26 +35,18 @@ def _sanitize_env(name: str, value: Optional[str]) -> str:
     if not v:
         return ""
 
-    for ch in v:
-        o = ord(ch)
-        if o < 32 or o == 127:
-            raise RuntimeError(f"{name} contains non-printable control characters after normalization.")
+    # Reject remaining control chars: 0x00-0x1F and 0x7F
+    if re.search(r"[\x00-\x1F\x7F]", v):
+        raise RuntimeError(f"{name} contains non-printable control characters after normalization.")
 
     return v
 
 
 GEMINI_API_KEY = _sanitize_env("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY"))
-GEMINI_MODEL = _sanitize_env("GEMINI_MODEL", os.getenv("GEMINI_MODEL", "gemini-2.0-flash-exp"))
+GEMINI_MODEL = _sanitize_env("GEMINI_MODEL", os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
 
 if not GEMINI_API_KEY:
     raise RuntimeError("GEMINI_API_KEY is not set in environment (.env / Secret Manager)")
-
-# Cloud Run log-friendly startup sanity check (does NOT reveal key)
-print(
-    f"[gemini_client] GEMINI_API_KEY len={len(GEMINI_API_KEY)} prefix={GEMINI_API_KEY[:4]} "
-    f"GEMINI_MODEL={GEMINI_MODEL}",
-    flush=True,
-)
 
 
 def _gemini_url() -> str:
@@ -71,11 +67,7 @@ async def _post_gemini(payload: Dict[str, Any]) -> str:
 
         if resp.status_code >= 400:
             snippet = resp.text[:1200]
-            # Force visibility in Cloud Run logs
-            print(
-                f"[gemini_client] GEMINI_UPSTREAM_ERROR status={resp.status_code} body_snippet={snippet!r}",
-                flush=True,
-            )
+            logger.error("Gemini upstream error status=%s body_snippet=%r", resp.status_code, snippet)
             raise RuntimeError(f"Gemini error {resp.status_code}: {snippet}")
 
         return resp.json()
@@ -91,14 +83,14 @@ async def _post_gemini(payload: Dict[str, Any]) -> str:
                 parts = candidate["content"]["parts"]
                 raw_text = next(p["text"] for p in parts if "text" in p)
             except Exception as exc:  # noqa: BLE001
-                print("[gemini_client] Gemini response missing expected text field.", flush=True)
+                logger.error("Gemini response missing expected text field. data_keys=%s", list(data.keys()))
                 raise RuntimeError("Gemini response missing expected text field.") from exc
 
             try:
                 return clean_llm_json(raw_text)
             except Exception as exc:  # noqa: BLE001
                 preview = (raw_text or "")[:800].replace("\n", "\\n")
-                print(f"[gemini_client] Gemini returned invalid JSON. preview={preview!r}", flush=True)
+                logger.error("Gemini returned invalid JSON. raw_text_preview=%r", preview)
                 raise RuntimeError(
                     f"Gemini returned non-JSON or empty JSON candidate. raw_text_preview='{preview}'"
                 ) from exc
@@ -116,6 +108,10 @@ async def _post_gemini(payload: Dict[str, Any]) -> str:
 
 
 async def _post_gemini_text(payload: Dict[str, Any]) -> str:
+    """
+    Call Gemini and return plain text (no JSON cleaning).
+    Use this for endpoints that intentionally return human text (e.g., summaries).
+    """
     import asyncio
 
     url = _gemini_url()
@@ -126,10 +122,7 @@ async def _post_gemini_text(payload: Dict[str, Any]) -> str:
 
         if resp.status_code >= 400:
             snippet = resp.text[:1200]
-            print(
-                f"[gemini_client] GEMINI_UPSTREAM_ERROR status={resp.status_code} body_snippet={snippet!r}",
-                flush=True,
-            )
+            logger.error("Gemini upstream error status=%s body_snippet=%r", resp.status_code, snippet)
             raise RuntimeError(f"Gemini error {resp.status_code}: {snippet}")
 
         return resp.json()
@@ -144,7 +137,7 @@ async def _post_gemini_text(payload: Dict[str, Any]) -> str:
                 parts = candidate["content"]["parts"]
                 raw_text = next(p["text"] for p in parts if "text" in p)
             except Exception as exc:  # noqa: BLE001
-                print("[gemini_client] Gemini response missing expected text field.", flush=True)
+                logger.error("Gemini response missing expected text field. data_keys=%s", list(data.keys()))
                 raise RuntimeError("Gemini response missing expected text field.") from exc
 
             return (raw_text or "").strip()
@@ -162,6 +155,7 @@ async def _post_gemini_text(payload: Dict[str, Any]) -> str:
 
 
 async def call_gemini_for_audio_summary(*, prompt: str, audio_base64: str, mime_type: str) -> str:
+    """Call Gemini with an audio clip + prompt and return plain text summary."""
     payload: Dict[str, Any] = {
         "contents": [
             {
@@ -188,6 +182,7 @@ async def call_gemini_for_audio_summary(*, prompt: str, audio_base64: str, mime_
 
 
 async def call_gemini_for_item_analysis(*, prompt: str, image_base64: str) -> str:
+    """Call Gemini with an image + prompt and return cleaned JSON text."""
     payload: Dict[str, Any] = {
         "contents": [
             {
@@ -214,6 +209,7 @@ async def call_gemini_for_item_analysis(*, prompt: str, image_base64: str) -> st
 
 
 async def call_gemini_for_item_text_analysis(*, prompt: str) -> str:
+    """Call Gemini with text-only prompt and return cleaned JSON text."""
     payload: Dict[str, Any] = {
         "contents": [
             {
@@ -233,7 +229,12 @@ async def call_gemini_for_item_text_analysis(*, prompt: str) -> str:
     return await _post_gemini(payload)
 
 
+# ---------------------------------------------------------------------------
+# Liquidation calls (keep these here so routes can import consistently)
+# ---------------------------------------------------------------------------
+
 async def call_gemini_for_liquidation_brief(*, prompt: str, photo_base64: Optional[str] = None) -> str:
+    """Liquidation brief. Optional photo."""
     parts = [{"text": prompt}]
     if photo_base64:
         parts.append(
@@ -259,4 +260,5 @@ async def call_gemini_for_liquidation_brief(*, prompt: str, photo_base64: Option
 
 
 async def call_gemini_for_liquidation_plan(*, prompt: str) -> str:
+    """Liquidation plan. Text-only prompt."""
     return await call_gemini_for_item_text_analysis(prompt=prompt)
