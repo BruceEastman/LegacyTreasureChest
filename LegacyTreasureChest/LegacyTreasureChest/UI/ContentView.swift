@@ -12,35 +12,65 @@ struct ContentView: View {
     /// Shared authentication view model injected from the App entry point.
     @ObservedObject var viewModel: AuthenticationViewModel
 
+    // First-launch onboarding gate (shown only after sign-in).
+    @AppStorage("hasSeenStartHere") private var hasSeenStartHere: Bool = false
+    @State private var showStartHere: Bool = false
+    @State private var openItemsAfterOnboarding: Bool = false
+
     var body: some View {
         NavigationStack {
             if viewModel.isSignedIn {
-                // User is signed in → show Home
-                HomeView {
-                    // Sign-out action
-                    Task {
-                        await viewModel.signOut()
+                HomeView(
+                    onSignOut: {
+                        Task {
+                            await viewModel.signOut()
+                        }
+                    },
+                    openItemsAfterOnboarding: $openItemsAfterOnboarding
+                )
+                .onAppear {
+                    if !hasSeenStartHere {
+                        showStartHere = true
                     }
                 }
+                .onChange(of: viewModel.isSignedIn) { _, isSignedIn in
+                    if isSignedIn && !hasSeenStartHere {
+                        showStartHere = true
+                    }
+                }
+                .fullScreenCover(isPresented: $showStartHere) {
+                    StartHereOnboardingView(
+                        onFinish: {
+                            hasSeenStartHere = true
+                            showStartHere = false
+                        },
+                        onAddFirstItem: {
+                            hasSeenStartHere = true
+                            openItemsAfterOnboarding = true
+                            showStartHere = false
+                        }
+                    )
+                }
             } else {
-                // Not signed in → show authentication screen
                 AuthenticationView(viewModel: viewModel)
+                    .onAppear {
+                        showStartHere = false
+                        openItemsAfterOnboarding = false
+                    }
             }
         }
     }
 }
 
 #Preview {
-    // Simple preview stub – not using real auth service here.
     let mockService = PreviewAuthService()
     let vm = AuthenticationViewModel(authService: mockService)
 
     return ContentView(viewModel: vm)
 }
+
 // MARK: - Preview Support
 
-/// Lightweight preview auth service so Xcode previews compile.
-/// This is not used in the real app.
 final class PreviewAuthService: AuthenticationServiceProtocol {
     var currentUserId: UUID? = UUID()
 

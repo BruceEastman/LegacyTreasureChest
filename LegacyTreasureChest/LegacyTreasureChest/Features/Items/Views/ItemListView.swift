@@ -55,10 +55,14 @@ struct ItemsListView: View {
 
                 if filtered.isEmpty {
                     Section {
-                        Text("No items yet.")
-                            .font(Theme.secondaryFont)
-                            .foregroundStyle(Theme.textSecondary)
-                            .padding(.vertical, Theme.spacing.medium)
+                        emptyState
+                            .listRowInsets(EdgeInsets(
+                                top: Theme.spacing.medium,
+                                leading: Theme.spacing.large,
+                                bottom: Theme.spacing.medium,
+                                trailing: Theme.spacing.large
+                            ))
+                            .listRowBackground(Color.clear)
                     }
                 } else {
                     if isSearching {
@@ -128,6 +132,90 @@ struct ItemsListView: View {
                 .accessibilityLabel("Add Item")
             }
         }
+    }
+
+    // MARK: - Empty State
+
+    private var emptyState: some View {
+        VStack(alignment: .leading, spacing: Theme.spacing.medium) {
+            Text("No items yet")
+                .font(Theme.sectionHeaderFont)
+                .foregroundStyle(Theme.text)
+
+            Text("Start by adding a few items to begin building your inventory.")
+                .font(Theme.bodyFont)
+                .foregroundStyle(Theme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            VStack(alignment: .leading, spacing: Theme.spacing.medium) {
+                NavigationLink {
+                    BatchAddItemsFromPhotosView()
+                } label: {
+                    emptyStateActionRow(
+                        systemImage: "photo.on.rectangle.angled",
+                        title: "Add with Photos",
+                        body: "Photograph items and let AI help identify them and preserve visual detail."
+                    )
+                }
+                .buttonStyle(.plain)
+
+                NavigationLink {
+                    AddItemView()
+                } label: {
+                    emptyStateActionRow(
+                        systemImage: "plus",
+                        title: "Add Manually",
+                        body: "Use the + button when you want to create an item without starting from a photo."
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+
+            HStack(alignment: .top, spacing: Theme.spacing.small) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Theme.accent)
+                    .frame(width: 20, alignment: .center)
+                    .padding(.top, 2)
+
+                Text("AI can help with item identification, categories, and value guidance after you add an item.")
+                    .font(Theme.secondaryFont)
+                    .foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.top, Theme.spacing.xs)
+        }
+        .ltcCardBackground()
+    }
+
+    @ViewBuilder
+    private func emptyStateActionRow(systemImage: String, title: String, body: String) -> some View {
+        HStack(alignment: .top, spacing: Theme.spacing.medium) {
+            Image(systemName: systemImage)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(Theme.textSecondary)
+                .frame(width: 24, alignment: .center)
+                .padding(.top, 2)
+
+            VStack(alignment: .leading, spacing: Theme.spacing.xs) {
+                Text(title)
+                    .font(Theme.bodyFont.weight(.semibold))
+                    .foregroundStyle(Theme.text)
+
+                Text(body)
+                    .font(Theme.secondaryFont)
+                    .foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer()
+
+            Image(systemName: "chevron.forward")
+                .foregroundStyle(Theme.textSecondary)
+                .padding(.top, 2)
+        }
+        .padding(.vertical, Theme.spacing.xs)
+        .contentShape(Rectangle())
     }
 
     // MARK: - Row + Thumbnail

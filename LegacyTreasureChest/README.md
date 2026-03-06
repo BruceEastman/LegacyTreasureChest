@@ -1,5 +1,735 @@
 # Legacy Treasure Chest
 
+https://ltc-ai-gateway-530541590215.us-west1.run.app
+cloud run deploy ltc-ai-gateway --source . --region us-west1 --allow-unauthenticated
+
+# Cloud Run Smoke Test + Secret Manager Hardening (2026-03-05)
+
+**Status:** Complete
+**Scope:** Cloud integration validation + security hardening
+**Component:** `LTC_AI_Gateway` (FastAPI → Cloud Run → Gemini 2.5 Flash)
+
+This update successfully validated the **end-to-end cloud architecture** for the Legacy Treasure Chest AI backend and implemented security improvements to prevent API key exposure.
+
+---
+
+# Architecture (Validated)
+
+```
+iPhone App (SwiftUI)
+        ↓
+Cloud Run
+FastAPI (LTC_AI_Gateway)
+        ↓
+Gemini 2.5 Flash
+```
+
+Cloud Run service:
+
+```
+https://ltc-ai-gateway-530541590215.us-west1.run.app
+```
+
+Health endpoint:
+
+```
+/health
+```
+
+---
+
+# Step 4.5 — Cloud Smoke Test
+
+The following validation sequence was executed.
+
+## 1. Backend health
+
+Command:
+
+```
+curl https://ltc-ai-gateway-530541590215.us-west1.run.app/health
+```
+
+Result:
+
+```
+{"status":"ok"}
+```
+
+Confirmed:
+
+* Cloud Run service reachable
+* FastAPI application running
+* Middleware functioning
+
+---
+
+## 2. Direct AI gateway test
+
+Command:
+
+```
+curl -X POST \
+https://ltc-ai-gateway-530541590215.us-west1.run.app/ai/analyze-item-text \
+-H "Content-Type: application/json" \
+-d '{"text":"Vintage brass candlestick"}'
+```
+
+Result:
+
+* HTTP `200`
+* Valid structured JSON response
+* `aiProvider: gemini-2.5-flash`
+
+Confirmed:
+
+* Gemini integration functioning
+* Backend request routing correct
+* JSON extraction pipeline working
+
+---
+
+## 3. iPhone → Cloud Run → Gemini test
+
+Executed from the iPhone app using **Improve with AI**.
+
+Cloud Run logs confirmed:
+
+```
+POST /ai/analyze-item-photo
+deviceId: AD658682-6265-46B6-836B-C9DFBD309633
+status: 200
+```
+
+Confirmed:
+
+* iOS client successfully calling Cloud Run
+* Request headers properly propagated
+* Middleware request tracking functioning
+* Gemini responses returned to the app
+
+---
+
+# Observed Behavior
+
+During early testing Gemini returned a temporary upstream error:
+
+```
+503 UNAVAILABLE
+"This model is currently experiencing high demand"
+```
+
+This resolved automatically on retry and is a known transient behavior for hosted LLM APIs.
+
+Future improvement:
+
+* Add **retry with exponential backoff** for transient statuses (`429`, `503`, `504`).
+
+---
+
+# Security Hardening Implemented
+
+## 1. Moved Gemini API key to Secret Manager
+
+Previous configuration used a direct environment variable.
+
+New configuration:
+
+```
+Secret Manager
+   ↓
+Cloud Run environment injection
+   ↓
+GEMINI_API_KEY
+```
+
+Secret name:
+
+```
+gemini-api-key
+```
+
+Cloud Run configuration:
+
+```
+--set-secrets GEMINI_API_KEY=gemini-api-key:latest
+```
+
+Benefits:
+
+* API keys no longer stored in Cloud Run config
+* Secrets can be rotated without code changes
+* Follows Google Cloud security best practices
+
+---
+
+## 2. API key rotation
+
+Because an earlier key appeared in logs during debugging:
+
+* Old Gemini API keys were **disabled**
+* New key created
+* Stored as **Secret Manager version 2**
+
+Secret status:
+
+```
+gemini-api-key
+  ├── version 1 (revoked)
+  └── version 2 (active)
+```
+
+---
+
+## 3. Prevented API key leakage in logs
+
+`httpx` INFO logging was printing full request URLs:
+
+```
+INFO:httpx:HTTP Request:
+https://generativelanguage.googleapis.com/... ?key=API_KEY
+```
+
+This exposed secrets in Cloud Run logs.
+
+Fix added in `main.py`:
+
+```python
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+```
+
+Result:
+
+* Full request URLs no longer logged
+* API keys protected from log exposure
+
+---
+
+# Result
+
+The **Legacy Treasure Chest cloud architecture is now fully operational**:
+
+```
+iPhone
+   ↓
+Cloud Run (FastAPI AI Gateway)
+   ↓
+Gemini 2.5 Flash
+```
+
+All core requirements validated:
+
+* Cloud Run deployment functioning
+* AI gateway routing correct
+* Gemini API integration working
+* Structured JSON responses returned to the app
+* Device identity logging functioning
+* Secrets secured via Secret Manager
+* Logging hardened against key leakage
+
+---
+
+# Next Steps
+
+After completing the cloud validation:
+
+```
+Step 5 — Privacy Policy Page
+Step 6 — TestFlight external readiness
+```
+
+These steps prepare the app for **external users and App Store submission**.
+
+---
+
+If you'd like, I can also give you a **very short 6-line “Executive Summary” version** that many teams place above entries like this so the README stays easier to skim as the project grows.
+
+# Cloud Run Deployment + Gemini Integration Fix (2026-03-05)
+
+**Status:** Complete
+**Scope:** Backend externalization / AI Gateway deployment
+**Component:** `LTC_AI_Gateway` (FastAPI → Cloud Run → Gemini 2.5 Flash)
+
+This update resolved the final issues preventing the Legacy Treasure Chest AI Gateway from running correctly on **Google Cloud Run** and successfully calling **Gemini 2.5 Flash**.
+
+After these fixes, the full production architecture is now functioning:
+
+```
+iPhone App
+   ↓
+Cloud Run (FastAPI AI Gateway)
+   ↓
+Gemini 2.5 Flash
+```
+
+---
+
+# Key Issues Identified
+
+During Cloud Run deployment several issues surfaced simultaneously.
+
+## 1. Secret Value Contained Invalid Data
+
+The original `GEMINI_API_KEY` secret stored in **Secret Manager** contained a pasted command string rather than the actual API key.
+
+Example of the invalid value:
+
+```
+gcloud config set project legacy-treasure-chest
+gcloud secrets versions add ltc-gemini-api-key --data-file=-
+```
+
+This caused Gemini requests to fail with:
+
+```
+API_KEY_INVALID
+```
+
+### Fix
+
+A new secret version containing the **actual API key** was created:
+
+```
+gcloud secrets versions add ltc-gemini-api-key --data-file=-
+```
+
+Verification:
+
+```
+gcloud secrets versions access latest --secret=ltc-gemini-api-key
+```
+
+---
+
+## 2. Cloud Run Was Using the Wrong Secret Version
+
+Cloud Run was still referencing the **older invalid secret version**.
+
+Service configuration showed:
+
+```
+GEMINI_API_KEY
+  secretKeyRef:
+    name: ltc-gemini-api-key
+    key: '2'
+```
+
+This was corrected so the service reads the valid version.
+
+---
+
+## 3. Environment Variable Contained Hidden Characters
+
+Secrets copied into Secret Manager sometimes contain trailing characters such as:
+
+```
+\n
+\r
+\t
+```
+
+These characters can break API authentication.
+
+### Fix
+
+`gemini_client.py` now sanitizes all environment variables before use.
+
+```
+_strip whitespace
+_remove \r \n \t
+_reject remaining control characters
+```
+
+Function added:
+
+```
+_sanitize_env()
+```
+
+This prevents hidden characters from breaking authentication again.
+
+---
+
+## 4. Backend Defaulted to an Invalid Gemini Model
+
+The gateway default model was:
+
+```
+gemini-2.0-flash-exp
+```
+
+This model is **not available** on the endpoint being used and produced:
+
+```
+404 NOT_FOUND
+models/gemini-2.0-flash-exp is not found
+```
+
+### Fix
+
+The backend default model was updated to:
+
+```
+gemini-2.5-flash
+```
+
+This matches the model used during development and provides the desired performance/latency balance.
+
+```
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+```
+
+Cloud Run environment variables were also updated:
+
+```
+GEMINI_MODEL=gemini-2.5-flash
+```
+
+---
+
+# Backend Hardening Improvements
+
+The Gemini client now includes additional production safeguards:
+
+### Environment Sanitization
+
+```
+_sanitize_env()
+```
+
+Ensures secrets and environment variables contain no hidden control characters.
+
+---
+
+### Retry Logic
+
+Gemini calls retry once on transient failure.
+
+```
+attempts: 2
+retry delay: 0.4s
+```
+
+---
+
+### Structured Logging
+
+Gemini upstream errors now log:
+
+```
+status code
+response snippet
+```
+
+This allows fast diagnosis without exposing secrets.
+
+---
+
+# Deployment Verification
+
+Cloud Run deployment was verified using a direct endpoint test.
+
+```
+POST /ai/analyze-item-text
+```
+
+Test request:
+
+```
+curl -X POST https://ltc-ai-gateway-530541590215.us-west1.run.app/ai/analyze-item-text
+```
+
+Example response:
+
+```
+aiProvider: gemini-2.5-flash
+```
+
+HTTP status:
+
+```
+200 OK
+```
+
+This confirms:
+
+* Cloud Run container running
+* secrets loading correctly
+* Gemini authentication working
+* AI gateway endpoint functioning
+
+---
+
+# iOS Client Update (Next Step)
+
+The iOS client should now default to the Cloud Run gateway rather than a local FastAPI server.
+
+File:
+
+```
+Features/AI/Services/BackendAIProvider.swift
+```
+
+Recommended default backend URL:
+
+```
+https://ltc-ai-gateway-530541590215.us-west1.run.app
+```
+
+Local development should still be supported using a runtime override (for example via `UserDefaults`).
+
+Suggested behavior:
+
+| Mode              | Backend                |
+| ----------------- | ---------------------- |
+| Normal operation  | Cloud Run              |
+| Local development | Local FastAPI override |
+
+This change ensures:
+
+* the app works out of the box against production infrastructure
+* developers can still use a local server when needed
+
+---
+
+# Result
+
+The Legacy Treasure Chest architecture now operates as intended:
+
+```
+iPhone
+   ↓
+Cloud Run (FastAPI AI Gateway)
+   ↓
+Gemini 2.5 Flash
+```
+
+This configuration will be used for:
+
+* TestFlight builds
+* external user trials
+* production deployment.
+
+
+
+# 🚀 Step 4 — iOS Client Hardening for Cloud Mode
+
+**Status:** Implemented (client-side)
+**Date:** 2026-03-04
+**Scope:** iOS networking reliability, error normalization, request discipline
+**Backend:** Cloud Run (LTC_AI_Gateway)
+**Philosophy:** Advisor system — calm, predictable, non-crashing
+
+---
+
+# 1. Objective
+
+Prepare the **Legacy Treasure Chest iOS client** to operate reliably against a **cloud backend** under real-world conditions:
+
+• slow networks
+• Cloud Run cold starts
+• backend outages
+• rate limiting
+• malformed responses
+• decoding failures
+
+The app must **never crash**, must **not expose raw server errors**, and must present **calm, actionable user messaging**.
+
+---
+
+# 2. Client Reliability Improvements Implemented
+
+## 2.1 Unified Error Model
+
+AI networking now maps transport and server failures into a **stable client error type** used across the AI layer.
+
+Handled conditions include:
+
+| Condition                 | Client Behavior                   |
+| ------------------------- | --------------------------------- |
+| Offline / network failure | Safe message, retry suggestion    |
+| Timeout                   | Safe message, retry suggestion    |
+| 429 Rate Limit            | “Too many requests” guidance      |
+| 502/503 upstream failure  | “Service temporarily unavailable” |
+| Backend decoding issues   | “Unexpected response” message     |
+| Unknown errors            | Safe fallback message             |
+
+This prevents raw backend errors from appearing in the UI.
+
+---
+
+## 2.2 Request ID Propagation
+
+Every AI request now generates a **client request ID**.
+
+Headers added to all backend calls:
+
+```
+X-Request-ID
+X-LTC-Device-ID
+```
+
+Benefits:
+
+• Correlates device requests with Cloud Run logs
+• Enables targeted debugging without exposing internal details to users
+• Improves operational diagnostics for future external users
+
+---
+
+## 2.3 Stable Device Identity
+
+A persistent **device identifier** is now generated and stored via:
+
+```
+LTCDeviceIdentity.swift
+```
+
+Characteristics:
+
+• UUID stored in Keychain
+• Stable across launches
+• Used for backend request identification
+• Not tied to user accounts (privacy preserving)
+
+Header format:
+
+```
+X-LTC-Device-ID: <stable UUID>
+```
+
+---
+
+## 2.4 Network Retry Discipline
+
+AI requests now implement **conservative retry behavior**:
+
+| Error Type           | Retry              |
+| -------------------- | ------------------ |
+| Network interruption | retry once         |
+| Timeout              | retry once         |
+| 502 / 503            | retry once         |
+| 429                  | no automatic retry |
+| 4xx errors           | no retry           |
+
+This improves reliability during:
+
+• Cloud Run cold starts
+• temporary network interruptions
+
+without creating repeated calls or runaway retries.
+
+---
+
+## 2.5 Safe JSON Handling
+
+Unexpected or malformed responses from the backend are now safely handled:
+
+• decoding errors are caught
+• failures return controlled client errors
+• no crash paths remain in the AI service layer
+
+---
+
+# 3. Environment Routing Verification
+
+Client routing logic verified:
+
+| Build Type           | Backend              |
+| -------------------- | -------------------- |
+| Debug                | Local FastAPI server |
+| Release / TestFlight | Cloud Run backend    |
+
+The base URL selection is centralized in:
+
+```
+BackendAIProvider.swift
+```
+
+No hard-coded backend URLs exist elsewhere in the client.
+
+---
+
+# 4. Files Updated
+
+Client hardening changes were implemented in:
+
+```
+LegacyTreasureChest/Core/Utilities/LTCDeviceIdentity.swift
+LegacyTreasureChest/Features/AI/Models/AIModels.swift
+LegacyTreasureChest/Features/AI/Services/BackendAIProvider.swift
+```
+
+Primary responsibilities:
+
+**LTCDeviceIdentity**
+• stable device ID generation
+• Keychain persistence
+
+**AIModels**
+• normalized error types
+• safe user-presentable messages
+
+**BackendAIProvider**
+• request header injection
+• retry logic
+• timeout handling
+• error normalization
+
+---
+
+# 5. Smoke Testing Performed
+
+Basic validation was performed against the Cloud Run backend:
+
+✔ `/health` endpoint reachable
+✔ client generates request IDs
+✔ device ID header present
+✔ backend errors surfaced as safe client messages
+
+A backend runtime error was observed (`500`) related to Gemini URL construction; investigation indicated a newline in environment configuration. Backend sanitization was implemented separately.
+
+This backend issue does **not affect the Step-4 client hardening work.**
+
+---
+
+# 6. Result
+
+The LTC iOS client now behaves **predictably and safely** when interacting with a cloud backend:
+
+• no raw server errors
+• no crash paths from networking
+• consistent error messaging
+• traceable requests
+• privacy-preserving device identification
+
+This establishes the foundation for **external TestFlight usage**.
+
+---
+
+# 7. Remaining Work (Next Conversation)
+
+Remaining items outside the Step-4 scope:
+
+• finalize backend fix for Gemini URL newline
+• redeploy Cloud Run revision
+• perform full smoke test suite
+• verify client messaging for each failure case
+
+---
+
+# 8. Position in Roadmap
+
+| Step                                   | Status        |
+| -------------------------------------- | ------------- |
+| Step 2 — In-App Help                   | ✅ Complete    |
+| Step 3 — Backend Hardening + Cloud Run | ✅ Complete    |
+| Step 4 — iOS Client Hardening          | ✅ Implemented |
+| Step 5 — Cloud Smoke Testing           | ⏭ Next        |
+
+---
+
 # 🚀 Step 3B — Cloud Run Deployment Complete (LTC_AI_Gateway)
 
 **Status:** ✅ Production Cloud Backend Live

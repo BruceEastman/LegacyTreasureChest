@@ -20,6 +20,11 @@ load_dotenv()
 # Basic logging configuration (Cloud Run will capture stdout/stderr).
 logging.basicConfig(level=logging.INFO)
 
+# SECURITY: httpx/httpcore can log full request URLs at INFO, which may include API keys in query params.
+# Raise their log level to prevent leaking secrets into Cloud Run logs.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+
 app = FastAPI(
     title="Legacy Treasure Chest AI Gateway",
     description="AI backend for item photo analysis and related tasks.",

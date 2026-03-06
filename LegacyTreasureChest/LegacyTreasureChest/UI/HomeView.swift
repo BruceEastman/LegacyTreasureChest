@@ -14,6 +14,7 @@ import SwiftData
 struct HomeView: View {
     /// Called when the user taps "Sign Out".
     let onSignOut: () -> Void
+    @Binding var openItemsAfterOnboarding: Bool
 
     @Environment(\.modelContext) private var modelContext
     @State private var isConfirmingReset: Bool = false
@@ -97,12 +98,12 @@ struct HomeView: View {
                 .padding(.horizontal, Theme.spacing.xl)
                 .padding(.top, Theme.spacing.small)
 
-                // MARK: – Getting Started & Help (user-facing)
+                // MARK: – Guide
 
                 NavigationLink {
                     HelpView()
                 } label: {
-                    Text("Getting Started & Help")
+                    Text("Guide")
                         .font(Theme.bodyFont.weight(.semibold))
                         .frame(maxWidth: .infinity)
                         .padding()
@@ -249,6 +250,9 @@ struct HomeView: View {
         .background(Theme.background.ignoresSafeArea())
         .navigationTitle("Home")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(isPresented: $openItemsAfterOnboarding) {
+            ItemsListView()
+        }
         .confirmationDialog(
             "Reset All Data?",
             isPresented: $isConfirmingReset,
@@ -316,12 +320,15 @@ struct HomeView: View {
 
 #Preview {
     NavigationStack {
-        HomeView(onSignOut: { })
-            .modelContainer(
-                try! ModelContainer(
-                    for: LTCItem.self,
-                    configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-                )
+        HomeView(
+            onSignOut: { },
+            openItemsAfterOnboarding: .constant(false)
+        )
+        .modelContainer(
+            try! ModelContainer(
+                for: LTCItem.self,
+                configurations: ModelConfiguration(isStoredInMemoryOnly: true)
             )
+        )
     }
 }
