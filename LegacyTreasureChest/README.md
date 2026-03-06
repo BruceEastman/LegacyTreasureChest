@@ -2,7 +2,256 @@
 
 https://ltc-ai-gateway-530541590215.us-west1.run.app
 cloud run deploy ltc-ai-gateway --source . --region us-west1 --allow-unauthenticated
+# Public Documentation Hosting (TestFlight Readiness) — 2026-03-06
 
+**Status:** Complete
+**Scope:** External documentation required for TestFlight distribution
+**Components:** Cloudflare DNS, Cloudflare Workers (static hosting), Public documentation pages
+
+This update establishes the public documentation required for external TestFlight distribution.
+
+Apple requires applications distributed to external testers to provide publicly accessible URLs for a **Privacy Policy** and **Support page**. These pages must be available over HTTPS.
+
+To satisfy this requirement, a minimal static documentation site was created and deployed using Cloudflare infrastructure.
+
+---
+
+## Architecture
+
+The site is hosted using **Cloudflare Workers static asset deployment** attached directly to the project domain.
+
+```
+Cloudflare DNS
+      ↓
+Cloudflare Worker (static assets)
+      ↓
+legacytreasurechest.com
+```
+
+This approach provides:
+
+• zero hosting cost
+• global CDN distribution
+• automatic HTTPS certificates
+• no server maintenance
+• minimal operational complexity
+
+---
+
+## Public Pages Created
+
+The following pages were deployed:
+
+```
+https://legacytreasurechest.com
+https://legacytreasurechest.com/privacy
+https://legacytreasurechest.com/support
+```
+
+### Index Page
+
+Provides a short overview of the Legacy Treasure Chest system and links to supporting documentation.
+
+### Privacy Policy
+
+Describes the system’s privacy-first architecture, including:
+
+• local device storage for household inventory
+• stateless AI processing
+• third-party services (Google Cloud Run, Gemini API, Google Places)
+• limited request metadata logging for debugging and rate limiting
+
+### Support Page
+
+Provides a simple contact channel for user support and troubleshooting.
+
+---
+
+## Key Design Principle
+
+The public documentation reinforces the core architectural principle of Legacy Treasure Chest:
+
+**Advisor system, not operator system.**
+
+The application:
+
+• helps users catalog possessions
+• provides advisory AI guidance
+• generates structured documentation for estate planning
+
+The system intentionally does **not**:
+
+• operate a marketplace
+• conduct transactions
+• store estate inventories in the cloud
+
+---
+
+## Outcome
+
+This milestone completes the **public documentation requirement for TestFlight distribution**.
+
+The following URLs can now be used in App Store Connect:
+
+```
+Privacy Policy
+https://legacytreasurechest.com/privacy
+
+Support URL
+https://legacytreasurechest.com/support
+```
+
+With this step completed, the project advances to the next phase:
+
+**Controlled TestFlight distribution preparation.**
+
+
+
+# Orientation System + First Launch Onboarding (2026-03-06)
+
+**Status:** Complete  
+**Scope:** User orientation, onboarding, and early-stage guidance  
+**Components:** iOS App (SwiftUI), Help/Guide system, Items empty-state UX
+
+This update introduces a structured **orientation system** for Legacy Treasure Chest designed to help new users quickly understand what the system does and how to begin using it.
+
+The goal was to provide a **clear mental model of the system** before users begin cataloging items, without requiring videos or external documentation.
+
+This is especially important because LTC supports a multi-phase workflow that is not familiar to most users.
+
+---
+
+# Problem
+
+Early TestFlight demonstrations revealed that new users did not immediately understand the full scope of the system.
+
+Without context, users tended to assume LTC was simply an **inventory app**, missing major capabilities such as:
+
+- AI-assisted valuation guidance
+- liquidation planning
+- beneficiary designation
+- executor-grade exports
+
+The system needed an **embedded explanation of its purpose and workflow** that lives entirely inside the app.
+
+---
+
+# Solution: Orientation Layer
+
+A three-part orientation layer was implemented:
+
+### 1. First-Launch Onboarding
+
+A short onboarding experience now appears the first time the app launches.
+
+The onboarding explains the four core questions LTC answers:
+
+- **What do we have?**  
+  Capture possessions with photos and AI-assisted descriptions.
+
+- **What is it worth?**  
+  Receive advisory resale value guidance.
+
+- **Who should receive it?**  
+  Assign items to beneficiaries or plan liquidation.
+
+- **What does the executor need?**  
+  Generate professional estate documentation.
+
+Users are also introduced to the **Estate Journey model**:
+
+The final onboarding screen includes a direct action button to **begin adding items**.
+
+This keeps the guide focused on **orientation and trust**, while operational learning happens naturally inside the product.
+
+---
+
+# Advisor Model Clarification
+
+The guide also clearly states the LTC philosophy:
+
+- LTC is an **advisor**, not an operator
+- AI provides guidance but does not take actions
+- nothing is automated or executed on behalf of the user
+- the inventory remains **stored on the user’s device**
+- exports reflect the catalog exactly as recorded
+
+This reinforces the product’s **privacy-first architecture**.
+
+---
+
+# Architecture Impact
+
+No backend changes were required.
+
+All orientation components are implemented as **SwiftUI views** within the existing app structure:
+
+---
+
+### 2. "How It Works" Guide
+
+A structured in-app guide was added to explain the system’s capabilities.
+
+This guide is permanently accessible from the Home screen.
+
+It includes sections covering:
+
+- The Estate Journey
+- Building an inventory
+- AI valuation guidance
+- Legacy items and beneficiaries
+- Selling and liquidation strategies
+- Executor documentation and exports
+- Privacy and the advisor model
+
+The guide focuses on **capabilities and system philosophy**, not step-by-step instructions.
+
+---
+
+### 3. Improved First-Use UX (Empty State)
+
+The **Items screen empty state** was redesigned to guide first-time users.
+
+Instead of simply displaying “No items yet,” the screen now:
+
+- explains the first step
+- highlights the two primary ways to begin
+- uses the same icons present in the navigation bar
+
+Actions presented:
+
+- **Add with Photos** (`photo.on.rectangle.angled`)
+- **Add Manually** (`plus`)
+
+This provides immediate clarity without requiring users to read documentation.
+
+---
+
+# Guide System Simplification
+
+The previous Help content was simplified to reduce redundancy.
+
+Removed sections:
+
+- Getting Started workflow instructions
+- What the app is / is not
+- detailed operational checklists
+
+These were replaced with a streamlined structure:
+
+These components are purely UI and documentation layers and do not interact with the data model.
+
+---
+
+# Result
+
+New users now receive:
+
+1. A clear explanation of **what LTC does**
+2. A mental model of the **Estate Journey**
+3. Immediate guidance on **how to begin**
+
+This significantly improves first-time comprehension and prepares the system for **expanded TestFlight evaluation**.
 # Cloud Run Smoke Test + Secret Manager Hardening (2026-03-05)
 
 **Status:** Complete

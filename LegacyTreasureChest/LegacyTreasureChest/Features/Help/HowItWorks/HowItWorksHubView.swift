@@ -10,6 +10,7 @@ import SwiftUI
 struct HowItWorksHubView: View {
 
     @State private var showStartHere = false
+    @State private var navigateToItems = false
 
     var body: some View {
 
@@ -37,7 +38,9 @@ struct HowItWorksHubView: View {
         }
         .navigationTitle("How It Works")
         .navigationBarTitleDisplayMode(.inline)
-
+        .navigationDestination(isPresented: $navigateToItems) {
+            ItemsListView()
+        }
         .fullScreenCover(isPresented: $showStartHere) {
             StartHereOnboardingView(
                 onFinish: {
@@ -45,6 +48,7 @@ struct HowItWorksHubView: View {
                 },
                 onAddFirstItem: {
                     showStartHere = false
+                    navigateToItems = true
                 }
             )
         }
