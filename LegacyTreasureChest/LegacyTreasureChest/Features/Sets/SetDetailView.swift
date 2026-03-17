@@ -7,6 +7,7 @@ import SwiftUI
 import SwiftData
 import UIKit
 import CoreLocation
+import MapKit
 import Combine
 
 // MARK: - Shared partner selection model (file-level, accessible everywhere)
@@ -178,12 +179,10 @@ struct SetDetailView: View {
                 }
 
                 // Local Help (Set scope) — gated until Brief + Plan exist
-                if let state = itemSet.liquidationState,
-                   state.activePlan != nil {
+                if localHelpPrereqsMet {
 
                     NavigationLink {
-                        // Local Help for sets lives inside Execute Plan (partner picker per block)
-                        SetExecutePlanView(itemSet: itemSet)
+                        DispositionPartnersView(itemSet: itemSet)
                     } label: {
                         HStack(spacing: 10) {
                             Image(systemName: "person.2.wave.2")
@@ -1151,11 +1150,8 @@ private struct SetExecutePlanView: View {
     }
 }
 
-// MARK: - Partner Picker (Set scope)
-
 private final class LTCLocationAutofill: NSObject, ObservableObject, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
-    private let geocoder = CLGeocoder()
 
     @Published var city: String = ""
     @Published var region: String = ""
@@ -1220,24 +1216,78 @@ private final class LTCLocationAutofill: NSObject, ObservableObject, CLLocationM
             return
         }
 
-        geocoder.reverseGeocodeLocation(loc) { [weak self] placemarks, _ in
+        guard let request = MKReverseGeocodingRequest(location: loc) else {
+            statusText = "Couldn’t determine your location details. Enter a city."
+            isWorking = false
+            return
+        }
+
+        Task { [weak self] in
             guard let self else { return }
-            let pm = placemarks?.first
 
-            let city = pm?.locality ?? ""
-            let region = pm?.administrativeArea ?? ""
-            let cc = pm?.isoCountryCode ?? ""
+            do {
+                let mapItems = try await request.mapItems
+                let mapItem = mapItems.first
 
-            if !city.isEmpty { self.city = city }
-            if !region.isEmpty { self.region = region }
-            if !cc.isEmpty { self.countryCode = cc }
+                let fullAddress = mapItem?.address?.fullAddress ?? ""
+                let shortAddress = mapItem?.address?.shortAddress ?? ""
 
-            self.statusText = nil
-            self.isWorking = false
+                let city = Self.extractCity(from: shortAddress, fallback: fullAddress)
+                let region = Self.extractRegion(from: shortAddress, fallback: fullAddress)
+                let cc = Self.extractCountryCode(from: fullAddress)
+
+                await MainActor.run {
+                    if !city.isEmpty { self.city = city }
+                    if !region.isEmpty { self.region = region }
+                    if !cc.isEmpty { self.countryCode = cc }
+
+                    self.statusText = nil
+                    self.isWorking = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.statusText = "Couldn’t determine your location details. Enter a city."
+                    self.isWorking = false
+                }
+            }
         }
     }
-}
 
+    private static func extractCity(from shortAddress: String, fallback fullAddress: String) -> String {
+        let source = shortAddress.isEmpty ? fullAddress : shortAddress
+        let parts = source
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+        return parts.first ?? ""
+    }
+    
+    private static func extractRegion(from shortAddress: String, fallback fullAddress: String) -> String {
+        let source = shortAddress.isEmpty ? fullAddress : shortAddress
+        let parts = source
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+        guard parts.count >= 2 else { return "" }
+        return parts[1]
+    }
+
+    private static func extractCountryCode(from fullAddress: String) -> String {
+        let normalized = fullAddress.lowercased()
+
+        if normalized.contains("united states") || normalized.contains("usa") {
+            return "US"
+        }
+        if normalized.contains("canada") {
+            return "CA"
+        }
+        if normalized.contains("united kingdom") {
+            return "GB"
+        }
+
+        return ""
+    }
+}
 private struct SetPartnerPickerView: View {
     @Environment(\.dismiss) private var dismiss
     

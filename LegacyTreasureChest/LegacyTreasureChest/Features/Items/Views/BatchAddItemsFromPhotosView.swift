@@ -116,7 +116,7 @@ struct BatchAddItemsFromPhotosView: View {
             .navigationTitle("Add from Photos")
             .navigationBarTitleDisplayMode(.inline)
             .background(Theme.background.ignoresSafeArea())
-            .onChange(of: selectedPhotos) { newValue in
+            .onChange(of: selectedPhotos) { _, newValue in
                 Task { await loadDrafts(from: newValue) }
             }
         }

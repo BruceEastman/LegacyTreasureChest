@@ -105,7 +105,7 @@ enum OutreachPacketComposer {
     private static func composeItem(_ item: LTCItem, overrideQuantity: Int? = nil) -> OutreachItemSnapshot {
         let name = item.name.isEmpty ? "Unnamed Item" : item.name
         let category = item.category
-        let description = item.itemDescription ?? ""
+        let description = item.itemDescription
         let qty = max(overrideQuantity ?? item.quantity, 1)
 
         let unitEstimated = effectiveUnitValue(for: item)

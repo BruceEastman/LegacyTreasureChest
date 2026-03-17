@@ -22,8 +22,8 @@ final class DispositionAIService {
     private var cache: [String: Cached] = [:]
     private let ttlSeconds: TimeInterval = 10 * 60 // 10 minutes
 
-    init(backend: BackendAIProvider = BackendAIProvider()) {
-        self.backend = backend
+    init(backend: BackendAIProvider? = nil) {
+        self.backend = backend ?? BackendAIProvider()
     }
 
     // MARK: - Item scope (existing)

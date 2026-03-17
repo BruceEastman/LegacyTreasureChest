@@ -17,13 +17,11 @@ final class AIService {
     static let shared = AIService()
 
     private init(
-        // NOTE: Default provider is now BackendAIProvider, which talks to your
-        // backend AI gateway. No Gemini key ever lives in the iOS app.
-        provider: any AIProvider = BackendAIProvider(),
-        featureFlags: FeatureFlags = FeatureFlags()
+        provider: (any AIProvider)? = nil,
+        featureFlags: FeatureFlags? = nil
     ) {
-        self.provider = provider
-        self.featureFlags = featureFlags
+        self.provider = provider ?? BackendAIProvider()
+        self.featureFlags = featureFlags ?? FeatureFlags()
     }
 
     // MARK: - Internal State

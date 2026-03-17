@@ -2,6 +2,312 @@
 
 https://ltc-ai-gateway-530541590215.us-west1.run.app
 cloud run deploy ltc-ai-gateway --source . --region us-west1 --allow-unauthenticated
+
+## 2026-03-16 — Warning Cleanup and Stability Hardening Pass
+
+This pass was completed during the waiting period before the next external TestFlight build cycle.
+
+### Objective
+Clean up Xcode warnings with priority on:
+1. privacy / permissions
+2. deprecated APIs with possible runtime impact
+3. concurrency / actor-isolation issues
+4. logic warnings that could hide real bugs
+5. low-risk cosmetic cleanup
+
+### Result
+All previously listed warnings from this pass were resolved successfully.
+
+---
+
+## Warnings Fixed
+
+### 1) `ItemAudioSection.swift`
+**Issue**
+- Deprecated microphone permission APIs:
+  - `AVAudioSession.recordPermission`
+  - `AVAudioSession.requestRecordPermission`
+
+**Change made**
+- Updated permission handling to the current `AVAudioApplication` APIs.
+
+**Why it mattered**
+- This is a user-facing privacy/permission path.
+- Important for runtime behavior and future compatibility on current iOS targets.
+
+---
+
+### 2) `SetDetailView.swift`
+**Issue**
+- Deprecated geocoding APIs on iOS 26:
+  - `CLGeocoder`
+  - `reverseGeocodeLocation(_:completionHandler:)`
+
+**Change made**
+- Added `import MapKit`
+- Replaced `CLGeocoder` reverse geocoding with `MKReverseGeocodingRequest`
+- Removed the old `CLGeocoder` property
+- Added lightweight helper methods to extract city / region / country code from the returned address data
+
+**Why it mattered**
+- Minimum deployment target is iOS 26.1
+- This was no longer future cleanup; it was an active platform deprecation in location-related behavior
+
+**Note**
+- The new implementation is a warning-removal / stability-hardening migration intended to preserve current autofill behavior without redesigning the feature
+
+---
+
+### 3) `AIService.swift`
+**Issue**
+- Main actor isolation warnings caused by default initializer arguments:
+  - `BackendAIProvider()`
+  - `FeatureFlags()`
+
+**Change made**
+- Removed actor-sensitive object creation from default parameter values
+- Changed initializer to accept optional injected values and construct defaults inside the initializer body
+
+**Why it mattered**
+- Concurrency / actor-isolation warnings may indicate real correctness issues
+- This service is central to AI-assisted item analysis and related flows
+
+---
+
+### 4) `DispositionAIService.swift`
+**Issue**
+- Main actor isolation warning caused by default initializer argument:
+  - `BackendAIProvider()`
+
+**Change made**
+- Same pattern as `AIService`
+- Removed default object construction from the parameter list
+- Constructed fallback dependency inside the initializer body
+
+**Why it mattered**
+- Same concurrency/stability concern as above
+- This service is part of the Disposition Engine / partner search flow
+
+---
+
+### 5) `BeneficiaryPacketComposer.swift`
+**Issue**
+- Nil-coalescing warning where fallback was never used:
+  - `item.itemDescription ?? ""`
+
+**Change made**
+- Replaced with direct use of `item.itemDescription`
+
+**Why it mattered**
+- This was a logic cleanup warning
+- It confirmed that the model property is non-optional and removed misleading fallback logic
+
+---
+
+### 6) `OutreachPacketComposer.swift`
+**Issue**
+- Same nil-coalescing warning pattern:
+  - `item.itemDescription ?? ""`
+
+**Change made**
+- Replaced with direct use of `item.itemDescription`
+
+**Why it mattered**
+- Same reasoning as `BeneficiaryPacketComposer`
+- Reduced misleading dead-code fallback logic in export composition
+
+---
+
+### 7) `BatchAddItemsFromPhotosView.swift`
+**Issue**
+- Deprecated SwiftUI API:
+  - `.onChange(of:perform:)`
+
+**Change made**
+- Updated to the current `onChange` closure form using old/new parameters
+
+**Why it mattered**
+- Low risk, but worth cleaning because the app targets a modern iOS version and this view is part of the photo-import workflow
+
+---
+
+### 8) `ItemAIAnalysisSheet.swift`
+**Issue**
+- Unused immutable value:
+  - `currencyCode`
+
+**Change made**
+- Removed the unused local constant
+
+**Why it mattered**
+- Low-risk cleanup only
+- Reduced noise in analysis sheet code
+
+---
+
+### 9) `LTCDeviceIdentity.swift`
+**Issue**
+- Variable declared as `var` but never mutated:
+  - `query`
+
+**Change made**
+- Changed `var query` to `let query`
+
+**Why it mattered**
+- Cosmetic cleanup only
+- Clarified intent in Keychain lookup code
+
+---
+
+### 10) `LaunchScreen.storyboard`
+**Issue**
+- Interface Builder warning:
+  - `"View Controller" is unreachable because it has no entry points...`
+
+**What happened**
+- The existing storyboard appeared visually correct in Interface Builder
+- Clean Build Folder did not remove the warning
+- The warning persisted despite confirming an initial view controller and storyboard entry point
+
+**Change made**
+- Replaced the existing launch screen file with a newly created **Launch Screen** file
+- Rebuilt the app after replacement
+
+**Result**
+- Warning was eliminated
+
+**Why it mattered**
+- This was the only remaining packaging / launch-related warning
+- Replacing the file was the safest resolution after the existing storyboard continued to report a false/stuck warning state
+
+---
+
+## Working Approach Used
+This pass followed a strict low-risk cleanup process:
+- fixed only 1–2 issues at a time
+- prioritized runtime-sensitive warnings first
+- used complete file replacements for smaller files when appropriate
+- used minimal edits for local one-line fixes
+- rebuilt after each change set
+- avoided speculative architecture changes
+
+---
+
+## Deployment / Testing Notes
+During this pass, we also confirmed the practical build/test workflow:
+
+- Use **actual iPhone hardware** for runtime validation of:
+  - microphone permission flow
+  - location/geocoding behavior
+  - camera/photo-related flows
+  - general UI behavior
+
+- Use **Any iOS Device (arm64)** for archive-style compile/build confidence before the next TestFlight submission
+
+---
+
+## Current Status After This Pass
+- Warning cleanup pass completed successfully
+- All listed warnings from this round were resolved
+- Project is in a better state for the next external TestFlight build cycle
+- Recommended next step is a quick runtime sanity pass on device for the areas touched:
+  - microphone recording permission flow
+  - current-location autofill
+  - batch add from photos
+  - app launch/open flow
+
+## TestFlight External Observer Readiness — Status Summary
+
+### Current Status
+We have completed the initial App Store Connect / TestFlight setup for **Legacy Treasure Chest** and the app is now positioned for a **small controlled external observer round**.
+
+### What Was Completed
+
+#### 1. App Store Connect Setup
+- Created the **App Store Connect app record** for:
+  - **App Name:** Legacy Treasure Chest
+  - **Bundle ID:** `com.bruceeastman.LegacyTreasureChest`
+- Confirmed Xcode signing with the correct Apple developer team
+- Resolved initial signing/team configuration issues in Xcode
+
+#### 2. Xcode Archive / Upload Path
+- Set initial version/build numbering and successfully archived the app
+- Uploaded builds to App Store Connect through Xcode Organizer
+- Established the working archive/upload path for future TestFlight builds
+
+#### 3. Info.plist / Distribution Fixes Required for Upload
+During the first upload attempts, several distribution-related issues were identified and corrected:
+
+- Added required bundle metadata:
+  - `CFBundlePackageType = APPL`
+- Added and configured a proper launch screen:
+  - created `LaunchScreen.storyboard`
+  - set launch screen interface file base name correctly
+  - removed conflicting plist-only launch screen configuration
+- Added required supported orientations:
+  - `UISupportedInterfaceOrientations`
+  - `UISupportedInterfaceOrientations~ipad`
+- Added required location usage purpose string:
+  - `NSLocationWhenInUseUsageDescription`
+- Cleared export compliance / encryption questionnaire for uploaded TestFlight builds
+
+#### 4. TestFlight External Testing Setup
+- Created external testing group:
+  - **Initial Observers**
+- Added the required **Test Information**
+- Added Beta App Review contact information and reviewer notes
+- Added **What to Test** text for the external observer group
+- Submitted builds for Beta App Review
+- Received Apple approval for external testing
+
+#### 5. Warning Cleanup / Stability Pass
+- Performed a separate warning cleanup pass after initial Apple review friction
+- Cleaned up all identified Xcode warnings before preparing the next observer build
+- Uploaded a cleaner follow-up build for external observers
+
+#### 6. Current Build Status
+- **Build 1.0 (3)** has been uploaded
+- Export compliance for build 3 was completed
+- Build **1.0 (3)** was added to the **Initial Observers** external group
+- Older build **1.0 (1)** was removed from the external group
+- The short **What to Test** content was added for build 3
+- The project is now ready for adding the first small set of trusted external observers
+
+---
+
+## Recommended Immediate Next Step
+Add **2–3 highly trusted external observers by email** to the **Initial Observers** TestFlight group and begin the first controlled observer round.
+
+Recommended approach:
+- use **email invites only**
+- do **not** use a public link
+- keep the group very small initially
+- monitor tester status in App Store Connect:
+  - Invited
+  - Accepted
+  - Installed
+
+---
+
+## Notes / Lessons Learned
+- TestFlight **export compliance must be answered per build**
+- A newly uploaded build may show **Missing Compliance** even if the previous build was already cleared
+- External testing groups are **build-based**, so new builds must be explicitly added to the group
+- While a build is in Beta App Review, App Store Connect may prevent replacing it until review is complete
+- Archiving to **Any iOS Device (arm64)** is normal for distribution and is separate from the deployment target
+- The archive/distribution process surfaced issues that were not obvious during normal device-only development
+
+---
+
+## Current Operational Baseline
+- App Store Connect app record exists
+- TestFlight external group exists
+- Apple external review path is approved
+- Build **1.0 (3)** is the intended build for the first trusted observer round
+- Warning cleanup has been completed
+- Next work is real-world observer feedback, not distribution setup
+
+---
 # Public Documentation Hosting (TestFlight Readiness) — 2026-03-06
 
 **Status:** Complete

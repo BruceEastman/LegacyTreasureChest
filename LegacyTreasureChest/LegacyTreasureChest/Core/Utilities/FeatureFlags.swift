@@ -80,12 +80,17 @@ final class FeatureFlags {
     }
 
     /// Enables Disposition Engine UI (Local Help / Find Partners).
-    /// Default: ON in DEBUG builds, OFF in Release.
+    /// Default: ON unless explicitly turned off.
     var dispositionEngineUI: Bool {
-        get { defaults.bool(forKey: FeatureFlagKeys.dispositionEngineUI) }
+        get {
+            if defaults.object(forKey: FeatureFlagKeys.dispositionEngineUI) == nil {
+                return true
+            }
+            return defaults.bool(forKey: FeatureFlagKeys.dispositionEngineUI)
+        }
         set { defaults.set(newValue, forKey: FeatureFlagKeys.dispositionEngineUI) }
     }
-
+    
     // MARK: - Logging
 
     private func logCurrentValues() {

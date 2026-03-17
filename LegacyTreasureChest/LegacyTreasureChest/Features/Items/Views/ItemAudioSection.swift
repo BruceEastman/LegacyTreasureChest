@@ -257,12 +257,10 @@ struct ItemAudioSection: View {
     // MARK: - Actions
 
     private func handleRecordButtonTap() {
-        let session = AVAudioSession.sharedInstance()
-
-        switch session.recordPermission {
+        switch AVAudioApplication.shared.recordPermission {
         case .undetermined:
             // Ask for permission, then start recording if granted.
-            session.requestRecordPermission { granted in
+            AVAudioApplication.requestRecordPermission { granted in
                 DispatchQueue.main.async {
                     if granted {
                         startRecording()
@@ -287,7 +285,6 @@ struct ItemAudioSection: View {
             presentAlert("Unable to use the microphone due to an unknown permission state.")
         }
     }
-
     // MARK: - Audio Summary (Backend)
 
     /// IMPORTANT: This must be the Mac mini LAN IP when running on a real iPhone.

@@ -170,7 +170,6 @@ struct ItemAIAnalysisSheet: View {
                 }
 
                 if item.value > 0 {
-                    let currencyCode = Locale.current.currency?.identifier ?? "USD"
                     CurrencyText.view(item.value)
                         .font(Theme.secondaryFont)
                         .foregroundStyle(Theme.textSecondary)
