@@ -40,7 +40,7 @@ final class FeatureFlags {
             AppConstants.StorageKeys.enableCloudKit: false,
             AppConstants.StorageKeys.enableHouseholds: false,
             AppConstants.StorageKeys.showDebugInfo: debugDefault,
-            FeatureFlagKeys.dispositionEngineUI: debugDefault   // ✅ ON in DEBUG, OFF in Release
+            FeatureFlagKeys.dispositionEngineUI: true
         ]
 
         defaults.register(defaults: defaultsToRegister)

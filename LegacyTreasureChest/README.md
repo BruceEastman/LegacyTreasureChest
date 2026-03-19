@@ -3,6 +3,147 @@
 https://ltc-ai-gateway-530541590215.us-west1.run.app
 cloud run deploy ltc-ai-gateway --source . --region us-west1 --allow-unauthenticated
 
+## 2026-03-19 — Fixed item-level Local Help hidden in Release/TestFlight
+
+### Issue
+Item-level **Local Help** was not appearing on `ItemDetailView` in local Release/TestFlight-style behavior, even though:
+- Set-level Local Help was working
+- Brief and Plan generation for items appeared to succeed
+- The item Local Help UI code was present in `ItemDetailView`
+
+### Symptoms observed
+- In **Item Detail → Next Step**, only **Liquidate** appeared
+- The **Local Help** row did not appear at all, including the disabled/gated version
+- This indicated the Local Help block was being skipped before prereq gating was evaluated
+
+### Root cause
+The `dispositionEngineUI` feature flag had been updated to return **true by default unless explicitly turned off**, but `registerDefaultValues()` was still registering the Release default as `false`:
+
+```swift
+FeatureFlagKeys.dispositionEngineUI: debugDefault   // ON in DEBUG, OFF in Release
+
+## Update — Launch Screen Cleanup, AI Regression Check, and Local Help Restoration (March 17, 2026)
+
+### Summary
+Completed a focused validation and cleanup pass in preparation for the next TestFlight build. We investigated a temporary AI failure affecting all AI-backed features, confirmed the cloud backend and Gemini path are functioning, fixed a real Local Help regression in set navigation, and updated the Local Help feature flag behavior so the feature is visible by default for TestFlight users unless explicitly turned off.
+
+---
+
+### 1. AI Failure Investigation — Current Status
+We investigated a morning regression where all AI-backed actions appeared to fail in the app, including:
+- Add New Item from Photo
+- Improve with AI
+- Create Brief
+
+We validated the backend directly and confirmed:
+
+- Cloud Run `/health` endpoint returned `200 OK`
+- `/ai/analyze-item-text` returned a successful structured response
+- `/ai/analyze-item-photo` returned a successful structured response
+- Cloud Run was able to reach Gemini successfully
+- The backend/Gemini path is currently healthy
+
+**Conclusion:**  
+This does **not** appear to be a persistent backend outage or Gemini/secret failure. The earlier issue was most likely transient (network, cloud/model-side hiccup, cold start/scaling event, or build/version ambiguity on device). No backend code change was required to restore operation.
+
+---
+
+### 2. Launch Screen Cleanup
+Completed the launch screen integration/cleanup work needed for iPhone startup polish and to remove the prior storyboard warning path.
+
+Related files included:
+- `LaunchScreen.storyboard`
+- `LegacyTreasureChest.xcodeproj/project.pbxproj`
+- `Info.plist`
+
+This work is part of the TestFlight-readiness cleanup and is now incorporated into the current codebase.
+
+---
+
+### 3. Set-Level Local Help Regression — Fixed
+A real regression was identified in **Set Details**:
+
+- The **Local Help** row was still visible
+- But tapping it incorrectly opened **Execute Plan**
+- This was caused by the Local Help navigation link targeting `SetExecutePlanView(itemSet:)` instead of the partner discovery screen
+
+**Fix applied in `SetDetailView.swift`:**
+- Updated the Local Help destination to:
+  - `DispositionPartnersView(itemSet: itemSet)`
+- Updated the set-level Local Help gate to use:
+  - `localHelpPrereqsMet`
+instead of only checking for an active plan
+
+**Result:**  
+Set-level Local Help now opens the intended partner discovery / Google Places workflow again.
+
+---
+
+### 4. Item-Level Local Help Visibility — Default Behavior Updated
+For items, the Local Help UI block was still present in code, but it was wrapped in the `dispositionEngineUI` feature flag.
+
+We discovered that the existing implementation used:
+- `UserDefaults.bool(forKey:)`
+
+That meant the effective default was `false` whenever the flag had never been set, even though the intent/comments suggested otherwise.
+
+**Fix applied in `FeatureFlags.swift`:**
+- Updated `dispositionEngineUI` so it now defaults to **ON unless explicitly turned off**
+
+New behavior:
+- If `ltc_feature_dispositionEngineUI` has never been set, the app returns `true`
+- If it has been explicitly set, the stored value is respected
+
+**Reason for this change:**  
+Local Help is one of the key differentiating features that should be tested in TestFlight by external users.
+
+---
+
+### 5. Notes on Current Device Testing
+After the feature-flag fix, item-level Local Help was still not visible on the developer’s existing local phone install. Based on the code review, the most likely explanation is **stale local `UserDefaults` state** from prior builds, not a current code-path failure.
+
+Because of that, the correct source of truth for validation is now:
+- a **fresh TestFlight install**
+- on a **separate iPhone**
+- using the newly archived build
+
+---
+
+### 6. Next Validation Plan
+The next build/download from TestFlight should validate the following on a clean device install:
+
+1. **Item flow**
+   - Generate Brief
+   - Generate Plan
+   - Confirm **Local Help** appears
+   - Open Local Help and confirm partner discovery search works
+
+2. **Set flow**
+   - Generate Brief
+   - Generate Plan
+   - Confirm **Local Help** appears
+   - Open Local Help and confirm partner discovery search works
+
+3. **Core AI flows**
+   - Add New Item from Photo
+   - Improve with AI
+   - Create Brief
+
+---
+
+### 7. Current Assessment
+At the end of this pass:
+
+- Cloud Run backend is healthy
+- Gemini integration is healthy
+- AI text route is working
+- AI photo route is working
+- Set-level Local Help regression is fixed
+- Local Help feature flag behavior is now aligned with TestFlight testing goals
+- Next source-of-truth validation is a fresh TestFlight install on a second device
+
+This leaves the project in a good position for the next TestFlight build and external-user readiness verification.
+
 ## 2026-03-16 — Warning Cleanup and Stability Hardening Pass
 
 This pass was completed during the waiting period before the next external TestFlight build cycle.
