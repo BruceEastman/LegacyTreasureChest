@@ -31,10 +31,28 @@ struct SetLiquidationSectionView: View {
                 Button {
                     Task { await generateBrief(for: itemSet) }
                 } label: {
-                    Label(isGeneratingBrief ? "Generating Brief…" : "Generate / Update Brief", systemImage: "sparkles")
+                    HStack(spacing: 10) {
+                        if isGeneratingBrief {
+                            ProgressView()
+                        } else {
+                            Image(systemName: "sparkles")
+                        }
+                        Text(isGeneratingBrief ? "Generating Brief…" : "Generate / Update Brief")
+                    }
                 }
                 .disabled(isGeneratingBrief || isGeneratingPlan)
 
+                // Clearer "work happening" feedback
+                if isGeneratingBrief {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                        Text("Working… this can take a few seconds.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .padding(.top, 6)
+                }
                 if let brief = latestActiveBriefRecord(for: itemSet) {
                     briefSummaryCard(briefRecord: brief)
 
@@ -48,6 +66,17 @@ struct SetLiquidationSectionView: View {
                 } else {
                     Text("No liquidation brief yet.")
                         .foregroundStyle(.secondary)
+                }
+                
+                if isGeneratingPlan {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                        Text("Generating plan…")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .padding(.top, 6)
                 }
 
                 if let plan = latestActivePlanRecord(for: itemSet) {
