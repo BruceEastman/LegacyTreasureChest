@@ -2,6 +2,15 @@
 
 https://ltc-ai-gateway-530541590215.us-west1.run.app
 cloud run deploy ltc-ai-gateway --source . --region us-west1 --allow-unauthenticated
+## 2026-03-19 — Set liquidation brief loading-state parity fix
+
+- Fixed a UI feedback gap on `SetLiquidationSectionView` where **Generate / Update Brief** for sets did not show visible loading activity during AI execution.
+- Updated the set-level liquidation brief button to match the working item-level pattern:
+  - show `ProgressView()` inside the button while brief generation is running
+  - show a helper status row: `Working… this can take a few seconds.`
+- Added matching in-section feedback for plan generation with `Generating plan…`
+- Confirmed locally on device that the set liquidation screen now shows clear activity state during brief generation instead of only dimming/greying the button.
+- Scope was intentionally limited to UI-state parity; no backend, model, or workflow logic changed.
 
 ## 2026-03-19 — Fixed item-level Local Help hidden in Release/TestFlight
 

@@ -1334,7 +1334,8 @@ private struct SetPartnerPickerView: View {
             set.name,
             set.notes ?? "",
             set.story ?? "",
-            set.closetBrandList ?? ""
+            set.closetBrandList ?? "",
+            set.setTypeRaw
         ]
         .joined(separator: " ")
         .lowercased()
