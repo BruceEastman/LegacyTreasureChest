@@ -10,7 +10,6 @@ import Foundation
 import SwiftUI
 import Combine
 
-
 @MainActor
 final class AuthenticationViewModel: ObservableObject {
     
@@ -56,7 +55,7 @@ final class AuthenticationViewModel: ObservableObject {
             isSignedIn = true
         } catch {
             isSignedIn = false
-            errorMessage = wrappedErrorMessage(from: error)
+            errorMessage = userFacingMessage(for: .signIn)
             print("❌ Sign in failed: \(error)")
         }
         
@@ -74,7 +73,7 @@ final class AuthenticationViewModel: ObservableObject {
             try await authService.signOut()
             isSignedIn = false
         } catch {
-            errorMessage = wrappedErrorMessage(from: error)
+            errorMessage = userFacingMessage(for: .signOut)
             print("❌ Sign out failed: \(error)")
         }
         
@@ -92,7 +91,7 @@ final class AuthenticationViewModel: ObservableObject {
             try await authService.deleteAccount()
             isSignedIn = false
         } catch {
-            errorMessage = wrappedErrorMessage(from: error)
+            errorMessage = userFacingMessage(for: .deleteAccount)
             print("❌ Delete account failed: \(error)")
         }
         
@@ -101,11 +100,20 @@ final class AuthenticationViewModel: ObservableObject {
     
     // MARK: - Helpers
     
-    private func wrappedErrorMessage(from error: Error) -> String {
-        if let appError = error as? LocalizedError,
-           let description = appError.errorDescription {
-            return description
+    private enum AuthAction {
+        case signIn
+        case signOut
+        case deleteAccount
+    }
+    
+    private func userFacingMessage(for action: AuthAction) -> String {
+        switch action {
+        case .signIn:
+            return "Sorry, we couldn’t sign you in. Please try again."
+        case .signOut:
+            return "Sorry, we couldn’t sign you out. Please try again."
+        case .deleteAccount:
+            return "Sorry, we couldn’t delete your account. Please try again."
         }
-        return "Something went wrong. Please try again."
     }
 }

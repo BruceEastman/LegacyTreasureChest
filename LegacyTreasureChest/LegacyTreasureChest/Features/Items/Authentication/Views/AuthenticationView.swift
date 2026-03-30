@@ -26,69 +26,69 @@ struct AuthenticationView: View {
             Color(.systemBackground)
                 .ignoresSafeArea()
             
-            VStack(spacing: 24) {
+            VStack {
                 Spacer()
                 
-                Image("app-logo")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 220, height: 220)
-                
-                Text("Legacy Treasure Chest")
-                    .font(.title.bold())
-                    .multilineTextAlignment(.center)
-                
-                Text("Sign in to start capturing your items and stories.")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
-                
-                if let error = viewModel.errorMessage {
-                    Text(error)
-                        .font(.footnote)
-                        .foregroundStyle(.red)
+                VStack(spacing: 24) {
+                    Image("app-logo")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 220, height: 220)
+                    
+                    Text("Legacy Treasure Chest")
+                        .font(.title.bold())
+                        .multilineTextAlignment(.center)
+                    
+                    Text("Sign in to start capturing your items and stories.")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal)
+                    
+                    if let error = viewModel.errorMessage {
+                        Text(error)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                    }
+                    
+                    SignInWithAppleButton(.signIn) { request in
+                        // No configuration needed for now.
+                    } onCompletion: { result in
+                        // We still trigger sign-in via onTapGesture.
+                    }
+                    .frame(height: 45)
+                    .onTapGesture {
+                        Task {
+                            await viewModel.signIn()
+                        }
+                    }
+                    .disabled(viewModel.isBusy)
+                    .opacity(viewModel.isBusy ? 0.6 : 1.0)
+                    .padding(.horizontal, 40)
+
+                    #if targetEnvironment(simulator)
+                    Button(action: {
+                        viewModel.isSignedIn = true
+                    }) {
+                        Text("Continue in Simulator")
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color(.systemGray5))
+                            .foregroundColor(.primary)
+                            .cornerRadius(10)
+                    }
+                    .padding(.horizontal, 40)
+                    .padding(.top, 4)
+                    #endif
                 }
                 
-                // MARK: - Real Sign in with Apple button
-                SignInWithAppleButton(.signIn) { request in
-                    // No configuration needed for now.
-                } onCompletion: { result in
-                    // We still trigger sign-in via onTapGesture.
-                }
-                .frame(height: 45)
-                .onTapGesture {
-                    Task {
-                        await viewModel.signIn()
-                    }
-                }
-                .disabled(viewModel.isBusy)
-                .opacity(viewModel.isBusy ? 0.6 : 1.0)
-                .padding(.horizontal, 40)
-
-                // MARK: - Simulator-only dev override
-                #if targetEnvironment(simulator)
-                Button(action: {
-                    viewModel.isSignedIn = true
-                }) {
-                    Text("Continue in Simulator")
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color(.systemGray5))
-                        .foregroundColor(.primary)
-                        .cornerRadius(10)
-                }
-                .padding(.horizontal, 40)
-                .padding(.top, 4)
-                #endif
-
+                Spacer()
             }
         }
     }
 }
-
 
 #Preview {
     let service = PreviewAuthService()
