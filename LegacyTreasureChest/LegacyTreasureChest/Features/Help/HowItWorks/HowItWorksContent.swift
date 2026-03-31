@@ -23,179 +23,217 @@ struct HowItWorksPage: Identifiable, Hashable {
 
 enum HowItWorksContent {
     static let pages: [HowItWorksPage] = [
-        HowItWorksPage(
-            title: "Start Here",
-            body: """
-Legacy Treasure Chest helps you organize and plan the future of the possessions in your home.
 
-Most households accumulate a lifetime of possessions — furniture, collections, jewelry, tools, clothing, and thousands of everyday items.
-
-When the time comes to downsize or settle an estate, families are often left guessing:
-• what exists
-• what items are worth
-• who should receive them
-• how items should be sold
-
-Legacy Treasure Chest brings structure and clarity to the physical estate.
-
-The system guides you through a simple journey:
-Capture → Understand → Decide → Execute → Document
-
-Along the way it helps answer four important questions:
-• What do we have?
-• What is it worth?
-• What should happen to it?
-• What does the executor need?
-
-Start by adding a few items and exploring the system.
-""",
-            iconRows: []
-        ),
+        // MARK: - The Journey
 
         HowItWorksPage(
-            title: "The Estate Journey",
+            title: "How the System Works",
             body: """
-Legacy Treasure Chest is designed around a simple process for understanding and planning the future of the possessions in your home.
-
-Capture
-Photograph and record items in your household.
-
-Understand
-AI helps identify items and provides resale-oriented value ranges. These are advisory estimates, not formal appraisals.
-
-Decide
-Choose what should happen to each item:
-• keep it in the estate
-• assign a beneficiary
-• sell or liquidate it (or donate it)
-
-Execute
-If you decide to sell an item, the system helps you plan how to do it. For many items, the best approach is to sell it yourself locally or online. For higher-value or specialized items, other strategies may be more appropriate. Once you choose a strategy, the system generates a checklist.
-
-Document
-Generate clear reports that make the estate easier for others to understand and manage.
+Legacy Treasure Chest guides you through five steps. You don't need to complete them all at once — most people work through them gradually over days or weeks.
 """,
-            iconRows: []
+            iconRows: [
+                HowItWorksIconRow(
+                    systemImage: "camera.fill",
+                    title: "Capture",
+                    body: "Photograph items or add them manually. Start anywhere — a single room, a cabinet, or the items you already know are valuable."
+                ),
+                HowItWorksIconRow(
+                    systemImage: "sparkles",
+                    title: "Understand",
+                    body: "AI helps identify items and suggest realistic resale value ranges. These are advisory estimates, not formal appraisals."
+                ),
+                HowItWorksIconRow(
+                    systemImage: "arrow.triangle.branch",
+                    title: "Decide",
+                    body: "Choose what happens to each item — keep it in the family, assign it to someone specific, or plan to sell or donate it."
+                ),
+                HowItWorksIconRow(
+                    systemImage: "checklist",
+                    title: "Execute",
+                    body: "For items you plan to sell, the system helps you choose a selling strategy and generates a step-by-step checklist."
+                ),
+                HowItWorksIconRow(
+                    systemImage: "doc.text.fill",
+                    title: "Document",
+                    body: "Generate clear reports for family members, executors, and professionals when you are ready to share."
+                )
+            ]
         ),
+
+        // MARK: - Building Your Inventory
 
         HowItWorksPage(
             title: "Building Your Inventory",
             body: """
-Your inventory is the foundation of the system.
-
-Start by photographing items or adding them manually. The system can help suggest categories and estimated resale ranges.
-
-As you catalog items, you can organize them into Sets or groupings so the estate is easier to understand (collections, matched pieces, room groupings, and similar groupings).
-
-You can also attach documents, additional photos, and audio recordings so important details are not lost.
+Start small. Even five or ten items gives you a feel for how the system works. You can add more anytime.
 """,
             iconRows: [
                 HowItWorksIconRow(
-                    systemImage: "photo",
+                    systemImage: "photo.on.rectangle.angled",
                     title: "Add with Photos",
-                    body: "Photograph an item and let the app help identify it and preserve visual detail."
+                    body: "Tap the photo icon in the Items screen to photograph one item or import several at once. AI will suggest a title, category, and value range."
                 ),
                 HowItWorksIconRow(
                     systemImage: "plus",
-                    title: "Add Items",
-                    body: "Use the + button to create an item manually when you do not have a photo."
+                    title: "Add Manually",
+                    body: "Tap the + button to create an item without a photo. Useful for items you know well or want to record quickly."
                 ),
                 HowItWorksIconRow(
-                    systemImage: "sparkles",
-                    title: "Improve with AI",
-                    body: "AI can help refine categories, descriptions, and value guidance."
+                    systemImage: "rectangle.stack.fill",
+                    title: "Create Sets",
+                    body: "Group related items — a china pattern, a jewelry collection, a closet — into a Set so they can be planned and sold together."
                 ),
                 HowItWorksIconRow(
                     systemImage: "waveform",
                     title: "Record Audio",
-                    body: "Capture the story, history, or meaning of an item in your own voice."
+                    body: "Attach a short voice recording to any item to capture its story, history, or meaning in your own words."
+                ),
+                HowItWorksIconRow(
+                    systemImage: "sparkles",
+                    title: "Improve with AI",
+                    body: "On any item, tap Improve with AI to get a better description, category, or value estimate. Adding more detail produces better results."
                 )
             ]
         ),
 
+        // MARK: - AI Valuation
+
         HowItWorksPage(
-            title: "Legacy & Beneficiaries",
+            title: "Understanding AI Valuation",
             body: """
-Some possessions belong with specific people.
+The AI provides realistic resale estimates — what an item might actually sell for at an estate sale, consignment shop, or online marketplace. These are not insurance values or retail replacement costs.
+""",
+            iconRows: [
+                HowItWorksIconRow(
+                    systemImage: "chart.bar.fill",
+                    title: "You'll See a Range",
+                    body: "Valuations show a low, mid, and high estimate. The midpoint is the most realistic expectation under typical conditions."
+                ),
+                HowItWorksIconRow(
+                    systemImage: "text.bubble.fill",
+                    title: "More Detail = Better Estimate",
+                    body: "For jewelry, rugs, art, and luxury items, adding specifics — weight, maker, pattern name, condition — significantly improves accuracy."
+                ),
+                HowItWorksIconRow(
+                    systemImage: "exclamationmark.triangle",
+                    title: "Some Items Need a Professional",
+                    body: "For high-value or rare items, the AI will tell you what additional information is needed and may suggest a formal appraisal."
+                )
+            ]
+        ),
 
-Legacy Treasure Chest allows you to assign beneficiaries to items or collections so that your intentions are clearly recorded.
+        // MARK: - Legacy & Beneficiaries
 
-You can include notes or record short audio messages in your own voice describing the story or significance of the item. This helps turn a simple inventory into meaningful guidance for the next generation.
+        HowItWorksPage(
+            title: "Legacy Items & Beneficiaries",
+            body: """
+Some possessions belong with specific people. Assigning beneficiaries turns your inventory into a clear record of your intentions.
 """,
             iconRows: [
                 HowItWorksIconRow(
                     systemImage: "person.3.fill",
-                    title: "Assign Beneficiaries",
-                    body: "Record who should receive important items or collections."
+                    title: "Assign a Beneficiary",
+                    body: "Open any item and add a beneficiary from your list. You can assign the same person to multiple items."
+                ),
+                HowItWorksIconRow(
+                    systemImage: "person.badge.plus",
+                    title: "Add People First",
+                    body: "Beneficiaries are managed in the Beneficiaries section. Add them once and they're available for any item."
                 ),
                 HowItWorksIconRow(
                     systemImage: "waveform",
-                    title: "Add Personal Context",
-                    body: "Use audio to explain why an item matters or share its history in your own words."
+                    title: "Add a Personal Message",
+                    body: "Record a short audio message or add a written note explaining why this item belongs with this person. These details make the difference between a list and a legacy."
                 )
             ]
         ),
+
+        // MARK: - Selling & Liquidating
 
         HowItWorksPage(
             title: "Selling & Liquidating",
             body: """
-If you decide to sell an item, Legacy Treasure Chest helps determine the most practical way to do it.
-
-For many items, the best approach is simply to sell the item yourself locally or online. The system can help you organize the steps required to complete the sale.
-
-For higher-value or specialized items, other strategies may be more appropriate, including dealers, consignment shops, auction houses, or estate sale groupings.
-
-Once you choose a strategy, the system generates a checklist to help you carry it out.
+Items without a beneficiary are assumed to be sold or donated. The system helps you choose the right approach for each item or group of items.
 """,
             iconRows: [
                 HowItWorksIconRow(
                     systemImage: "sparkles",
-                    title: "Get AI Guidance",
-                    body: "Use AI guidance to understand which selling path is most practical for the item."
+                    title: "Get a Liquidation Brief",
+                    body: "On any item marked for sale, tap Liquidate to get an AI-generated brief explaining which selling path makes the most sense and why."
                 ),
                 HowItWorksIconRow(
-                    systemImage: "person.2.wave.2",
-                    title: "Find Local Help",
-                    body: "When needed, identify local businesses that may be able to help with the sale."
+                    systemImage: "storefront.fill",
+                    title: "Local Help",
+                    body: "For items best handled by a local business — consignment shops, auction houses, estate sale companies — the system can identify nearby options."
+                ),
+                HowItWorksIconRow(
+                    systemImage: "shippingbox.fill",
+                    title: "Specialist Marketplaces",
+                    body: "For luxury items like watches, designer handbags, and fine jewelry, specialist online platforms often return significantly better prices than local options."
+                ),
+                HowItWorksIconRow(
+                    systemImage: "checklist",
+                    title: "Follow the Checklist",
+                    body: "Once you choose a selling path, the system generates a step-by-step checklist to help you or an executor carry it out."
                 )
             ]
         ),
 
+        // MARK: - Estate Reports
+
         HowItWorksPage(
-            title: "Estate Reports",
+            title: "Estate Reports & Exports",
             body: """
-As your inventory grows and decisions are made, the system can generate organized documentation describing the physical estate.
-
-These reports help others understand the estate clearly and may include:
-• estate summaries
-• detailed inventories
-• beneficiary reports
-• outreach packets for professionals
-• executor documentation
-
-Exports reflect the catalog exactly as it exists at the time you generate them.
+When you're ready to share, the system can generate organized documentation from your inventory. Exports reflect the catalog exactly as it exists at the time you generate them.
 """,
             iconRows: [
                 HowItWorksIconRow(
-                    systemImage: "square.and.arrow.up",
-                    title: "Share or Export",
-                    body: "Generate reports and packets when you are ready to share clear documentation with others."
+                    systemImage: "doc.plaintext.fill",
+                    title: "Estate Snapshot",
+                    body: "A one-page summary of your estate — total value, category breakdown, and disposition overview. Good for an initial conversation with an attorney or advisor."
+                ),
+                HowItWorksIconRow(
+                    systemImage: "list.bullet.rectangle.fill",
+                    title: "Detailed Inventory",
+                    body: "A complete item-by-item report with categories, values, and disposition decisions. Designed to be useful for executors and attorneys."
+                ),
+                HowItWorksIconRow(
+                    systemImage: "person.text.rectangle.fill",
+                    title: "Beneficiary Packet",
+                    body: "A report for a specific beneficiary showing their assigned items, values, and any personal messages you've included."
+                ),
+                HowItWorksIconRow(
+                    systemImage: "envelope.fill",
+                    title: "Outreach Packet",
+                    body: "A professional summary you can share with dealers, auction houses, or estate sale companies when seeking help with liquidation."
                 )
             ]
         ),
 
+        // MARK: - Privacy
+
         HowItWorksPage(
-            title: "Privacy",
+            title: "Your Privacy",
             body: """
-Legacy Treasure Chest is designed as a private advisory system.
-
-Your inventory remains stored on your device. The application does not operate as a marketplace and does not manage transactions.
-
-When AI assistance is used, only the information required for that specific request is sent for analysis according to the provider’s data handling policies.
-
-The goal is to help you organize and understand your household possessions while keeping control of your information.
+Your inventory stays on your device. Legacy Treasure Chest does not store your estate information in the cloud, operate a marketplace, or manage transactions on your behalf.
 """,
-            iconRows: []
+            iconRows: [
+                HowItWorksIconRow(
+                    systemImage: "iphone",
+                    title: "Stored on Your Device",
+                    body: "All item data, photos, documents, and audio recordings are kept locally. Nothing is uploaded to a server."
+                ),
+                HowItWorksIconRow(
+                    systemImage: "sparkles",
+                    title: "AI Requests Are Stateless",
+                    body: "When you use AI features, only the information needed for that specific request is sent for analysis. The system does not retain a history of your requests."
+                ),
+                HowItWorksIconRow(
+                    systemImage: "hand.raised.fill",
+                    title: "Advisor, Not Operator",
+                    body: "The system provides guidance and generates documentation. All decisions and actions remain with you."
+                )
+            ]
         )
     ]
 }
