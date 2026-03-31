@@ -3,9 +3,13 @@
 //  LegacyTreasureChest
 //
 //  Home screen shown after successful sign-in.
-//  Includes navigation into the Items list, the Estate Dashboard,
-//  Estate Reports, and the AI Test Lab. Also includes a developer-only
-//  "Reset All Data" tool.
+//  Focused on two primary work modes:
+//  1. Items & Stories
+//  2. Estate Dashboard
+//
+//  Guide and Sign Out are moved into a top-right menu.
+//  A compact live metrics strip gives immediate estate context.
+//  The primary content is vertically centered when space allows.
 //
 
 import SwiftUI
@@ -17,241 +21,192 @@ struct HomeView: View {
     @Binding var openItemsAfterOnboarding: Bool
 
     @Environment(\.modelContext) private var modelContext
+    @Query private var items: [LTCItem]
+
     @State private var isConfirmingReset: Bool = false
     @State private var resetErrorMessage: String?
+    @State private var isShowingGuide: Bool = false
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: Theme.spacing.large) {
-                // App icon / visual anchor
-                Image("app-logo")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 220, height: 220)
-                    .padding(.top, Theme.spacing.xl)
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(spacing: Theme.spacing.large) {
+                    Spacer(minLength: 0)
 
-                // Headline
-                Text("Welcome to Legacy Treasure Chest")
-                    .font(Theme.titleFont)
-                    .foregroundStyle(Theme.text)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, Theme.spacing.large)
-
-                // Subheadline
-                Text("Next we’ll start cataloging your items, photos, audio stories, and beneficiaries.")
-                    .font(Theme.bodyFont)
-                    .foregroundStyle(Theme.textSecondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, Theme.spacing.large)
-
-                // MARK: – Estate Dashboard
-
-                NavigationLink {
-                    EstateDashboardView()
-                } label: {
-                    VStack(alignment: .leading, spacing: Theme.spacing.small) {
-                        Text("Estate Dashboard")
-                            .font(Theme.bodyFont.weight(.semibold))
-                            .foregroundStyle(Color.white)
-
-                        Text("See your total estate value, Legacy items, and what will be Liquidated.")
-                            .font(Theme.secondaryFont)
-                            .foregroundStyle(Color.white.opacity(0.9))
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding()
-                    .background(Theme.accent)
-                    .cornerRadius(16)
-                }
-                .padding(.horizontal, Theme.spacing.xl)
-                .padding(.top, Theme.spacing.small)
-
-                // MARK: – Primary navigation card (Items)
-
-                NavigationLink {
-                    ItemsListView()
-                } label: {
-                    Text("View Your Items")
-                        .font(Theme.bodyFont.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Theme.primary)
-                        .foregroundStyle(Color.white)
-                        .cornerRadius(16)
-                }
-                .padding(.horizontal, Theme.spacing.xl)
-                .padding(.top, Theme.spacing.small)
-
-                // MARK: – Sets
-
-                NavigationLink {
-                    SetsListView()
-                } label: {
-                    Text("Sets")
-                        .font(Theme.bodyFont.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color(.systemGray5))
-                        .foregroundStyle(Theme.text)
-                        .cornerRadius(16)
-                }
-                .padding(.horizontal, Theme.spacing.xl)
-                .padding(.top, Theme.spacing.small)
-
-                // MARK: – Guide
-
-                NavigationLink {
-                    HelpView()
-                } label: {
-                    Text("Guide")
-                        .font(Theme.bodyFont.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Theme.accent.opacity(0.18))
-                        .foregroundStyle(Theme.text)
-                        .cornerRadius(16)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .strokeBorder(Theme.accent.opacity(0.35), lineWidth: 1)
+                    VStack(spacing: Theme.spacing.large) {
+                        HomeMetricsStrip(
+                            itemCount: totalItems,
+                            estimatedValueText: currencyString(totalEstateValue),
+                            legacyCount: legacyItemCount
                         )
-                }
-                .padding(.horizontal, Theme.spacing.xl)
-                .padding(.top, Theme.spacing.small)
 
-                // MARK: – Internal Tools & Labs (DEBUG only)
-
-                #if DEBUG
-                VStack(alignment: .leading, spacing: Theme.spacing.small) {
-                    Text("Tools & Labs")
-                        .ltcSectionHeaderStyle()
-
-                    // Estate Reports entry point (debug convenience)
-                    NavigationLink {
-                        EstateReportsView()
-                    } label: {
-                        VStack(alignment: .leading, spacing: Theme.spacing.small) {
-                            Text("Estate Reports")
-                                .font(Theme.bodyFont.weight(.semibold))
-                                .foregroundStyle(Theme.text)
-
-                            Text("Generate PDF reports for your estate, beneficiaries, and executor.")
-                                .font(Theme.secondaryFont)
-                                .foregroundStyle(Theme.textSecondary)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .ltcCardBackground()
-                    }
-
-                    // AI Test Lab
-                    NavigationLink {
-                        AITestView()
-                    } label: {
-                        VStack(alignment: .leading, spacing: Theme.spacing.small) {
-                            Text("AI Test Lab")
-                                .font(Theme.bodyFont.weight(.semibold))
-                                .foregroundStyle(Theme.text)
-
-                            Text("Try Gemini-powered item analysis with sample photos.")
-                                .font(Theme.secondaryFont)
-                                .foregroundStyle(Theme.textSecondary)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .ltcCardBackground()
-                    }
-
-                    // Liquidate Sandbox (debug)
-                    NavigationLink {
-                        LiquidateSandboxView()
-                    } label: {
-                        VStack(alignment: .leading, spacing: Theme.spacing.small) {
-                            Text("Liquidate Sandbox")
-                                .font(Theme.bodyFont.weight(.semibold))
-                                .foregroundStyle(Theme.text)
-
-                            Text("End-to-end liquidation flow: seed brief → choose path → plan → checklist.")
-                                .font(Theme.secondaryFont)
-                                .foregroundStyle(Theme.textSecondary)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .ltcCardBackground()
-                    }
-
-                    // Developer Settings (debug)
-                    NavigationLink {
-                        DeveloperSettingsView()
-                    } label: {
-                        VStack(alignment: .leading, spacing: Theme.spacing.small) {
-                            Text("Developer Settings")
-                                .font(Theme.bodyFont.weight(.semibold))
-                                .foregroundStyle(Theme.text)
-
-                            Text("Toggle backend AI and debug logging without resetting data.")
-                                .font(Theme.secondaryFont)
-                                .foregroundStyle(Theme.textSecondary)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .ltcCardBackground()
-                    }
-
-                    // Developer-only reset tool
-                    VStack(alignment: .leading, spacing: Theme.spacing.small) {
-                        Button {
-                            isConfirmingReset = true
+                        NavigationLink {
+                            ItemsListView()
                         } label: {
-                            HStack {
-                                Image(systemName: "trash.circle.fill")
-                                Text("Reset All Data (Dev)")
-                            }
-                            .font(Theme.bodyFont)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding()
-                            .background(Color(.systemGray6))
-                            .foregroundStyle(Theme.destructive)
-                            .cornerRadius(16)
+                            HomePrimaryCard(
+                                title: "Items & Stories",
+                                message: "Add items, update details, manage photos, audio stories, documents, and beneficiaries.",
+                                iconName: "shippingbox.fill",
+                                backgroundColor: Theme.primary
+                            )
                         }
 
-                        Text("Clears all items, beneficiaries, media, and links from this device. Use for testing only.")
-                            .font(Theme.secondaryFont)
-                            .foregroundStyle(Theme.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                        NavigationLink {
+                            EstateDashboardView()
+                        } label: {
+                            HomePrimaryCard(
+                                title: "Estate Dashboard",
+                                message: "Review estate value, legacy vs. liquidate progress, and estate-level reports.",
+                                iconName: "chart.bar.fill",
+                                backgroundColor: Theme.accent
+                            )
+                        }
                     }
-                    .padding(.top, Theme.spacing.small)
+                    .frame(maxWidth: .infinity)
+
+                    Spacer(minLength: 0)
+
+                    #if DEBUG
+                    VStack(alignment: .leading, spacing: Theme.spacing.small) {
+                        Text("Tools & Labs")
+                            .ltcSectionHeaderStyle()
+
+                        NavigationLink {
+                            EstateReportsView()
+                        } label: {
+                            VStack(alignment: .leading, spacing: Theme.spacing.small) {
+                                Text("Estate Reports")
+                                    .font(Theme.bodyFont.weight(.semibold))
+                                    .foregroundStyle(Theme.text)
+
+                                Text("Generate PDF reports for your estate, beneficiaries, and executor.")
+                                    .font(Theme.secondaryFont)
+                                    .foregroundStyle(Theme.textSecondary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .ltcCardBackground()
+                        }
+
+                        NavigationLink {
+                            AITestView()
+                        } label: {
+                            VStack(alignment: .leading, spacing: Theme.spacing.small) {
+                                Text("AI Test Lab")
+                                    .font(Theme.bodyFont.weight(.semibold))
+                                    .foregroundStyle(Theme.text)
+
+                                Text("Try Gemini-powered item analysis with sample photos.")
+                                    .font(Theme.secondaryFont)
+                                    .foregroundStyle(Theme.textSecondary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .ltcCardBackground()
+                        }
+
+                        NavigationLink {
+                            LiquidateSandboxView()
+                        } label: {
+                            VStack(alignment: .leading, spacing: Theme.spacing.small) {
+                                Text("Liquidate Sandbox")
+                                    .font(Theme.bodyFont.weight(.semibold))
+                                    .foregroundStyle(Theme.text)
+
+                                Text("End-to-end liquidation flow: seed brief → choose path → plan → checklist.")
+                                    .font(Theme.secondaryFont)
+                                    .foregroundStyle(Theme.textSecondary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .ltcCardBackground()
+                        }
+
+                        NavigationLink {
+                            DeveloperSettingsView()
+                        } label: {
+                            VStack(alignment: .leading, spacing: Theme.spacing.small) {
+                                Text("Developer Settings")
+                                    .font(Theme.bodyFont.weight(.semibold))
+                                    .foregroundStyle(Theme.text)
+
+                                Text("Toggle backend AI and debug logging without resetting data.")
+                                    .font(Theme.secondaryFont)
+                                    .foregroundStyle(Theme.textSecondary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .ltcCardBackground()
+                        }
+
+                        VStack(alignment: .leading, spacing: Theme.spacing.small) {
+                            Button {
+                                isConfirmingReset = true
+                            } label: {
+                                HStack {
+                                    Image(systemName: "trash.circle.fill")
+                                    Text("Reset All Data (Dev)")
+                                }
+                                .font(Theme.bodyFont)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding()
+                                .background(Color(.systemGray6))
+                                .foregroundStyle(Theme.destructive)
+                                .cornerRadius(16)
+                            }
+
+                            Text("Clears all items, beneficiaries, media, and links from this device. Use for testing only.")
+                                .font(Theme.secondaryFont)
+                                .foregroundStyle(Theme.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(.top, Theme.spacing.small)
+                    }
+                    .padding(.top, Theme.spacing.large)
+                    #endif
+
+                    if let message = resetErrorMessage {
+                        Text(message)
+                            .font(Theme.secondaryFont)
+                            .foregroundStyle(Theme.destructive)
+                    }
                 }
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: geometry.size.height,
+                    alignment: .center
+                )
                 .padding(.horizontal, Theme.spacing.xl)
-                .padding(.top, Theme.spacing.medium)
-                #endif
-
-                if let message = resetErrorMessage {
-                    Text(message)
-                        .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.destructive)
-                        .padding(.horizontal, Theme.spacing.xl)
-                }
-
-                // MARK: – Sign Out
-
-                Button {
-                    onSignOut()
-                } label: {
-                    Text("Sign Out")
-                        .font(Theme.bodyFont)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color(.systemGray5))
-                        .foregroundStyle(Theme.text)
-                        .cornerRadius(16)
-                }
-                .padding(.horizontal, Theme.spacing.xl)
-                .padding(.top, Theme.spacing.small)
-
-                Spacer(minLength: Theme.spacing.xl)
+                .padding(.vertical, Theme.spacing.large)
             }
+            .background(Theme.background.ignoresSafeArea())
         }
-        .background(Theme.background.ignoresSafeArea())
         .navigationTitle("Home")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button {
+                        isShowingGuide = true
+                    } label: {
+                        Label("Guide", systemImage: "book.closed")
+                    }
+
+                    Divider()
+
+                    Button(role: .destructive) {
+                        onSignOut()
+                    } label: {
+                        Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+                    }
+                } label: {
+                    Image(systemName: "person.crop.circle")
+                        .font(.title2)
+                        .foregroundStyle(Theme.text)
+                }
+            }
+        }
         .navigationDestination(isPresented: $openItemsAfterOnboarding) {
             ItemsListView()
+        }
+        .navigationDestination(isPresented: $isShowingGuide) {
+            HelpView()
         }
         .confirmationDialog(
             "Reset All Data?",
@@ -267,37 +222,70 @@ struct HomeView: View {
         }
     }
 
+    // MARK: - Home Metrics Helpers
+    // Uses the same effective value / legacy logic you provided from EstateDashboardView.
+
+    private func effectiveUnitValue(for item: LTCItem) -> Double {
+        if let estimated = item.valuation?.estimatedValue, estimated > 0 {
+            return estimated
+        }
+        return max(item.value, 0)
+    }
+
+    private func effectiveTotalValue(for item: LTCItem) -> Double {
+        let qty = max(item.quantity, 1)
+        return effectiveUnitValue(for: item) * Double(qty)
+    }
+
+    private func isLegacy(_ item: LTCItem) -> Bool {
+        !item.itemBeneficiaries.isEmpty
+    }
+
+    private var totalItems: Int {
+        items.count
+    }
+
+    private var totalEstateValue: Double {
+        items.reduce(0) { $0 + effectiveTotalValue(for: $1) }
+    }
+
+    private var legacyItemCount: Int {
+        items.filter(isLegacy).count
+    }
+
+    private func currencyString(_ value: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.maximumFractionDigits = 0
+        formatter.minimumFractionDigits = 0
+        formatter.locale = .current
+        return formatter.string(from: NSNumber(value: value)) ?? "$0"
+    }
+
     // MARK: - Reset Logic
 
     private func resetAllData() {
         do {
-            // Beneficiaries + links
             try deleteAll(of: ItemBeneficiary.self)
             try deleteAll(of: Beneficiary.self)
 
-            // Media
             try deleteAll(of: ItemImage.self)
             try deleteAll(of: AudioRecording.self)
             try deleteAll(of: Document.self)
 
-            // Sets v1
             try deleteAll(of: LTCItemSetMembership.self)
             try deleteAll(of: LTCItemSet.self)
 
-            // Liquidation Pattern A (hub + records)
             try deleteAll(of: LiquidationPlanRecord.self)
             try deleteAll(of: LiquidationBriefRecord.self)
             try deleteAll(of: LiquidationState.self)
 
-            // Batches (future)
             try deleteAll(of: BatchItem.self)
             try deleteAll(of: LiquidationBatch.self)
 
-            // Items + valuations
             try deleteAll(of: ItemValuation.self)
             try deleteAll(of: LTCItem.self)
 
-            // Legacy Liquidate (kept)
             try deleteAll(of: LiquidationPlan.self)
             try deleteAll(of: LiquidationBrief.self)
             try deleteAll(of: LTCSet.self)
@@ -315,6 +303,88 @@ struct HomeView: View {
         for object in all {
             modelContext.delete(object)
         }
+    }
+}
+
+private struct HomeMetricsStrip: View {
+    let itemCount: Int
+    let estimatedValueText: String
+    let legacyCount: Int
+
+    var body: some View {
+        HStack(spacing: 0) {
+            metricCell(value: "\(itemCount)", label: "Items")
+            divider
+            metricCell(value: estimatedValueText, label: "Estimated")
+            divider
+            metricCell(value: "\(legacyCount)", label: "Legacy")
+        }
+        .padding(.vertical, 8)
+        .background(Color(.systemGray6))
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.black.opacity(0.05), lineWidth: 1)
+        )
+    }
+
+    private var divider: some View {
+        Rectangle()
+            .fill(Color.black.opacity(0.08))
+            .frame(width: 1, height: 28)
+    }
+
+    private func metricCell(value: String, label: String) -> some View {
+        VStack(spacing: 2) {
+            Text(value)
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(Theme.text)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(Theme.textSecondary)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 10)
+    }
+}
+
+private struct HomePrimaryCard: View {
+    let title: String
+    let message: String
+    let iconName: String
+    let backgroundColor: Color
+
+    var body: some View {
+        HStack(alignment: .top, spacing: Theme.spacing.medium) {
+            VStack(alignment: .leading, spacing: Theme.spacing.small) {
+                Text(title)
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(Color.white)
+
+                Text(message)
+                    .font(.title3)
+                    .foregroundStyle(Color.white.opacity(0.94))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: Theme.spacing.small)
+
+            Image(systemName: iconName)
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(Color.white.opacity(0.95))
+                .padding(10)
+                .background(Color.white.opacity(0.14))
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Theme.spacing.large)
+        .padding(.vertical, Theme.spacing.large)
+        .background(backgroundColor)
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 }
 

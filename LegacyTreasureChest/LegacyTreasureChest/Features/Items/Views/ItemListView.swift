@@ -49,9 +49,46 @@ struct ItemsListView: View {
             }
             .padding(.top, 12)
 
+            // MARK: - Sets
+            NavigationLink {
+                SetsListView()
+            } label: {
+                HStack(alignment: .top, spacing: Theme.spacing.medium) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Sets")
+                            .font(Theme.bodyFont.weight(.semibold))
+                            .foregroundStyle(Theme.text)
+
+                        Text("Group related items — china, crystal, furniture, and jewelry collections.")
+                            .font(Theme.secondaryFont)
+                            .foregroundStyle(Theme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(Theme.textSecondary)
+                        .padding(.top, 2)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, Theme.spacing.medium)
+                .padding(.vertical, Theme.spacing.medium)
+                .background(Color(.systemGray6))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(Color.black.opacity(0.06), lineWidth: 1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .padding(.horizontal)
+                .padding(.top, Theme.spacing.small)
+                .padding(.bottom, Theme.spacing.small)
+            }
+            .buttonStyle(.plain)
+
             // MARK: - Items List
-            List {
-                let filtered = filteredItems()
+            List {                let filtered = filteredItems()
 
                 if filtered.isEmpty {
                     Section {
