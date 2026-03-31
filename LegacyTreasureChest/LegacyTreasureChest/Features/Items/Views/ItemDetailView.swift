@@ -102,6 +102,11 @@ struct ItemDetailView: View {
 
     var body: some View {
         Form {
+            // MARK: - Photos
+            ItemPhotosSection(item: item) { image in
+                photoPreviewItem = PhotoPreviewItem(filePath: image.filePath)
+            }
+
             // MARK: - Basic Info
             Section {
                 TextField("Name", text: $item.name)
@@ -136,25 +141,8 @@ struct ItemDetailView: View {
                     .ltcSectionHeaderStyle()
             }
 
-            // MARK: - Details
+            // MARK: - Value
             Section {
-                Picker("Category", selection: $item.category) {
-                    ForEach(categoryOptions, id: \.self) { category in
-                        Text(category)
-                            .font(Theme.bodyFont)
-                            .tag(category)
-                    }
-                }
-
-                Stepper(value: $item.quantity, in: 1...999) {
-                    HStack {
-                        Text("Quantity")
-                        Spacer()
-                        Text("×\(max(item.quantity, 1))")
-                            .foregroundStyle(Theme.textSecondary)
-                    }
-                }
-
                 TextField(
                     "Estimated Unit Value",
                     value: Binding<Int>(
@@ -165,92 +153,28 @@ struct ItemDetailView: View {
                 )
                 .keyboardType(.numberPad)
                 .font(Theme.bodyFont)
-                
+
                 if max(item.quantity, 1) > 1 {
                     let qty = Double(max(item.quantity, 1))
                     let unit = max(item.valuation?.estimatedValue ?? item.value, 0)
                     let total = unit * qty
+
                     Text("Total: \(CurrencyFormat.dollars(total)) (\(CurrencyFormat.dollars(unit)) each)")
                         .font(Theme.secondaryFont)
                         .foregroundStyle(Theme.textSecondary)
                 }
             } header: {
-                Text("Details")
-                    .ltcSectionHeaderStyle()
-            }
-
-            // MARK: - AI Assistance
-            Section {
-                FieldGuidanceDisclosure(
-                    title: "AI Guidance",
-                    collapsed: $aiGuidanceCollapsed,
-                    onToggle: {
-                        aiGuidanceUserOverride = true
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            aiGuidanceCollapsed.toggle()
-                        }
-                    },
-                    content: {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("• **Most impact**: a clear photo + hard facts.")
-                            Text("• Add: brand/model, stamps/labels, materials, measurements, condition, quantity.")
-                            Text("• Title helps; description adds context.")
-                        }
-                        .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.textSecondary)
-                    }
-                )
-
-                Button {
-                    isAIAnalysisPresented = true
-                } label: {
-                    HStack {
-                        Image(systemName: "sparkles")
-                        Text("Improve with AI")
-                            .font(Theme.bodyFont.weight(.semibold))
-                    }
-                }
-                // IMPORTANT: do not block this. The sheet supports text-only now.
-            } header: {
-                Text("AI Assistance")
+                Text("Value")
                     .ltcSectionHeaderStyle()
             } footer: {
-                if item.images.isEmpty {
-                    Text("You can run a text-only AI estimate now. Adding photos later improves accuracy and confidence.")
-                        .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.textSecondary)
-                } else {
-                    Text("Use AI to refine the title, description, category, and estimated value using your photos and added details.")
-                        .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.textSecondary)
-                }
+                Text("Tap the amount above to edit it anytime.")
+                    .font(Theme.secondaryFont)
+                    .foregroundStyle(Theme.textSecondary)
             }
-
-            // MARK: - Photos
-            ItemPhotosSection(item: item) { image in
-                photoPreviewItem = PhotoPreviewItem(filePath: image.filePath)
-            }
-
-            // MARK: - Documents
-            ItemDocumentsSection(item: item) { document in
-                documentPreviewItem = DocumentPreviewItem(document: document)
-            }
-
-            // MARK: - Audio
-            ItemAudioSection(item: item)
-
-            // MARK: - Beneficiaries
-            ItemBeneficiariesSection(
-                item: item,
-                onAddTapped: { isBeneficiaryPickerPresented = true },
-                onEditLink: { link in editingLinkItem = BeneficiaryEditItem(link: link) },
-                onRemoveLink: { link in removeItemBeneficiary(link) }
-            )
 
             // MARK: - Liquidate (Next Step)
             if shouldShowLiquidate {
                 Section {
-
                     NavigationLink {
                         LiquidationSectionView(item: item)
                     } label: {
@@ -324,7 +248,6 @@ struct ItemDetailView: View {
                             .accessibilityHint(localHelpGateMessage)
                         }
                     }
-
                 } header: {
                     Text("Next Step")
                         .ltcSectionHeaderStyle()
@@ -335,6 +258,91 @@ struct ItemDetailView: View {
                 }
             }
 
+            // MARK: - Details
+            Section {
+                Picker("Category", selection: $item.category) {
+                    ForEach(categoryOptions, id: \.self) { category in
+                        Text(category)
+                            .font(Theme.bodyFont)
+                            .tag(category)
+                    }
+                }
+
+                Stepper(value: $item.quantity, in: 1...999) {
+                    HStack {
+                        Text("Quantity")
+                        Spacer()
+                        Text("×\(max(item.quantity, 1))")
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                }
+            } header: {
+                Text("Details")
+                    .ltcSectionHeaderStyle()
+            }
+
+            // MARK: - AI Assistance
+            Section {
+                FieldGuidanceDisclosure(
+                    title: "AI Guidance",
+                    collapsed: $aiGuidanceCollapsed,
+                    onToggle: {
+                        aiGuidanceUserOverride = true
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            aiGuidanceCollapsed.toggle()
+                        }
+                    },
+                    content: {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("• **Most impact**: a clear photo + hard facts.")
+                            Text("• Add: brand/model, stamps/labels, materials, measurements, condition, quantity.")
+                            Text("• Title helps; description adds context.")
+                        }
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                    }
+                )
+
+                Button {
+                    isAIAnalysisPresented = true
+                } label: {
+                    HStack {
+                        Image(systemName: "sparkles")
+                        Text("Improve with AI")
+                            .font(Theme.bodyFont.weight(.semibold))
+                    }
+                }
+                // IMPORTANT: do not block this. The sheet supports text-only now.
+            } header: {
+                Text("AI Assistance")
+                    .ltcSectionHeaderStyle()
+            } footer: {
+                if item.images.isEmpty {
+                    Text("You can run a text-only AI estimate now. Adding photos later improves accuracy and confidence.")
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                } else {
+                    Text("Use AI to refine the title, description, category, and estimated value using your photos and added details.")
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                }
+            }
+
+            // MARK: - Documents
+            ItemDocumentsSection(item: item) { document in
+                documentPreviewItem = DocumentPreviewItem(document: document)
+            }
+
+            // MARK: - Audio
+            ItemAudioSection(item: item)
+
+            // MARK: - Beneficiaries
+            ItemBeneficiariesSection(
+                item: item,
+                onAddTapped: { isBeneficiaryPickerPresented = true },
+                onEditLink: { link in editingLinkItem = BeneficiaryEditItem(link: link) },
+                onRemoveLink: { link in removeItemBeneficiary(link) }
+            )
         }
         .scrollContentBackground(.hidden)
         .background(Theme.background)
@@ -372,9 +380,7 @@ struct ItemDetailView: View {
         } message: {
             Text(saveErrorMessage ?? "Unknown error.")
         }
-    }
-
-    // MARK: - Photo Preview Sheet (with Share)
+    }    // MARK: - Photo Preview Sheet (with Share)
 
     private func photoPreviewSheet(for filePath: String) -> some View {
         let url = MediaStorage.absoluteURL(from: filePath)
