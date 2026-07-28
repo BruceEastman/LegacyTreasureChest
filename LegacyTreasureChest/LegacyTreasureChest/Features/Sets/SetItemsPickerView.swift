@@ -52,10 +52,11 @@ struct SetItemsPickerView: View {
 
         return baseItemsForScope.filter {
             $0.name.localizedCaseInsensitiveContains(trimmed) ||
+            $0.itemDescription.localizedCaseInsensitiveContains(trimmed) ||
             $0.category.localizedCaseInsensitiveContains(trimmed)
         }
     }
-
+    
     var body: some View {
         List {
             Section {
