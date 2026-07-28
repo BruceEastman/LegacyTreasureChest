@@ -79,6 +79,25 @@ public enum LiquidationPathDTO: String, Codable, Sendable {
     case pathC_quickExit
     case donate
     case needsInfo
+
+    public var displayName: String {
+        switch self {
+        case .pathA_maximizePrice:
+            return "Maximize Value"
+
+        case .pathB_delegateConsign:
+            return "Consignment"
+
+        case .pathC_quickExit:
+            return "Quick Sale"
+
+        case .donate:
+            return "Donation"
+
+        case .needsInfo:
+            return "More Information Needed"
+        }
+    }
 }
 
 public struct LiquidationPathOptionDTO: Codable, Sendable, Identifiable {
@@ -128,7 +147,12 @@ public struct MoneyRangeDTO: Codable, Sendable {
     public var likely: Double?
     public var high: Double?
 
-    public init(currencyCode: String = "USD", low: Double? = nil, likely: Double? = nil, high: Double? = nil) {
+    public init(
+        currencyCode: String = "USD",
+        low: Double? = nil,
+        likely: Double? = nil,
+        high: Double? = nil
+    ) {
         self.currencyCode = currencyCode
         self.low = low
         self.likely = likely
@@ -141,7 +165,11 @@ public struct LiquidationInputsDTO: Codable, Sendable {
     public var constraints: LiquidationConstraintsDTO?
     public var locationHint: String?
 
-    public init(goal: LiquidationGoalDTO? = nil, constraints: LiquidationConstraintsDTO? = nil, locationHint: String? = nil) {
+    public init(
+        goal: LiquidationGoalDTO? = nil,
+        constraints: LiquidationConstraintsDTO? = nil,
+        locationHint: String? = nil
+    ) {
         self.goal = goal
         self.constraints = constraints
         self.locationHint = locationHint
@@ -161,15 +189,18 @@ public struct LiquidationConstraintsDTO: Codable, Sendable {
     public var deadline: Date?
     public var notes: String?
 
-    public init(localPickupOnly: Bool? = nil, canShip: Bool? = nil, deadline: Date? = nil, notes: String? = nil) {
+    public init(
+        localPickupOnly: Bool? = nil,
+        canShip: Bool? = nil,
+        deadline: Date? = nil,
+        notes: String? = nil
+    ) {
         self.localPickupOnly = localPickupOnly
         self.canShip = canShip
         self.deadline = deadline
         self.notes = notes
     }
-}
-
-// MARK: - Plan Checklist DTO
+}// MARK: - Plan Checklist DTO
 
 public struct LiquidationPlanChecklistDTO: Codable, Sendable {
     public var schemaVersion: Int

@@ -290,7 +290,8 @@ struct LiquidationSectionView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Text("Recommended: \(dto.recommendedPath.rawValue)")
+                Text(
+                    "Recommended: \(dto.pathOptions.first(where: { $0.path == dto.recommendedPath })?.label ?? dto.recommendedPath.displayName)")
                     .font(.subheadline)
                     .bold()
 

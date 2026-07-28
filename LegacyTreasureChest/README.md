@@ -1,8 +1,168 @@
 # Legacy Treasure Chest
 
 https://ltc-ai-gateway-530541590215.us-west1.run.app
+
+## 2026-07-28 — Liquidation Brief Path Labels
+
+Updated the item and set Liquidation Brief UI to display clear user-facing path names instead of internal enum values.
+
+Examples:
+
+* `pathA_maximizePrice` → **Maximize Value**
+* `pathB_delegateConsign` → **Consignment**
+* `pathC_quickExit` → **Quick Sale**
+* `donate` → **Donation**
+* `needsInfo` → **More Information Needed**
+
+Implementation preserves the existing enum raw values and persisted Brief JSON. The UI uses the backend-provided path label when available, with a built-in display-name fallback.
+
+Verified successfully in a local build on a physical iPhone.
+
 cloud run deploy ltc-ai-gateway --source . --region us-west1 --allow-unauthenticated
+## 2026-03-31 — UI/UX Cleanup Pass from Early External Feedback
+
+This pass focused on targeted UI/UX improvements based on several hours of real use by an early outside tester. The key result was encouraging: core functionality worked well, and the feedback centered primarily on clarity, hierarchy, and polish rather than broken behavior.
+
+### Objective
+Improve first impressions and reduce friction in the most visible user-facing areas without redesigning architecture or expanding scope. The work was handled as a set of small, focused fixes, each completed and committed independently.
+
+---
+
+## Completed UX Fixes
+
+### UX-01 — Sign-In Screen Vertical Layout
+**Issue**
+- The initial sign-in screen felt visually bottom-weighted, with content appearing pushed too far down the screen.
+
+**Change made**
+- Adjusted the layout/alignment of the sign-in screen to create a more balanced vertical composition.
+
+**Why it mattered**
+- This was an immediate first-impression issue.
+- The fix improved polish without changing the sign-in flow itself.
+
+---
+
+### UX-02 — Friendly Sign-In Error Message
+**Issue**
+- The sign-in screen exposed a raw technical/system-style error message when sign-in failed.
+
+**Change made**
+- Replaced the raw user-facing error with a calm, human-readable message.
+
+**Why it mattered**
+- Preserves trust
+- Better matches LTC’s tone
+- Keeps technical diagnostics out of the user-facing interface
+
+---
+
+### UX-03 — Item Detail Clarity and Action Hierarchy
+**Issue**
+- On the item detail screen, the most important information and next actions were not visually clear enough.
+- Value/editability was not obvious enough.
+- “Next Step” guidance was too quiet and too low on the screen.
+- Lower sections competed visually with the primary action path.
+
+**Change made**
+- Improved hierarchy and clarity in the item detail experience.
+- Brought more attention to the item’s core information and action flow.
+- Improved prominence of next-step guidance and value visibility/editability.
+
+**Why it mattered**
+- This is one of the most frequently used screens in the app.
+- The change helps users understand what they are looking at and what to do next.
+
+---
+
+### UX-04 — Onboarding / Guide Clarification
+**Issue**
+- Initial feedback suggested onboarding might be too heavy, but review showed the real problem was that the Guide was trying to do onboarding work that should already be handled elsewhere.
+
+**Change made**
+- Clarified the separation of responsibilities:
+  - the dedicated 3-screen onboarding flow remains the first-run orientation layer
+  - the Guide no longer tries to duplicate onboarding
+
+**Why it mattered**
+- Reduced duplication
+- Improved conceptual clarity
+- Confirmed that the existing onboarding flow is the right level for getting a new user started
+
+---
+
+### UX-05 — Dashboard Simplification and Home-Screen Hierarchy
+**Issue**
+- The dashboard/home experience had opportunities to simplify the presentation of primary actions and reduce clutter from lower-priority options.
+
+**Change made**
+- Simplified dashboard hierarchy and improved the prominence of core actions.
+- Also resolved the location/presentation of **Sets** so they now fit the home experience more naturally than before.
+
+**Why it mattered**
+- Makes the app easier to understand at a glance
+- Improves speed to common actions
+- Better supports real-world daily use
+
+---
+
+## Working Approach Used
+This pass followed the same disciplined development pattern used throughout the project:
+
+- treated each UX issue as a separate scoped task
+- kept changes incremental and compile-safe
+- inspected existing code before making changes
+- avoided architecture redesign
+- committed each completed issue independently
+- deferred README updating until the full pass was complete
+
+---
+
+## Key Product Insight from This Pass
+The most important takeaway from this round of outside feedback is that LTC’s core functionality appears to be working well. The improvements needed at this stage are primarily about:
+
+- visual hierarchy
+- next-step clarity
+- reducing duplication
+- making the most important actions more obvious
+- improving polish in first-run and high-frequency screens
+
+This is a strong signal that the project is now benefiting from real-user refinement rather than foundational correction.
+
+---
+
+## Current Status After This Pass
+- UX-01 through UX-05 completed
+- all changes committed to git
+- sign-in presentation improved
+- item-detail clarity improved
+- onboarding/guide responsibilities clarified
+- dashboard simplified
+- Sets placement improved
+
+## Recommended Next Step
+Continue targeted dogfooding and outside use to identify the next round of friction points, with particular attention to:
+- remaining dashboard/home clarity
+- guide/help usefulness after the onboarding clarification
+- any recurring confusion in liquidation/local-help flows
+- broader polish opportunities before wider TestFlight distribution
+
 ## 2026-03-19 — Set liquidation brief loading-state parity fix
+
+## Update — Luxury Set Routing Adjustment
+
+- Adjusted luxury partner-routing signal generation in `SetDetailView.swift` for set-level Local Help behavior.
+- Expanded `partnerPickerSetSearchText(_:)` to include `set.setTypeRaw` in addition to set name, notes, story, and `closetBrandList`.
+- Goal of the change: improve curated luxury-hub detection for set-based flows where the set metadata may not explicitly mention the item type in the visible title alone.
+- Result: strengthens routing for luxury categories without changing the broader liquidation architecture or introducing a new search layer.
+
+### Product note
+- During review of luxury handbags, we confirmed the more important long-term behavior is strong advisor guidance at the item level rather than heavy investment in dynamic marketplace-selection logic.
+- Current direction remains consistent with LTC’s “Advisor, not Operator” philosophy:
+  - generate a strong Brief
+  - generate a practical Plan
+  - guide users toward appropriate specialist channels
+  - avoid overbuilding brittle national marketplace recommendation logic for now
 
 - Fixed a UI feedback gap on `SetLiquidationSectionView` where **Generate / Update Brief** for sets did not show visible loading activity during AI execution.
 - Updated the set-level liquidation brief button to match the working item-level pattern:
