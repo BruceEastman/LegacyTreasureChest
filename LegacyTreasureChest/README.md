@@ -1,3 +1,259 @@
+# Mandatory Sign in with Apple Removed — Local-First Launch
+
+**Status:** Complete and validated
+**Date:** August 3, 2026
+**Scope:** iOS launch flow, local-user provisioning, authentication UI removal, data-preservation validation
+**Commit:** `b7851cb` — Remove mandatory Apple sign-in launch gate
+
+---
+
+## Objective
+
+Legacy Treasure Chest no longer requires users to authenticate with Sign in with Apple before accessing the app.
+
+This change aligns the product with its actual architecture:
+
+* single-user
+* local-first
+* estate inventory stored on the device
+* no cloud-hosted user account
+* no cloud-hosted estate database
+* AI services operate as stateless advisory services
+
+Sign in with Apple was therefore unnecessary as a mandatory launch requirement and created avoidable friction for the app's intended audience.
+
+---
+
+## New Launch Behavior
+
+At app launch, Legacy Treasure Chest now resolves a local `LTCUser` automatically.
+
+The launch sequence is:
+
+1. Fetch all existing `LTCUser` records.
+2. Sort them deterministically by:
+
+   * `createdAt`
+   * `userId` as a secondary tie-breaker
+3. Reuse the oldest existing user without changing:
+
+   * `userId`
+   * `appleUserIdentifier`
+   * email
+   * name
+   * timestamps
+   * relationships
+4. Create a new local `LTCUser` only when none exists.
+5. Assign a unique internal placeholder identifier to genuinely new local users:
+
+```swift
+"local-\(UUID().uuidString)"
+```
+
+6. Open the main app after local-user initialization succeeds.
+
+If more than one `LTCUser` exists, the app logs the count and selects the oldest record. It does not merge, delete, repair, or otherwise modify duplicate users.
+
+---
+
+## Launch-State Architecture
+
+`AuthenticationViewModel` now exposes an explicit launch state:
+
+* `initializing`
+* `ready`
+* `failed`
+
+Local-user initialization is guarded so it runs only once per application launch, even if SwiftUI recomputes the root view.
+
+`ContentView` now:
+
+* displays a neutral progress indicator while initialization runs
+* displays `HomeView` when initialization succeeds
+* displays a safe, non-destructive local-data error message if initialization fails
+* no longer displays `AuthenticationView` in the production launch path
+
+The existing first-launch onboarding behavior remains intact.
+
+---
+
+## Sign-Out UI Removed
+
+The visible **Sign Out** control and its `onSignOut` closure were removed from `HomeView`.
+
+The underlying Apple authentication code remains temporarily in the project for deferred cleanup, including:
+
+* `AuthenticationView.swift`
+* `signInWithApple()`
+* `signOut()`
+* `deleteAccount()`
+* Sign in with Apple capabilities and entitlements
+
+These components were intentionally left unchanged during the first implementation phase to minimize risk and keep the data-preservation change narrowly scoped.
+
+---
+
+## Data-Preservation Guardrails
+
+This implementation did not:
+
+* modify `LTCUser`
+* modify any SwiftData model
+* modify the SwiftData schema
+* modify `ModelContainer` configuration
+* delete or recreate an existing `LTCUser`
+* modify an existing `appleUserIdentifier`
+* change an existing `userId`
+* reset or recreate the SwiftData store
+* delete, merge, or repair duplicate users
+* call `deleteAccount()`
+* uninstall the app from populated devices
+* remove Apple authentication entitlements
+* perform broad architectural refactoring
+
+All existing estate records and media remain stored in their original on-device locations.
+
+---
+
+## Files Updated
+
+```text
+LegacyTreasureChest/Core/Protocols/AuthenticationServiceProtocol.swift
+LegacyTreasureChest/Features/Items/Authentication/Services/AuthenticationService.swift
+LegacyTreasureChest/Features/Items/Authentication/ViewModels/AuthenticationViewModel.swift
+LegacyTreasureChest/UI/ContentView.swift
+LegacyTreasureChest/UI/HomeView.swift
+```
+
+### Primary responsibilities
+
+**AuthenticationService**
+
+* Added deterministic local-user resolution
+* Reuses an existing user when present
+* Creates one local user only when required
+
+**AuthenticationServiceProtocol**
+
+* Added the local-user resolution contract
+* Added a safe default implementation for previews and mocks
+
+**AuthenticationViewModel**
+
+* Added explicit launch states
+* Added one-time local-user initialization
+
+**ContentView**
+
+* Removed the mandatory authentication gate
+* Added progress, ready, and safe failure routing
+* Preserved first-launch onboarding
+
+**HomeView**
+
+* Removed the Sign Out control and related closure plumbing
+
+---
+
+## Validation Completed
+
+### New-install simulator test
+
+Confirmed:
+
+* zero existing `LTCUser` records were found
+* exactly one local user was created
+* no Sign in with Apple screen appeared
+* first-launch onboarding appeared normally
+* relaunch found exactly one user
+* the same `userId` was reused
+* no duplicate user was created
+
+### Existing-user simulator test
+
+Confirmed:
+
+* one existing `LTCUser` was found
+* the existing `userId` was selected unchanged
+* no additional user was created
+* the app opened directly without authentication
+
+### Existing-data upgrade with no user row
+
+An older simulator build contained:
+
+* 2 items
+* 1 beneficiary
+* 1 set
+* 1 image
+* 0 `LTCUser` records
+
+After installing the revised build over the existing installation:
+
+* exactly one local user was created
+* all estate records and media remained intact
+* no duplicate estate records appeared
+* relaunch reused the same newly created user
+
+### Populated physical-iPhone upgrade
+
+Before upgrading the development iPhone, a verified local backup was created containing:
+
+* SwiftData database and WAL/SHM files
+* 151 images
+* 3 audio files
+* 15 documents
+* app preferences
+
+The copied SQLite database passed:
+
+```text
+PRAGMA integrity_check;
+→ ok
+```
+
+The revised build was then installed over the existing app without uninstalling it.
+
+Confirmed on the physical iPhone:
+
+* one existing `LTCUser` was found
+* the existing user was reused unchanged
+* no new local user was created
+* item counts and representative estate data remained correct
+* beneficiaries, sets, photos, documents, audio, liquidation data, and reports remained available
+* no Sign in with Apple screen appeared
+* the app launched successfully with no initialization error
+
+---
+
+## Product Impact
+
+Legacy Treasure Chest now behaves consistently with its privacy-first product model:
+
+> The estate inventory belongs to the device and the household—not to a cloud account.
+
+Users can open and use the app immediately without creating or authenticating an identity. Existing installations retain their complete estate inventory, relationships, reports, and media.
+
+---
+
+## Deferred Cleanup
+
+The following work remains intentionally deferred until the new launch flow has been stable through release testing:
+
+* remove `AuthenticationView.swift`
+* remove Sign in with Apple framework imports
+* remove `signInWithApple()`
+* remove obsolete sign-out methods
+* remove Apple authentication entitlements and capabilities
+* rename or remove authentication-oriented types
+* reconsider the legacy `appleUserIdentifier` property
+* reframe `deleteAccount()` as an explicit **Delete All Local Data** action with strong confirmation
+* update older architecture decisions and documentation that describe Sign in with Apple as mandatory
+
+No deferred cleanup should change the validated local-user or data-preservation behavior established in this milestone.
+
+---
+
 # Legacy Treasure Chest
 
 https://ltc-ai-gateway-530541590215.us-west1.run.app
