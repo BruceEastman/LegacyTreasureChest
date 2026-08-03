@@ -97,7 +97,50 @@ final class AuthenticationService: NSObject, AuthenticationServiceProtocol {
         currentUserId = nil
         print("🗑️ User deleted successfully")
     }
-    
+
+    // MARK: - Local User Resolution
+
+    /// Resolves a local LTCUser without requiring Sign in with Apple.
+    /// Reuses the oldest existing LTCUser (deterministic by createdAt, then
+    /// userId) if one exists; otherwise creates a new LTCUser with a
+    /// synthetic "local-" prefixed appleUserIdentifier. Not yet called from
+    /// anywhere — wiring this into the launch/sign-in flow is a later step.
+    func resolveLocalUser() throws -> UUID {
+        let descriptor = FetchDescriptor<LTCUser>(
+            sortBy: [SortDescriptor(\.createdAt, order: .forward)]
+        )
+        let existingUsers = try modelContext.fetch(descriptor)
+        print("🔎 resolveLocalUser: found \(existingUsers.count) LTCUser record(s)")
+
+        // Deterministic ordering: createdAt ascending, then userId ascending
+        // as a tie-breaker (UUID isn't Comparable, so compare uuidString).
+        let sortedUsers = existingUsers.sorted { lhs, rhs in
+            if lhs.createdAt != rhs.createdAt {
+                return lhs.createdAt < rhs.createdAt
+            }
+            return lhs.userId.uuidString < rhs.userId.uuidString
+        }
+
+        if let existing = sortedUsers.first {
+            print("👤 resolveLocalUser: selected existing user, userId=\(existing.userId)")
+            currentUserId = existing.userId
+            return existing.userId
+        }
+
+        let newUser = LTCUser(appleUserIdentifier: "local-\(UUID().uuidString)")
+        modelContext.insert(newUser)
+
+        do {
+            try modelContext.save()
+        } catch {
+            throw AppError.dataError("Failed to save new local user: \(error.localizedDescription)")
+        }
+
+        print("🆕 resolveLocalUser: created new local user, userId=\(newUser.userId)")
+        currentUserId = newUser.userId
+        return newUser.userId
+    }
+
     // MARK: - Private Helpers
     
     private func fetchUser(appleUserIdentifier: String) throws -> LTCUser? {
