@@ -16,8 +16,6 @@ import SwiftUI
 import SwiftData
 
 struct HomeView: View {
-    /// Called when the user taps "Sign Out".
-    let onSignOut: () -> Void
     @Binding var openItemsAfterOnboarding: Bool
 
     @Environment(\.modelContext) private var modelContext
@@ -186,14 +184,6 @@ struct HomeView: View {
                         isShowingGuide = true
                     } label: {
                         Label("Guide", systemImage: "book.closed")
-                    }
-
-                    Divider()
-
-                    Button(role: .destructive) {
-                        onSignOut()
-                    } label: {
-                        Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
                     }
                 } label: {
                     Image(systemName: "person.crop.circle")
@@ -391,7 +381,6 @@ private struct HomePrimaryCard: View {
 #Preview {
     NavigationStack {
         HomeView(
-            onSignOut: { },
             openItemsAfterOnboarding: .constant(false)
         )
         .modelContainer(

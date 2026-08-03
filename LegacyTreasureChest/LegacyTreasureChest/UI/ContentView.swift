@@ -27,11 +27,6 @@ struct ContentView: View {
                     }
             case .ready:
                 HomeView(
-                    onSignOut: {
-                        Task {
-                            await viewModel.signOut()
-                        }
-                    },
                     openItemsAfterOnboarding: $openItemsAfterOnboarding
                 )
                 .onAppear {
