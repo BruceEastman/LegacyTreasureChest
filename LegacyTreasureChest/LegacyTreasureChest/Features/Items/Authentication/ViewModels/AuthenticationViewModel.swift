@@ -12,27 +12,44 @@ import Combine
 
 @MainActor
 final class AuthenticationViewModel: ObservableObject {
-    
+
+    // MARK: - Launch State
+
+    /// Explicit local-user initialization state for app launch.
+    enum LaunchState: Equatable {
+        case initializing
+        case ready
+        case failed
+    }
+
     // MARK: - Published State
-    
+
     /// True while a sign-in or sign-out operation is in progress.
     @Published var isBusy: Bool = false
-    
+
     /// True when the user is currently signed in.
     @Published var isSignedIn: Bool = false
-    
+
     /// A user-facing error message, if the last operation failed.
     @Published var errorMessage: String?
-    
+
+    /// State of the one-time local-user initialization performed at launch.
+    @Published private(set) var launchState: LaunchState = .initializing
+
     // MARK: - Dependencies
-    
+
     private let authService: AuthenticationServiceProtocol
-    
+
+    /// Guards resolveLocalUser() from being invoked more than once, even if
+    /// initializeLocalUserIfNeeded() is called repeatedly (e.g. from SwiftUI
+    /// view recomputation).
+    private var didAttemptLocalUserInitialization = false
+
     // MARK: - Init
-    
+
     init(authService: AuthenticationServiceProtocol) {
         self.authService = authService
-        
+
         // Initialize state based on existing session, if any.
         if authService.currentUserId != nil {
             isSignedIn = true
@@ -40,9 +57,27 @@ final class AuthenticationViewModel: ObservableObject {
             isSignedIn = false
         }
     }
-    
+
     // MARK: - Intent(s)
-    
+
+    /// Resolves the local user exactly once per app launch. Safe to call
+    /// repeatedly — only the first call performs work; later calls are
+    /// no-ops. Not currently called from any view.
+    func initializeLocalUserIfNeeded() async {
+        guard !didAttemptLocalUserInitialization else { return }
+        didAttemptLocalUserInitialization = true
+
+        do {
+            _ = try authService.resolveLocalUser()
+            isSignedIn = true
+            launchState = .ready
+        } catch {
+            launchState = .failed
+            errorMessage = userFacingMessage(for: .localUserInitialization)
+            print("❌ Local user initialization failed: \(error)")
+        }
+    }
+
     /// Trigger Sign in with Apple.
     func signIn() async {
         guard !isBusy else { return }
@@ -104,8 +139,9 @@ final class AuthenticationViewModel: ObservableObject {
         case signIn
         case signOut
         case deleteAccount
+        case localUserInitialization
     }
-    
+
     private func userFacingMessage(for action: AuthAction) -> String {
         switch action {
         case .signIn:
@@ -114,6 +150,8 @@ final class AuthenticationViewModel: ObservableObject {
             return "Sorry, we couldn’t sign you out. Please try again."
         case .deleteAccount:
             return "Sorry, we couldn’t delete your account. Please try again."
+        case .localUserInitialization:
+            return "Legacy Treasure Chest couldn't open your local data. Please close and reopen the app."
         }
     }
 }
