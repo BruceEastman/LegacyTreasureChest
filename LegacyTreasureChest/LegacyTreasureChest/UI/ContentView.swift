@@ -2,8 +2,8 @@
 //  ContentView.swift
 //  LegacyTreasureChest
 //
-//  Root view that switches between Authentication and Home
-//  based on the AuthenticationViewModel state.
+//  Root view that initializes the local user at launch and routes to
+//  Home based on AuthenticationViewModel.launchState.
 //
 
 import SwiftUI
@@ -19,7 +19,13 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
-            if viewModel.isSignedIn {
+            switch viewModel.launchState {
+            case .initializing:
+                ProgressView()
+                    .task {
+                        await viewModel.initializeLocalUserIfNeeded()
+                    }
+            case .ready:
                 HomeView(
                     onSignOut: {
                         Task {
@@ -51,12 +57,15 @@ struct ContentView: View {
                         }
                     )
                 }
-            } else {
-                AuthenticationView(viewModel: viewModel)
-                    .onAppear {
-                        showStartHere = false
-                        openItemsAfterOnboarding = false
-                    }
+            case .failed:
+                VStack(spacing: 16) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 40))
+                        .foregroundStyle(.secondary)
+                    Text(viewModel.errorMessage ?? "Legacy Treasure Chest couldn't open your local data. Please close and reopen the app.")
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                }
             }
         }
     }
