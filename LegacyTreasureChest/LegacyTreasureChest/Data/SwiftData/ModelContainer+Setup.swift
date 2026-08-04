@@ -40,6 +40,10 @@ extension ModelContainer {
             BatchItem.self,
             BatchSet.self,              // ✅ ADD THIS (matches LiquidationBatch.sets)
 
+            // MARK: - Execution Mode v1 (matches LiquidationBatch.lotExecutionStates)
+            LotExecutionState.self,
+            LotChecklistItemState.self,
+
             // MARK: - LEGACY Liquidation (kept for transition)
             LTCSet.self,
             LiquidationBrief.self,
