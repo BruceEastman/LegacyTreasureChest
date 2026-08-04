@@ -1,3 +1,24 @@
+# Ordinary Item Deletion — Media Cleanup
+
+**Status:** Complete and validated
+**Date:** August 4, 2026
+**Scope:** Whole-item deletion in the main Items list (grouped and search/flat modes)
+
+---
+
+## Completed
+
+- Deleting an item from the Items list (both the grouped-by-category view and the search/flat view) now removes that item's own photos, documents, and audio files from disk, not just its SwiftData records
+- Deletion order is explicit: capture the item's media file paths, delete the SwiftData item(s), call `modelContext.save()`, and only delete the physical files after that save succeeds — a failed save never destroys files for an item that's still visible in the app
+- A missing media file is treated as a successful cleanup, not an error — it does not block item deletion
+- A genuine file-cleanup failure (after a successful save) does not reverse the item deletion; it's logged internally and surfaced to the user only as a calm, non-blocking notice with no filesystem paths shown
+- Other items' media is untouched — verified the control item and its photo remained intact and openable after a sibling item's deletion
+- Runtime-validated on the iPhone 17 simulator: grouped-list swipe deletion and search/flat-list swipe deletion both removed the deleted item's files, the control item and its photo survived, and the app remained usable afterward
+- Debug and Release builds both succeeded with no new warnings
+- Production Delete All Data (see below) was not changed by this work
+
+---
+
 # Production Delete All Data — Release-Reachable Reset
 
 **Status:** Complete and validated

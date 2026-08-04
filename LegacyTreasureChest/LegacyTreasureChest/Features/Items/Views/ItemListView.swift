@@ -28,6 +28,10 @@ struct ItemsListView: View {
     // Local search state
     @State private var searchText: String = ""
 
+    // Deletion error surfaces (see deleteItemsAndMedia)
+    @State private var deleteErrorMessage: String?
+    @State private var cleanupWarningMessage: String?
+
     // Currency code based on current locale, defaulting to USD
     private var currencyCode: String {
         Locale.current.currency?.identifier ?? "USD"
@@ -169,6 +173,40 @@ struct ItemsListView: View {
                 .accessibilityLabel("Add Item")
             }
         }
+        .alert(
+            "Could Not Delete Item",
+            isPresented: Binding(
+                get: { deleteErrorMessage != nil },
+                set: { newValue in
+                    if !newValue { deleteErrorMessage = nil }
+                }
+            ),
+            actions: {
+                Button("OK", role: .cancel) {
+                    deleteErrorMessage = nil
+                }
+            },
+            message: {
+                Text(deleteErrorMessage ?? "Please try again.")
+            }
+        )
+        .alert(
+            "Cleanup Incomplete",
+            isPresented: Binding(
+                get: { cleanupWarningMessage != nil },
+                set: { newValue in
+                    if !newValue { cleanupWarningMessage = nil }
+                }
+            ),
+            actions: {
+                Button("OK", role: .cancel) {
+                    cleanupWarningMessage = nil
+                }
+            },
+            message: {
+                Text(cleanupWarningMessage ?? "Some local storage cleanup could not be completed.")
+            }
+        )
     }
 
     // MARK: - Empty State
@@ -359,17 +397,45 @@ struct ItemsListView: View {
     /// Delete in flat (search) mode.
     private func deleteItemsFlat(at offsets: IndexSet) {
         let current = filteredItems()
-        for index in offsets {
-            let item = current[index]
-            modelContext.delete(item)
-        }
+        deleteItemsAndMedia(offsets.map { current[$0] })
     }
 
     /// Delete in grouped mode – offsets are relative to the section's items.
     private func deleteItems(_ offsets: IndexSet, in items: [LTCItem]) {
-        for index in offsets {
-            let item = items[index]
+        deleteItemsAndMedia(offsets.map { items[$0] })
+    }
+
+    /// Deletes the given items and their owned media.
+    ///
+    /// Order is deliberate: capture each item's media paths, delete the
+    /// SwiftData records, save explicitly, and only delete the physical
+    /// files after that save succeeds. If the save fails, nothing on disk
+    /// is touched and the pending deletion is rolled back so a later
+    /// autosave can't silently commit it without cleanup ever running.
+    private func deleteItemsAndMedia(_ items: [LTCItem]) {
+        guard !items.isEmpty else { return }
+
+        var mediaPaths: [String] = []
+        for item in items {
+            mediaPaths.append(contentsOf: item.images.map(\.filePath))
+            mediaPaths.append(contentsOf: item.audioRecordings.map(\.filePath))
+            mediaPaths.append(contentsOf: item.documents.map(\.filePath))
             modelContext.delete(item)
+        }
+
+        do {
+            try modelContext.save()
+        } catch {
+            modelContext.rollback()
+            print("❌ Failed to delete item(s): \(error)")
+            deleteErrorMessage = "Please try again."
+            return
+        }
+
+        let failedPaths = MediaStorage.deleteFiles(at: mediaPaths)
+        if !failedPaths.isEmpty {
+            print("⚠️ Item deleted but \(failedPaths.count) local media file(s) could not be removed.")
+            cleanupWarningMessage = "Some local storage cleanup could not be completed."
         }
     }
 }

@@ -160,6 +160,52 @@ enum MediaStorage {
         let url = absoluteURL(from: relativePath)
         try FileManager.default.removeItem(at: url)
     }
+
+    /// Best-effort delete a batch of **relative** paths (e.g. every file
+    /// owned by an item being deleted). Paths are deduplicated first.
+    /// A file that is already missing counts as success. Only paths that
+    /// resolve outside `baseDirectory`, that point at a directory, or whose
+    /// removal genuinely fails are returned to the caller.
+    ///
+    /// Deliberately takes relative path strings rather than a model
+    /// reference — callers own the responsibility of deciding *when* it's
+    /// safe to call this (only after their own persistence step succeeds).
+    @discardableResult
+    static func deleteFiles(at relativePaths: [String]) -> [String] {
+        let uniquePaths = Set(relativePaths)
+        guard !uniquePaths.isEmpty else { return [] }
+
+        let fm = FileManager.default
+        let rootPath = baseDirectory.standardizedFileURL.path
+        var failures: [String] = []
+
+        for relativePath in uniquePaths {
+            let url = absoluteURL(from: relativePath).standardizedFileURL
+
+            guard url.path.hasPrefix(rootPath) else {
+                failures.append(relativePath)
+                continue
+            }
+
+            var isDirectory: ObjCBool = false
+            guard fm.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
+                continue
+            }
+
+            guard !isDirectory.boolValue else {
+                failures.append(relativePath)
+                continue
+            }
+
+            do {
+                try fm.removeItem(at: url)
+            } catch {
+                failures.append(relativePath)
+            }
+        }
+
+        return failures
+    }
     
     /// Check if a file exists at the given **relative** path.
     static func fileExists(at relativePath: String) -> Bool {
