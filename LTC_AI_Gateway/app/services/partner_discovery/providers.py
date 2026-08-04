@@ -1,12 +1,15 @@
 # app/services/partner_discovery/providers.py
 from __future__ import annotations
 
+import logging
 import math
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Protocol
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 PartnerCandidate = Dict[str, Any]
 
@@ -162,16 +165,16 @@ class GooglePlacesNewProvider:
                     resp = client.post(self.SEARCH_TEXT_URL, headers=headers, json=body)
 
                     if resp.status_code >= 400:
-                        # IMPORTANT: log the outgoing inputs so we can reproduce the 400
-                        print("\n=== GOOGLE PLACES ERROR DEBUG ===")
-                        print("Attempt:", attempt, "/", max_attempts)
-                        print("Status:", resp.status_code)
-                        print("FieldMask:", headers.get("X-Goog-FieldMask"))
-                        # If you include your API key in headers, do NOT print it.
-                        # print("ApiKey:", headers.get("X-Goog-Api-Key"))  # <-- leave commented
-                        print("RequestBody:", body)
-                        print("ResponseText:", resp.text)
-                        print("=== END GOOGLE PLACES ERROR DEBUG ===\n")
+                        # Content-free diagnostics only: no request body, no query text,
+                        # no coordinates, no response body, no API key.
+                        logger.error(
+                            "Partner discovery upstream error provider=%s operation=%s attempt=%s/%s status=%s",
+                            "google_places",
+                            "searchText",
+                            attempt,
+                            max_attempts,
+                            resp.status_code,
+                        )
 
                     # Retry on common transient classes.
                     # - 429: rate limited

@@ -67,7 +67,12 @@ async def _post_gemini(payload: Dict[str, Any]) -> str:
 
         if resp.status_code >= 400:
             snippet = resp.text[:1200]
-            logger.error("Gemini upstream error status=%s body_snippet=%r", resp.status_code, snippet)
+            logger.error(
+                "Gemini upstream error operation=%s status=%s response_length=%s",
+                "generateContent(json)",
+                resp.status_code,
+                len(resp.text),
+            )
             raise RuntimeError(f"Gemini error {resp.status_code}: {snippet}")
 
         return resp.json()
@@ -90,7 +95,12 @@ async def _post_gemini(payload: Dict[str, Any]) -> str:
                 return clean_llm_json(raw_text)
             except Exception as exc:  # noqa: BLE001
                 preview = (raw_text or "")[:800].replace("\n", "\\n")
-                logger.error("Gemini returned invalid JSON. raw_text_preview=%r", preview)
+                logger.error(
+                    "Gemini returned invalid JSON operation=%s response_length=%s reason=%s",
+                    "generateContent(json)",
+                    len(raw_text or ""),
+                    type(exc).__name__,
+                )
                 raise RuntimeError(
                     f"Gemini returned non-JSON or empty JSON candidate. raw_text_preview='{preview}'"
                 ) from exc
@@ -122,7 +132,12 @@ async def _post_gemini_text(payload: Dict[str, Any]) -> str:
 
         if resp.status_code >= 400:
             snippet = resp.text[:1200]
-            logger.error("Gemini upstream error status=%s body_snippet=%r", resp.status_code, snippet)
+            logger.error(
+                "Gemini upstream error operation=%s status=%s response_length=%s",
+                "generateContent(text)",
+                resp.status_code,
+                len(resp.text),
+            )
             raise RuntimeError(f"Gemini error {resp.status_code}: {snippet}")
 
         return resp.json()
