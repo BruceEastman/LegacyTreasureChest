@@ -1314,7 +1314,8 @@ private struct SetPartnerPickerView: View {
     @FocusState private var focusedField: Field?
     
     @StateObject private var autofill = LTCLocationAutofill()
-    
+    @StateObject private var consentGate = AIConsentGate()
+
     private enum Field {
         case city
         case region
@@ -1491,7 +1492,7 @@ private struct SetPartnerPickerView: View {
             Section {
                 Button {
                     focusedField = nil
-                    Task { await search() }
+                    Task { await consentGate.perform { await search() } }
                 } label: {
                     Label(isSearching ? "Searching…" : UserFacingTerms.Disposition.searchSellingOptionsCTA, systemImage: "magnifyingglass")
                 }
@@ -1574,8 +1575,9 @@ private struct SetPartnerPickerView: View {
                 countryCode = newCC
             }
         }
+        .aiConsentSheet(consentGate)
     }
-    
+
     @ViewBuilder
     private func partnerRowButton(_ p: DispositionPartnerResult) -> some View {
         let name = p.name

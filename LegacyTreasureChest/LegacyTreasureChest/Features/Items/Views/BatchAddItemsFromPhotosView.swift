@@ -30,6 +30,8 @@ struct BatchAddItemsFromPhotosView: View {
     @State private var isImporting: Bool = false
     @State private var globalErrorMessage: String?
 
+    @StateObject private var consentGate = AIConsentGate()
+
     private var canImport: Bool {
         !isImporting &&
         drafts.contains(where: { $0.isIncluded && $0.analysis != nil })
@@ -117,8 +119,9 @@ struct BatchAddItemsFromPhotosView: View {
             .navigationBarTitleDisplayMode(.inline)
             .background(Theme.background.ignoresSafeArea())
             .onChange(of: selectedPhotos) { _, newValue in
-                Task { await loadDrafts(from: newValue) }
+                Task { await consentGate.perform { await loadDrafts(from: newValue) } }
             }
+            .aiConsentSheet(consentGate)
         }
     }
 

@@ -137,6 +137,8 @@ struct ItemAudioSection: View {
     @State private var alertMessage: String?
     @State private var isShowingAlert: Bool = false
 
+    @StateObject private var consentGate = AIConsentGate()
+
     private var sortedRecordings: [AudioRecording] {
         item.audioRecordings.sorted { $0.createdAt < $1.createdAt }
     }
@@ -156,6 +158,7 @@ struct ItemAudioSection: View {
         } message: { message in
             Text(message)
         }
+        .aiConsentSheet(consentGate)
     }
 
     // MARK: - Subviews
@@ -213,47 +216,90 @@ struct ItemAudioSection: View {
         let url = MediaStorage.audioURL(from: recording.filePath)
         let isPlayingThis = isPlaying(recording: recording, url: url)
 
-        return HStack(spacing: Theme.spacing.small) {
-            Button {
-                handlePlayPause(for: recording, url: url)
-            } label: {
-                Image(systemName: isPlayingThis ? "pause.circle.fill" : "play.circle.fill")
-                    .font(Theme.titleFont)
-                    .foregroundStyle(Theme.accent)
-            }
-
-            VStack(alignment: .leading, spacing: Theme.spacing.xs) {
-                Text(title(for: recording))
-                    .font(Theme.bodyFont)
-                    .foregroundStyle(Theme.text)
-
-                Text(formattedDuration(recording.duration))
-                    .font(Theme.secondaryFont)
-                    .foregroundStyle(Theme.textSecondary)
-
-                // Show summary only when ready (clean UI, export-aligned)
-                if (recording.summaryStatusRaw ?? "").lowercased() == "ready",
-                   let s = recording.summaryText,
-                   !s.isEmpty {
-                    Text(s)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
+        return VStack(alignment: .leading, spacing: Theme.spacing.xs) {
+            HStack(spacing: Theme.spacing.small) {
+                Button {
+                    handlePlayPause(for: recording, url: url)
+                } label: {
+                    Image(systemName: isPlayingThis ? "pause.circle.fill" : "play.circle.fill")
+                        .font(Theme.titleFont)
+                        .foregroundStyle(Theme.accent)
                 }
+
+                VStack(alignment: .leading, spacing: Theme.spacing.xs) {
+                    Text(title(for: recording))
+                        .font(Theme.bodyFont)
+                        .foregroundStyle(Theme.text)
+
+                    Text(formattedDuration(recording.duration))
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+
+                    // Show summary only when ready (clean UI, export-aligned)
+                    if (recording.summaryStatusRaw ?? "").lowercased() == "ready",
+                       let s = recording.summaryText,
+                       !s.isEmpty {
+                        Text(s)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+
+                Spacer()
+
+                Button(role: .destructive) {
+                    handleDelete(recording: recording)
+                } label: {
+                    Image(systemName: "trash")
+                        .font(Theme.secondaryFont)
+                }
+                .buttonStyle(.borderless)
+                .tint(Theme.destructive)
             }
 
-            Spacer()
-
-            Button(role: .destructive) {
-                handleDelete(recording: recording)
-            } label: {
-                Image(systemName: "trash")
-                    .font(Theme.secondaryFont)
-            }
-            .buttonStyle(.borderless)
-            .tint(Theme.destructive)
+            summaryActionView(for: recording)
         }
     }
+
+    /// Shows a "Create AI Summary" action, an in-progress indicator while a
+    /// summary is being generated, or nothing once a summary is ready.
+    /// Summarization never happens automatically — this is the only way
+    /// a recording's audio is sent anywhere.
+    @ViewBuilder
+    private func summaryActionView(for recording: AudioRecording) -> some View {
+        let status = (recording.summaryStatusRaw ?? "").lowercased()
+
+        switch status {
+        case "pending":
+            HStack(spacing: 6) {
+                ProgressView()
+                Text("Creating AI summary…")
+                    .font(Theme.secondaryFont)
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            .padding(.leading, Theme.spacing.xl + Theme.spacing.small)
+
+        case "ready":
+            EmptyView()
+
+        default:
+            // Empty/unset or "failed" — offer to create (or retry) a summary.
+            Button {
+                handleCreateSummary(for: recording)
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles")
+                    Text(status == "failed" ? "Create AI Summary Again" : "Create AI Summary")
+                }
+                .font(Theme.secondaryFont.weight(.semibold))
+                .foregroundStyle(Theme.accent)
+            }
+            .buttonStyle(.plain)
+            .padding(.leading, Theme.spacing.xl + Theme.spacing.small)
+        }
+    }
+
     // MARK: - Actions
 
     private func handleRecordButtonTap() {
@@ -287,52 +333,53 @@ struct ItemAudioSection: View {
     }
     // MARK: - Audio Summary (Backend)
 
-    /// IMPORTANT: This must be the Mac mini LAN IP when running on a real iPhone.
-    /// Example: http://192.168.4.27:8000/ai/summarize-audio
+    /// User-initiated only. Routes through BackendAIProvider, which shares
+    /// the production base URL, device ID, request ID, timeout, retry, and
+    /// error-normalization behavior with every other AI call — and enforces
+    /// the same consent guard.
+    private func handleCreateSummary(for recording: AudioRecording) {
+        let itemName = item.name
+        let audioFileURL = MediaStorage.audioURL(from: recording.filePath)
 
-    private struct SummarizeAudioRequest: Codable {
-        let audioBase64: String
-        let mimeType: String
-        let itemName: String?
-        let additionalContext: String?
-    }
-
-    private struct SummarizeAudioResponse: Codable {
-        let summaryText: String
-    }
-
-    private func requestAudioSummary(audioFileURL: URL, itemName: String?) async throws -> String {
-        let data = try Data(contentsOf: audioFileURL)
-        let b64 = data.base64EncodedString()
-
-        let reqBody = SummarizeAudioRequest(
-            audioBase64: b64,
-            mimeType: "audio/mp4",
-            itemName: itemName,
-            additionalContext: nil
-        )
-
-        let provider = BackendAIProvider()
-        let endpoint = provider.baseURL.appendingPathComponent("ai/summarize-audio")
-        var request = URLRequest(url: endpoint) 
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(reqBody)
-
-        let (respData, resp) = try await URLSession.shared.data(for: request)
-        guard let http = resp as? HTTPURLResponse else {
-            throw URLError(.badServerResponse)
+        Task {
+            await consentGate.perform {
+                await self.performSummaryRequest(for: recording, audioFileURL: audioFileURL, itemName: itemName)
+            }
         }
-        guard (200...299).contains(http.statusCode) else {
-            let body = String(data: respData, encoding: .utf8) ?? "<non-utf8>"
-            throw NSError(domain: "AudioSummary", code: http.statusCode, userInfo: [
-                NSLocalizedDescriptionKey: body
-            ])
-        }
-
-        return try JSONDecoder().decode(SummarizeAudioResponse.self, from: respData).summaryText
     }
-    
+
+    private func performSummaryRequest(for recording: AudioRecording, audioFileURL: URL, itemName: String) async {
+        recording.summaryText = nil
+        recording.summaryStatusRaw = "pending"
+        recording.summaryGeneratedAt = nil
+        try? modelContext.save()
+
+        do {
+            let data = try Data(contentsOf: audioFileURL)
+            let provider = BackendAIProvider()
+            let summary = try await provider.summarizeAudio(
+                audioData: data,
+                mimeType: "audio/mp4",
+                itemName: itemName.isEmpty ? nil : itemName
+            )
+
+            await MainActor.run {
+                recording.summaryText = summary
+                recording.summaryStatusRaw = "ready"
+                recording.summaryGeneratedAt = .now
+                recording.updatedAt = .now
+                try? modelContext.save()
+            }
+        } catch {
+            await MainActor.run {
+                recording.summaryStatusRaw = "failed"
+                recording.updatedAt = .now
+                try? modelContext.save()
+            }
+            print("❌ Audio summary generation failed: \(error)")
+        }
+    }
+
     private func startRecording() {
         do {
             let url = try audioManager.startRecording()
@@ -366,29 +413,9 @@ struct ItemAudioSection: View {
         recording.item = item
         modelContext.insert(recording)
         try? modelContext.save()
-        
-        recording.summaryText = nil
-        recording.summaryStatusRaw = "pending"
-        recording.summaryGeneratedAt = nil
-        Task {
-            do {
-                let summary = try await requestAudioSummary(audioFileURL: url, itemName: item.name)
 
-                await MainActor.run {
-                    recording.summaryText = summary
-                    recording.summaryStatusRaw = "ready"
-                    recording.summaryGeneratedAt = .now
-                    recording.updatedAt = .now
-                    try? modelContext.save()
-                }
-            } catch {
-                await MainActor.run {
-                    recording.summaryStatusRaw = "failed"
-                    recording.updatedAt = .now
-                    try? modelContext.save()
-                }
-                print("❌ Audio summary generation failed: \(error)")            }
-        }
+        // No automatic upload. summaryStatusRaw stays nil until the user
+        // explicitly taps "Create AI Summary" on this recording.
 
         // Optionally bump the item's updatedAt.
         item.updatedAt = .now

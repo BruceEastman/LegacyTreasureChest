@@ -22,8 +22,8 @@
 		BEFA6E502ED7ABD700A86ED8 /* Exceptions for "LegacyTreasureChest" folder in "LegacyTreasureChest" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				"Info-Debug.plist",
 				Info.plist,
-				Info-Debug.plist,
 			);
 			target = BE3A74662ECE64C000DFEE10 /* LegacyTreasureChest */;
 		};
@@ -284,7 +284,7 @@
 				DEVELOPMENT_TEAM = 8TNF6SJ6QB;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = LegacyTreasureChest/Info-Debug.plist;
+				INFOPLIST_FILE = "LegacyTreasureChest/Info-Debug.plist";
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

@@ -45,6 +45,8 @@ struct DispositionPartnersView: View {
 
     @State private var isSearching: Bool = false
     @State private var errorMessage: String?
+
+    @StateObject private var consentGate = AIConsentGate()
     @State private var response: DispositionPartnersSearchResponse?
     @State private var expandedPartnerIds: Set<String> = []
 
@@ -203,7 +205,7 @@ struct DispositionPartnersView: View {
             // MARK: - Search Button
             Section {
                 Button {
-                    Task { await runSearch() }
+                    Task { await consentGate.perform { await runSearch() } }
                 } label: {
                     HStack(spacing: 10) {
                         if isSearching {
@@ -267,6 +269,7 @@ struct DispositionPartnersView: View {
         .background(Theme.background)
         .navigationTitle(UserFacingTerms.Disposition.localHelpTitle)
         .navigationBarTitleDisplayMode(.inline)
+        .aiConsentSheet(consentGate)
         .tint(Theme.accent)
     }
 

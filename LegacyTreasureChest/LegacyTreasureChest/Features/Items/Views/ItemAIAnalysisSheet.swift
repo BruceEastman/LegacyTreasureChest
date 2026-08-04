@@ -22,6 +22,8 @@ struct ItemAIAnalysisSheet: View {
     @State private var analysisResult: ItemAnalysis?
     @State private var errorMessage: String?
 
+    @StateObject private var consentGate = AIConsentGate()
+
     /// Extra owner-supplied details that should help the AI value this item.
     /// Stored in ItemValuation.userNotes so it persists per item.
     @State private var extraDetailsText: String = ""
@@ -71,7 +73,7 @@ struct ItemAIAnalysisSheet: View {
 
                             if !isAnalyzing {
                                 Button(action: {
-                                    Task { await runAnalysis() }
+                                    Task { await consentGate.perform { await runAnalysis() } }
                                 }) {
                                     HStack(spacing: 8) {
                                         Image(systemName: "arrow.clockwise")
@@ -138,6 +140,7 @@ struct ItemAIAnalysisSheet: View {
                 loadPreviewImageIfNeeded()
                 loadExtraDetailsIfNeeded()
             }
+            .aiConsentSheet(consentGate)
         }
     }
 
@@ -270,7 +273,7 @@ struct ItemAIAnalysisSheet: View {
 
     private var analyzeButton: some View {
         Button {
-            Task { await runAnalysis() }
+            Task { await consentGate.perform { await runAnalysis() } }
         } label: {
             HStack {
                 if isAnalyzing { ProgressView() }

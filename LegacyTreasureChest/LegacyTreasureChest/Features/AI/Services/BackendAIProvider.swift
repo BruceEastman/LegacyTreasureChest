@@ -14,6 +14,7 @@ struct BackendAIProvider: AIProvider {
 
     let baseURL: URL
     private let urlSession: URLSession
+    private let consent: AICloudConsentManager
 
     /// Cloud Run base URL (Release/TestFlight default)
     private static var cloudBaseURL: URL {
@@ -43,10 +44,12 @@ struct BackendAIProvider: AIProvider {
 
     init(
         baseURL: URL = BackendAIProvider.defaultBaseURL,
-        urlSession: URLSession = .shared
+        urlSession: URLSession = .shared,
+        consent: AICloudConsentManager = AICloudConsentManager()
     ) {
         self.baseURL = baseURL
         self.urlSession = urlSession
+        self.consent = consent
     }
 
     // MARK: - AIProvider
@@ -117,6 +120,34 @@ struct BackendAIProvider: AIProvider {
         return response
     }
 
+    // MARK: - Audio Summary
+
+    /// Summarize an owner-recorded audio story via the backend/Gemini.
+    /// Shares the same consent guard, base URL, device ID, request ID,
+    /// timeout, retry, and error-normalization behavior as every other
+    /// call in this type.
+    func summarizeAudio(
+        audioData: Data,
+        mimeType: String,
+        itemName: String?
+    ) async throws -> String {
+        let base64 = audioData.base64EncodedString()
+
+        let requestBody = SummarizeAudioRequest(
+            audioBase64: base64,
+            mimeType: mimeType,
+            itemName: itemName,
+            additionalContext: nil
+        )
+
+        let response: SummarizeAudioResponse = try await postJSON(
+            path: "/ai/summarize-audio",
+            body: requestBody
+        )
+
+        return response.summaryText
+    }
+
     func estimateValue(
         for item: ItemValueInput
     ) async throws -> ValueRange {
@@ -141,6 +172,13 @@ struct BackendAIProvider: AIProvider {
         path: String,
         body: RequestBody
     ) async throws -> ResponseBody {
+
+        // Hard consent guard: must be the first thing this function does.
+        // If consent isn't granted, no URL/request is built, no headers are
+        // set, no retry task is created, and nothing is logged.
+        guard consent.isOnlineProcessingAllowed else {
+            throw AIError.consentRequired
+        }
 
         let trimmedPath = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let url = baseURL.appendingPathComponent(trimmedPath)
@@ -341,6 +379,17 @@ private struct AnalyzeItemPhotoRequest: Encodable {
 
 private struct AnalyzeItemTextRequest: Encodable {
     let hints: ItemAIHints
+}
+
+private struct SummarizeAudioRequest: Encodable {
+    let audioBase64: String
+    let mimeType: String
+    let itemName: String?
+    let additionalContext: String?
+}
+
+private struct SummarizeAudioResponse: Decodable {
+    let summaryText: String
 }
 
 // MARK: - Error Envelope (best-effort)

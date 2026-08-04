@@ -27,6 +27,8 @@ struct AddItemWithAIView: View {
     @State private var analysisResult: ItemAnalysis?
     @State private var errorMessage: String?
 
+    @StateObject private var consentGate = AIConsentGate()
+
     // Optional hint fields to guide AI
     @State private var hintTitle: String = ""
     @State private var hintDescription: String = ""
@@ -101,7 +103,7 @@ struct AddItemWithAIView: View {
                 }
 
                 Button {
-                    Task { await runAnalysis() }
+                    Task { await consentGate.perform { await runAnalysis() } }
                 } label: {
                     HStack {
                         if isAnalyzing {
@@ -207,7 +209,7 @@ struct AddItemWithAIView: View {
                     if !isAnalyzing {
                         Button(action: {
                             Task {
-                                await runAnalysis()
+                                await consentGate.perform { await runAnalysis() }
                             }
                         }) {
                             HStack(spacing: 8) {
@@ -249,6 +251,7 @@ struct AddItemWithAIView: View {
         .onChange(of: selectedPhoto) { _, newValue in
             Task { await loadSelectedImage(from: newValue) }
         }
+        .aiConsentSheet(consentGate)
     }
 
     // MARK: - AI Helpers

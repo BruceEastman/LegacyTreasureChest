@@ -17,6 +17,13 @@ enum AIError: LocalizedError, Sendable {
     case featureDisabled(String)
     case invalidRequest(String)
 
+    /// The user has not granted (or has declined/revoked) permission to
+    /// send selected data off-device for AI / Local Help. Distinct from
+    /// network failure, timeout, rate limit, and backend error — carries
+    /// no backend content and should trigger the consent sheet rather
+    /// than a generic error message.
+    case consentRequired
+
     // Legacy (kept, but should not contain raw server content)
     case invalidResponse(String)
     case decodingFailed(String)
@@ -42,6 +49,8 @@ enum AIError: LocalizedError, Sendable {
             return "AI feature is disabled: \(message)"
         case .invalidRequest(let message):
             return "AI request is invalid: \(message)"
+        case .consentRequired:
+            return "AI features need your permission first. You can turn them on in Privacy & AI."
         case .invalidResponse:
             // Avoid leaking internal details (Step 4)
             return "We couldn’t complete that request."

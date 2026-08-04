@@ -29,6 +29,8 @@ struct LiquidationSectionView: View {
     @State private var briefDetailDTO: LiquidationBriefDTO?
     @State private var briefDetailTimestamp: Date?
 
+    @StateObject private var consentGate = AIConsentGate()
+
     private let liquidationAI = LiquidationAIService()
 
     var body: some View {
@@ -37,7 +39,7 @@ struct LiquidationSectionView: View {
                 headerRow()
 
                 Button {
-                    Task { await generateBrief(for: item) }
+                    Task { await consentGate.perform { await generateBrief(for: item) } }
                 } label: {
                     HStack(spacing: 10) {
                         if isGeneratingBrief {
@@ -148,6 +150,7 @@ struct LiquidationSectionView: View {
                 createdAt: briefDetailTimestamp
             )
         }
+        .aiConsentSheet(consentGate)
     }
 
     // MARK: - Header
@@ -355,10 +358,10 @@ struct LiquidationSectionView: View {
                 .foregroundStyle(.secondary)
 
             HStack {
-                Button("Path A") { Task { await createOrReplacePlan(item: item, briefRecord: briefRecord, chosen: .pathA) } }
-                Button("Path B") { Task { await createOrReplacePlan(item: item, briefRecord: briefRecord, chosen: .pathB) } }
-                Button("Path C") { Task { await createOrReplacePlan(item: item, briefRecord: briefRecord, chosen: .pathC) } }
-                Button("Donate") { Task { await createOrReplacePlan(item: item, briefRecord: briefRecord, chosen: .donate) } }
+                Button("Path A") { Task { await consentGate.perform { await createOrReplacePlan(item: item, briefRecord: briefRecord, chosen: .pathA) } } }
+                Button("Path B") { Task { await consentGate.perform { await createOrReplacePlan(item: item, briefRecord: briefRecord, chosen: .pathB) } } }
+                Button("Path C") { Task { await consentGate.perform { await createOrReplacePlan(item: item, briefRecord: briefRecord, chosen: .pathC) } } }
+                Button("Donate") { Task { await consentGate.perform { await createOrReplacePlan(item: item, briefRecord: briefRecord, chosen: .donate) } } }
             }
             .buttonStyle(.bordered)
             .disabled(isGeneratingBrief || isGeneratingPlan)
