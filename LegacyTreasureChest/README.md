@@ -1,3 +1,60 @@
+# App Store Release Hardening — Persistence, Privacy, Entitlements, Backend Logging, AI Consent
+
+**Status:** Complete and validated
+**Date:** August 4, 2026
+**Scope:** SwiftData schema fix, privacy manifest, entitlements/build-config cleanup, backend logging hardening, AI/online-processing consent enforcement
+
+---
+
+## Completed
+
+- SwiftData schema corrected to register:
+  - `LotExecutionState`
+  - `LotChecklistItemState`
+- Existing-store and Execution Mode persistence tested successfully on device
+- `PrivacyInfo.xcprivacy` added and included in the app bundle
+- Required-reason API declarations added for:
+  - UserDefaults using `CA92.1`
+  - File Timestamp using `C617.1`
+- Debug and Release Info.plist configurations separated
+- Release build no longer includes:
+  - LAN ATS exception
+  - `NSLocalNetworkUsageDescription`
+- Debug build retains local LAN backend access
+- Sign in with Apple entitlement removed from the app
+- Sign in with Apple capability disabled for the App ID
+- Debug and Release builds, signing, archive, and store validation succeeded
+- Backend privacy audit completed
+- Google Places request/response body logging removed
+- Gemini response-content logging removed
+- Hardened backend deployed to Cloud Run
+- Production Cloud Run health check passed
+- AI and online-processing consent foundation implemented
+- Consent is centrally enforced before Release-reachable network requests
+- Consent covers:
+  - photo and text analysis
+  - batch analysis
+  - liquidation briefs and plans
+  - Local Help
+  - audio summaries
+- Users can decline or revoke consent while continuing to use all local inventory features
+- Audio recordings now save locally and are not uploaded automatically
+- Audio summarization now requires an explicit "Create AI Summary" action
+- Privacy and onboarding wording corrected
+- Public Privacy Policy link is wired into the app
+- Debug and Release builds passed after consent enforcement
+
+## Remaining release blockers
+
+- Production-quality Delete All Data
+- App Store Connect App Privacy questionnaire
+- Age rating questionnaire
+- Product page copy and screenshots
+- Final release-candidate archive and smoke test
+- App Review submission and controlled manual release
+
+---
+
 # Mandatory Sign in with Apple Removed — Local-First Launch
 
 **Status:** Complete and validated
