@@ -106,7 +106,7 @@ Legacy Treasure Chest guides you through a simple journey:
 
 Capture → Understand → Decide → Execute → Document
 
-Everything remains privately stored on your device. The system acts as an advisor, not an operator.
+Your inventory is stored on this iPhone. Information is sent securely for processing only when you choose an AI or Local Help feature. The system acts as an advisor, not an operator.
 
 Start by adding a few items to begin building your inventory.
 """,

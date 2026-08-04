@@ -33,12 +33,16 @@ enum AppConstants {
         static let enableCloudKit = "enableCloudKit"
         static let enableHouseholds = "enableHouseholds"
         static let showDebugInfo = "showDebugInfo"
+
+        /// Raw value of AICloudConsentStatus — the user's choice about
+        /// sending selected item data off-device for AI / Local Help.
+        static let aiCloudConsentStatus = "aiCloudConsentStatus"
     }
-    
-    /// URLs related to the app. These are placeholders for now.
+
+    /// URLs related to the app.
     enum URLs {
         static let supportSite: URL? = nil
-        static let privacyPolicy: URL? = nil
+        static let privacyPolicy: URL? = URL(string: "https://legacytreasurechest.com/privacy")
         static let termsOfUse: URL? = nil
     }
 }

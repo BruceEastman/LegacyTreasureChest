@@ -76,10 +76,34 @@ struct HelpView: View {
                             bullet("You stay in control. Legacy Treasure Chest does not take actions on your behalf.")
                             bullet("AI assists with suggestions and summaries; it does not make decisions for you.")
                             bullet("Nothing is automated: no listings, no outreach, and no irreversible operations.")
-                            bullet("Your inventory remains on your device. AI processing is used only when needed for analysis.")
+                            bullet("Your inventory is stored on this iPhone. Information is sent securely for processing only when you choose an AI or Local Help feature.")
                             bullet("Exports reflect the catalog exactly as it exists at the time you generate them.")
                         }
                         .ltcCardBackground()
+                    }
+
+                    // MARK: - Privacy & AI
+
+                    VStack(alignment: .leading, spacing: Theme.spacing.small) {
+                        Text("Privacy & AI")
+                            .ltcSectionHeaderStyle()
+
+                        NavigationLink {
+                            AIPrivacySettingsView()
+                        } label: {
+                            VStack(alignment: .leading, spacing: Theme.spacing.small) {
+                                Text("AI & Online Assistance")
+                                    .font(Theme.bodyFont.weight(.semibold))
+                                    .foregroundStyle(Theme.text)
+
+                                Text("Review what's sent when you use AI features or Local Help, and turn AI features on or off.")
+                                    .font(Theme.secondaryFont)
+                                    .foregroundStyle(Theme.textSecondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .ltcCardBackground()
+                        }
                     }
 
                     footerNote
