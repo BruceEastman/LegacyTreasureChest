@@ -27,7 +27,11 @@ struct ContentView: View {
                     }
             case .ready:
                 HomeView(
-                    openItemsAfterOnboarding: $openItemsAfterOnboarding
+                    openItemsAfterOnboarding: $openItemsAfterOnboarding,
+                    onDataResetCompleted: {
+                        hasSeenStartHere = false
+                        showStartHere = true
+                    }
                 )
                 .onAppear {
                     if !hasSeenStartHere {

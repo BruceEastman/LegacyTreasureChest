@@ -1,3 +1,25 @@
+# Production Delete All Data — Release-Reachable Reset
+
+**Status:** Complete and validated
+**Date:** August 4, 2026
+**Scope:** SwiftData full-record deletion, app-managed media reset, temporary export cleanup, onboarding/consent/preference reset, diagnostic device ID deletion
+
+---
+
+## Completed
+
+- Delete All Data is now available in Release builds (Guide > Data & Privacy > Delete All Data), not just Debug
+- Deletes every SwiftData record across all 22 registered model types, with an explicit save and a zero-record verification pass across all 22 types
+- Removes all app-managed photos, documents, and audio, including files orphaned by earlier deletions, by deleting and recreating the app's media root
+- Clears known LTC-generated temporary exports (Estate reports, Outreach/Beneficiary/Executor packets and ZIPs) without touching unrelated temporary files
+- Resets onboarding, AI/online-processing consent (to Not Set), local preferences and feature overrides, and deletes the diagnostic Keychain device ID
+- Does not delete copies the user has already exported to Files, Mail, Messages, AirDrop, or another app — those are outside the app's control once exported
+- Makes no backend request during reset — the backend has no database or user accounts to clear
+- Runtime-validated end to end on a populated iPhone 17 simulator: deletion succeeded, the app returned to onboarding immediately, app contents were clean after reset, AI consent showed "Not Set," the next AI action re-presented the consent disclosure, and AI item analysis completed successfully after granting consent again
+- Debug and Release builds both succeeded with no new warnings
+
+---
+
 # App Store Release Hardening — Persistence, Privacy, Entitlements, Backend Logging, AI Consent
 
 **Status:** Complete and validated

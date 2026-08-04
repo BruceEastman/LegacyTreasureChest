@@ -24,6 +24,35 @@ enum LTCDeviceIdentity {
         return newID
     }
 
+    enum KeychainDeletionResult {
+        case deleted
+        case notFound
+    }
+
+    /// Deletes the diagnostic device identifier from the Keychain, scoped
+    /// to the exact service/account pair used by `deviceID()`. Does not
+    /// generate a new identifier — the next call to `deviceID()` will
+    /// lazily create one, unchanged from existing behavior. Used only by
+    /// the full data-reset flow.
+    @discardableResult
+    static func deleteStoredIdentity() throws -> KeychainDeletionResult {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+
+        let status = SecItemDelete(query as CFDictionary)
+        switch status {
+        case errSecSuccess:
+            return .deleted
+        case errSecItemNotFound:
+            return .notFound
+        default:
+            throw AppError.dataError("Keychain delete failed with status \(status).")
+        }
+    }
+
     // MARK: - Keychain helpers
 
     private static func readString(service: String, account: String) -> String? {

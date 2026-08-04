@@ -54,4 +54,12 @@ final class AICloudConsentManager {
     func revoke() {
         status = .declined
     }
+
+    /// Resets consent back to `.notDetermined` by removing the persisted
+    /// key, so the next check falls through to the default (see `status`
+    /// getter). Used only by the full data-reset flow. This is a local
+    /// UserDefaults write only — it makes no network request.
+    func reset() {
+        defaults.removeObject(forKey: AppConstants.StorageKeys.aiCloudConsentStatus)
+    }
 }

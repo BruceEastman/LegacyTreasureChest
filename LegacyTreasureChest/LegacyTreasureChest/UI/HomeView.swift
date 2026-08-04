@@ -18,11 +18,12 @@ import SwiftData
 struct HomeView: View {
     @Binding var openItemsAfterOnboarding: Bool
 
-    @Environment(\.modelContext) private var modelContext
+    /// Called once a full data reset (Guide > Data & Privacy > Delete All
+    /// Data) has been verified successful and dismissed by the user.
+    let onDataResetCompleted: () -> Void
+
     @Query private var items: [LTCItem]
 
-    @State private var isConfirmingReset: Bool = false
-    @State private var resetErrorMessage: String?
     @State private var isShowingGuide: Bool = false
 
     var body: some View {
@@ -132,38 +133,9 @@ struct HomeView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .ltcCardBackground()
                         }
-
-                        VStack(alignment: .leading, spacing: Theme.spacing.small) {
-                            Button {
-                                isConfirmingReset = true
-                            } label: {
-                                HStack {
-                                    Image(systemName: "trash.circle.fill")
-                                    Text("Reset All Data (Dev)")
-                                }
-                                .font(Theme.bodyFont)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding()
-                                .background(Color(.systemGray6))
-                                .foregroundStyle(Theme.destructive)
-                                .cornerRadius(16)
-                            }
-
-                            Text("Clears all items, beneficiaries, media, and links from this device. Use for testing only.")
-                                .font(Theme.secondaryFont)
-                                .foregroundStyle(Theme.textSecondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        .padding(.top, Theme.spacing.small)
                     }
                     .padding(.top, Theme.spacing.large)
                     #endif
-
-                    if let message = resetErrorMessage {
-                        Text(message)
-                            .font(Theme.secondaryFont)
-                            .foregroundStyle(Theme.destructive)
-                    }
                 }
                 .frame(
                     maxWidth: .infinity,
@@ -196,19 +168,10 @@ struct HomeView: View {
             ItemsListView()
         }
         .navigationDestination(isPresented: $isShowingGuide) {
-            HelpView()
-        }
-        .confirmationDialog(
-            "Reset All Data?",
-            isPresented: $isConfirmingReset,
-            titleVisibility: .visible
-        ) {
-            Button("Reset All Data", role: .destructive) {
-                resetAllData()
-            }
-            Button("Cancel", role: .cancel) { }
-        } message: {
-            Text("This will permanently delete all items, beneficiaries, media, and related records stored on this device. This is intended for development and testing only.")
+            HelpView(onDataResetCompleted: {
+                isShowingGuide = false
+                onDataResetCompleted()
+            })
         }
     }
 
@@ -250,49 +213,6 @@ struct HomeView: View {
         formatter.minimumFractionDigits = 0
         formatter.locale = .current
         return formatter.string(from: NSNumber(value: value)) ?? "$0"
-    }
-
-    // MARK: - Reset Logic
-
-    private func resetAllData() {
-        do {
-            try deleteAll(of: ItemBeneficiary.self)
-            try deleteAll(of: Beneficiary.self)
-
-            try deleteAll(of: ItemImage.self)
-            try deleteAll(of: AudioRecording.self)
-            try deleteAll(of: Document.self)
-
-            try deleteAll(of: LTCItemSetMembership.self)
-            try deleteAll(of: LTCItemSet.self)
-
-            try deleteAll(of: LiquidationPlanRecord.self)
-            try deleteAll(of: LiquidationBriefRecord.self)
-            try deleteAll(of: LiquidationState.self)
-
-            try deleteAll(of: BatchItem.self)
-            try deleteAll(of: LiquidationBatch.self)
-
-            try deleteAll(of: ItemValuation.self)
-            try deleteAll(of: LTCItem.self)
-
-            try deleteAll(of: LiquidationPlan.self)
-            try deleteAll(of: LiquidationBrief.self)
-            try deleteAll(of: LTCSet.self)
-            try deleteAll(of: TriageEntry.self)
-
-            resetErrorMessage = nil
-        } catch {
-            resetErrorMessage = "Failed to reset data: \(error.localizedDescription)"
-        }
-    }
-
-    private func deleteAll<T: PersistentModel>(of type: T.Type) throws {
-        let descriptor = FetchDescriptor<T>()
-        let all = try modelContext.fetch(descriptor)
-        for object in all {
-            modelContext.delete(object)
-        }
     }
 }
 
@@ -381,7 +301,8 @@ private struct HomePrimaryCard: View {
 #Preview {
     NavigationStack {
         HomeView(
-            openItemsAfterOnboarding: .constant(false)
+            openItemsAfterOnboarding: .constant(false),
+            onDataResetCompleted: {}
         )
         .modelContainer(
             try! ModelContainer(

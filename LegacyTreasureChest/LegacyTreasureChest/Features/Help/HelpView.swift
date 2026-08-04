@@ -9,6 +9,9 @@
 import SwiftUI
 
 struct HelpView: View {
+    /// Forwarded to `DataPrivacySettingsView`. Called once a full data
+    /// reset has been verified successful and dismissed by the user.
+    let onDataResetCompleted: () -> Void
 
     var body: some View {
         ScrollView {
@@ -82,21 +85,21 @@ struct HelpView: View {
                         .ltcCardBackground()
                     }
 
-                    // MARK: - Privacy & AI
+                    // MARK: - Data & Privacy
 
                     VStack(alignment: .leading, spacing: Theme.spacing.small) {
-                        Text("Privacy & AI")
+                        Text("Data & Privacy")
                             .ltcSectionHeaderStyle()
 
                         NavigationLink {
-                            AIPrivacySettingsView()
+                            DataPrivacySettingsView(onDataResetCompleted: onDataResetCompleted)
                         } label: {
                             VStack(alignment: .leading, spacing: Theme.spacing.small) {
-                                Text("AI & Online Assistance")
+                                Text("Data & Privacy")
                                     .font(Theme.bodyFont.weight(.semibold))
                                     .foregroundStyle(Theme.text)
 
-                                Text("Review what's sent when you use AI features or Local Help, and turn AI features on or off.")
+                                Text("Review AI & online assistance, read our privacy policy, or delete all Legacy Treasure Chest data from this iPhone.")
                                     .font(Theme.secondaryFont)
                                     .foregroundStyle(Theme.textSecondary)
                                     .fixedSize(horizontal: false, vertical: true)

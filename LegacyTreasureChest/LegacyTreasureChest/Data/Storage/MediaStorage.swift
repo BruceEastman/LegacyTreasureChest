@@ -176,7 +176,51 @@ enum MediaStorage {
         }
         return size.int64Value
     }
-    
+
+    // MARK: - Full Reset
+
+    /// Deletes the entire app-owned media root (`baseDirectory`) and
+    /// recreates the standard `Media/Images`, `Media/Audio`, and
+    /// `Media/Documents` subdirectories. Used only by the full data-reset
+    /// flow (`AppDataResetCoordinator`) — propagates any filesystem
+    /// failure rather than logging and continuing.
+    static func deleteAndRecreateRoot() throws {
+        let fm = FileManager.default
+
+        if fm.fileExists(atPath: baseDirectory.path) {
+            try fm.removeItem(at: baseDirectory)
+        }
+
+        try fm.createDirectory(at: imagesDirectory, withIntermediateDirectories: true)
+        try fm.createDirectory(at: audioDirectory, withIntermediateDirectories: true)
+        try fm.createDirectory(at: documentsDirectory, withIntermediateDirectories: true)
+    }
+
+    /// True if the media root either doesn't exist or contains no regular
+    /// files anywhere beneath it. Used to verify a full data reset actually
+    /// cleared app-owned media.
+    static func rootContainsNoFiles() throws -> Bool {
+        let fm = FileManager.default
+
+        guard fm.fileExists(atPath: baseDirectory.path) else { return true }
+
+        guard let enumerator = fm.enumerator(
+            at: baseDirectory,
+            includingPropertiesForKeys: [.isRegularFileKey]
+        ) else {
+            throw AppError.dataError("Unable to enumerate media root for verification.")
+        }
+
+        for case let url as URL in enumerator {
+            let values = try url.resourceValues(forKeys: [.isRegularFileKey])
+            if values.isRegularFile == true {
+                return false
+            }
+        }
+
+        return true
+    }
+
     // MARK: - Helpers
     
     /// Convert a relative path (e.g. "Media/Images/foo.jpg") into
