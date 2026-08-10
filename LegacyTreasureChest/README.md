@@ -1,3 +1,35 @@
+# Physical iPad Validation + Home Screen Branding Polish
+
+**Status:** Complete and validated
+**Date:** August 10, 2026
+**Scope:** Physical 13-inch iPad runtime validation, Home screen logo restoration
+
+---
+
+## Completed
+
+- Legacy Treasure Chest validated successfully on a physical 13-inch iPad
+- App installed and launched successfully on the iPad after updating Xcode and enabling Developer Mode
+- Core runtime behavior tested successfully on the physical iPad:
+  - Home screen
+  - Items & Stories
+  - Estate Dashboard / estate summary views
+  - Add Item from Photo
+  - AI-assisted item creation
+  - AI consent disclosure
+  - Editing the item description
+  - Improve with AI / valuation refinement
+- App presented well on the larger iPad display; no iPad-specific functional or layout defects identified during this validation pass
+- Confirms the app is working on physical iPad hardware, not merely compiling for iOS
+- App remains designed for supported iOS devices; testing has now been performed on both iPhone and iPad
+- Restored the existing `app-logo` image to the Home screen as a restrained visual brand anchor, placed above the Home metrics strip in `HomeView.swift`
+- Final logo size: 180 x 180 points
+- Existing Home layout otherwise left unchanged; no iPad-specific layout branch or broader adaptive-layout refactor introduced
+- 180 pt logo presentation visually validated on a physical 13-inch iPad and a physical iPhone
+- Result improves visual balance and branding while preserving the clean Home screen and existing primary actions
+
+---
+
 # Ordinary Item Deletion — Media Cleanup
 
 **Status:** Complete and validated
