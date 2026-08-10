@@ -33,6 +33,11 @@ struct HomeView: View {
                     Spacer(minLength: 0)
 
                     VStack(spacing: Theme.spacing.large) {
+                        Image("app-logo")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 180, height: 180)
+
                         HomeMetricsStrip(
                             itemCount: totalItems,
                             estimatedValueText: currencyString(totalEstateValue),
