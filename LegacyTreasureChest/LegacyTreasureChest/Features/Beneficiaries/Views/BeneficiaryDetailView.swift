@@ -36,8 +36,8 @@ struct BeneficiaryDetailView: View {
     var body: some View {
         List {
             beneficiaryHeaderSection
-            exportSection
             assignedItemsSection
+            exportSection
         }
         .scrollContentBackground(.hidden)
         .background(Theme.background)
@@ -150,9 +150,6 @@ struct BeneficiaryDetailView: View {
                             .foregroundStyle(Theme.textSecondary)
                     }
                     Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .foregroundStyle(Theme.textSecondary)
                 }
                 .padding(.vertical, 6)
             }
