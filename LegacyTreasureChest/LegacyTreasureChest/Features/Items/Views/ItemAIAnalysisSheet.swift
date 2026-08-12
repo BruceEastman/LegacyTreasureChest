@@ -409,18 +409,6 @@ struct ItemAIAnalysisSheet: View {
                 Text("Why This Estimate")
                     .ltcSectionHeaderStyle()
 
-                if let provider = value.aiProvider, !provider.isEmpty {
-                    Text("Provider: \(provider)")
-                        .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.textSecondary)
-                }
-
-                if let updated = value.valuationDate, !updated.isEmpty {
-                    Text("Valuation Date: \(updated)")
-                        .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.textSecondary)
-                }
-
                 if let notes = value.aiNotes,
                    !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Text(notes)
