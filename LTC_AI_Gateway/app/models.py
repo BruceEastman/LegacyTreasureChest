@@ -45,6 +45,30 @@ class ValueHints(BaseModel):
     missingDetails: Optional[List[str]] = None  # What info would improve accuracy?
 
 
+# ---- Canonical item categories ----
+# Must mirror LTCItem.baseCategories in the iOS app (Data/SwiftData/LTCModels.swift).
+# Shared by the prompt builders (closed-list instruction to Gemini) and the
+# response normalizer (collapses any invented value to "Other").
+CANONICAL_ITEM_CATEGORIES: List[str] = [
+    "Uncategorized",
+    "Art",
+    "Furniture",
+    "Jewelry",
+    "Collectibles",
+    "Documents",
+    "Electronics",
+    "Appliance",
+    "Rug",
+    "China & Crystal",
+    "Luxury Personal Items",
+    "Clothing",
+    "Tools",
+    "Luggage",
+    "Decor",
+    "Other",
+]
+
+
 # ---- Item analysis (top-level response from Gemini) ----
 
 class ItemAnalysis(BaseModel):

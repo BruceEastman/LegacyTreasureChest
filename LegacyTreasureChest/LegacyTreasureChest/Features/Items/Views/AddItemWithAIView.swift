@@ -296,14 +296,10 @@ struct AddItemWithAIView: View {
             itemDescription = analysis.summary
         }
 
-        // Category: ensure it's available in the picker.
-        let suggestedCategory = analysis.category.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !suggestedCategory.isEmpty {
-            if !categoryOptions.contains(where: { $0.caseInsensitiveCompare(suggestedCategory) == .orderedSame }) {
-                categoryOptions.append(suggestedCategory)
-            }
-            selectedCategory = suggestedCategory
-        }
+        // Category: normalize the AI suggestion to a canonical value.
+        // categoryOptions is always LTCItem.baseCategories, so never append
+        // AI-invented values to it -- only assign a normalized selection.
+        selectedCategory = LTCItem.normalizeCategory(analysis.category)
 
         // Value: use midpoint / estimate from valueHints if present.
         if let hints = analysis.valueHints {

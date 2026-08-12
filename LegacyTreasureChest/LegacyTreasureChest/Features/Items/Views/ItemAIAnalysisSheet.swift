@@ -632,7 +632,7 @@ struct ItemAIAnalysisSheet: View {
     
     private func applyAnalysis(_ analysis: ItemAnalysis) {
         item.name = analysis.title
-        item.category = analysis.category
+        item.category = LTCItem.normalizeCategory(analysis.category)
 
         var descriptionLines: [String] = []
         descriptionLines.append(analysis.summary)

@@ -4,12 +4,24 @@ from __future__ import annotations
 
 from typing import List
 
-from app.models import ItemAIHints
+from app.models import CANONICAL_ITEM_CATEGORIES, ItemAIHints
 
 
 # ---------------------------------------------------------------------------
 # Prompt helpers
 # ---------------------------------------------------------------------------
+
+
+# Shared, closed-list category instruction reused by both the photo and
+# text-only prompts so Gemini is given the exact same category contract.
+_CATEGORY_RULES_BLOCK = (
+    "CATEGORY RULES (STRICT):\n"
+    "- The \"category\" field MUST be exactly one of these values (character-for-character):\n"
+    "  " + ", ".join(CANONICAL_ITEM_CATEGORIES) + "\n"
+    "- Never invent, paraphrase, or combine category names.\n"
+    "- If no listed category reasonably fits, return exactly \"Other\".\n"
+)
+
 
 def _format_hints(hints: ItemAIHints | None) -> str:
     if hints is None:
@@ -37,6 +49,7 @@ No Markdown. No backticks. No commentary.
 
 Return a JSON object that matches the ItemAnalysis schema.
 
+{_CATEGORY_RULES_BLOCK}
 CRITICAL VALUE RULES:
 - Always include valueHints with:
   - valueLow (number)
@@ -110,6 +123,7 @@ Return JSON that matches this schema EXACTLY:
   "features": [string] | null
 }}
 
+{_CATEGORY_RULES_BLOCK}
 Rules:
 - The top-level fields "title", "description", and "category" are REQUIRED and must be present.
 - If you are unsure about value from text alone, set "valueHints" to null.

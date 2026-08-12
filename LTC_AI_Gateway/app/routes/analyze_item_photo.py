@@ -10,7 +10,7 @@ from uuid import uuid4
 from fastapi import APIRouter, HTTPException
 from pydantic import ValidationError
 
-from app.models import AnalyzeItemPhotoRequest, ItemAIHints, ItemAnalysis, ValueHints
+from app.models import AnalyzeItemPhotoRequest, CANONICAL_ITEM_CATEGORIES, ItemAIHints, ItemAnalysis, ValueHints
 
 from app.models_liquidation import (
     LiquidationBriefDTO,
@@ -132,6 +132,21 @@ def _missing_details_for_category(category: str | None) -> List[str]:
         category,
         ["Brand/maker", "Materials", "Dimensions/size", "Condition", "Any receipts/certificates"],
     )
+
+
+_CANONICAL_CATEGORY_LOOKUP: dict[str, str] = {c.lower(): c for c in CANONICAL_ITEM_CATEGORIES}
+
+
+def _normalize_category(category: str | None) -> str:
+    """
+    Defensive guard: Gemini is prompted with a closed category list, but the
+    response is still an unconstrained string. Collapse any value that
+    doesn't match a canonical category (case-insensitively) to "Other" so an
+    invented category can never reach the client.
+    """
+    if not category:
+        return "Other"
+    return _CANONICAL_CATEGORY_LOOKUP.get(category.strip().lower(), "Other")
 
 
 def _apply_value_policy(analysis: ItemAnalysis) -> ItemAnalysis:
@@ -1818,6 +1833,7 @@ async def analyze_item_photo(payload: AnalyzeItemPhotoRequest) -> ItemAnalysis:
             detail=f"Failed to decode ItemAnalysis JSON from Gemini: {exc}",
         ) from exc
 
+    analysis.category = _normalize_category(analysis.category)
     analysis = _apply_value_policy(analysis)
     return analysis
 
@@ -1878,6 +1894,7 @@ async def analyze_item_text(payload: dict) -> ItemAnalysis:
             detail=f"Failed to decode ItemAnalysis JSON from Gemini: {exc}",
         ) from exc
 
+    analysis.category = _normalize_category(analysis.category)
     analysis = _apply_value_policy(analysis)
     return analysis
 
