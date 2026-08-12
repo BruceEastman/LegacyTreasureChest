@@ -1,3 +1,44 @@
+# App Store Screenshot / Pre-Release Correction Pass
+
+**Status:** Complete and validated
+**Date:** August 12, 2026
+**Scope:** AI category taxonomy enforcement, Beneficiary Detail UI cleanup, AI Analysis UI cleanup
+
+---
+
+## Completed
+
+### AI Category Enforcement
+
+- AI item analysis is now constrained to the canonical LTC category taxonomy
+- Backend prompts use the approved category list
+- Backend normalizes unexpected AI category values to `Other`
+- iOS defensively normalizes AI category values before saving
+- Applies to photo analysis, text analysis, Batch Add, Add Item with AI, and Improve with AI
+- Production backend deployed to Cloud Run revision `ltc-ai-gateway-00012-58j`
+- Live production validation succeeded, including `Decorative crystal vase` → `China & Crystal`
+
+### Beneficiary Detail UI Cleanup
+
+- Removed duplicate disclosure chevron from Beneficiary Packet row
+- Moved Export below Assigned Items for a more natural page flow
+- Presentation-only change; no export or beneficiary data behavior changed
+
+### AI Analysis UI Cleanup
+
+- Removed internal Gemini provider/model display from the user-facing AI Analysis sheet
+- Removed raw ISO valuation timestamp from the same UI
+- Retained underlying metadata in persistence and retained the useful `Why This Estimate` narrative
+
+### Also note
+
+- iOS builds succeeded after the changes
+- No SwiftData model/schema changes
+- No release architecture changes
+- No privacy/consent changes
+
+---
+
 # Physical iPad Validation + Home Screen Branding Polish
 
 **Status:** Complete and validated
