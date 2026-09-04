@@ -17,6 +17,7 @@ import UIKit
 struct ItemsListView: View {
     // SwiftData context for deletes (inserts happen in AddItemView or batch import)
     @Environment(\.modelContext) private var modelContext
+    @Environment(PurchaseManager.self) private var purchaseManager
 
     // Live-updating query of all items, newest first
     @Query(
@@ -31,6 +32,12 @@ struct ItemsListView: View {
     // Deletion error surfaces (see deleteItemsAndMedia)
     @State private var deleteErrorMessage: String?
     @State private var cleanupWarningMessage: String?
+
+    // Manual Add creation gate: both toolbar and empty-state entry points
+    // route through attemptAddManually() before AddItemView ever opens.
+    @State private var isShowingAddItem = false
+    @State private var isShowingFullCatalogAccessPaywall = false
+    @State private var isShowingEntitlementResolvingMessage = false
 
     // Currency code based on current locale, defaulting to USD
     private var currencyCode: String {
@@ -165,14 +172,30 @@ struct ItemsListView: View {
                 }
                 .accessibilityLabel("Add Items from Photos (AI)")
 
-                NavigationLink {
-                    AddItemView()
+                Button {
+                    attemptAddManually()
                 } label: {
                     Image(systemName: "plus")
                 }
                 .accessibilityLabel("Add Item")
             }
         }
+        .navigationDestination(isPresented: $isShowingAddItem) {
+            AddItemView()
+        }
+        .sheet(isPresented: $isShowingFullCatalogAccessPaywall) {
+            FullCatalogAccessView()
+        }
+        .alert(
+            "Still Checking",
+            isPresented: $isShowingEntitlementResolvingMessage,
+            actions: {
+                Button("OK", role: .cancel) {}
+            },
+            message: {
+                Text("Still checking Full Catalog Access. Please try again in a moment.")
+            }
+        )
         .alert(
             "Could Not Delete Item",
             isPresented: Binding(
@@ -234,8 +257,8 @@ struct ItemsListView: View {
                 }
                 .buttonStyle(.plain)
 
-                NavigationLink {
-                    AddItemView()
+                Button {
+                    attemptAddManually()
                 } label: {
                     emptyStateActionRow(
                         systemImage: "plus",
@@ -392,6 +415,30 @@ struct ItemsListView: View {
         }
     }
 
+    // MARK: - Creation Gate
+
+    /// Single entry point for both the toolbar "+" and the empty-state
+    /// "Add Manually" row -- the capacity check happens before AddItemView
+    /// ever opens, so the user never fills out a form only to discover
+    /// they can't save it. Runs in a Task since the gate briefly waits for
+    /// entitlement resolution if needed (see ItemCreationGate.evaluate).
+    private func attemptAddManually() {
+        Task {
+            switch await ItemCreationGate.evaluate(
+                requestedItemCount: 1,
+                modelContext: modelContext,
+                purchaseManager: purchaseManager
+            ) {
+            case .allowed:
+                isShowingAddItem = true
+            case .requiresFullCatalogAccess:
+                isShowingFullCatalogAccessPaywall = true
+            case .entitlementResolving:
+                isShowingEntitlementResolvingMessage = true
+            }
+        }
+    }
+
     // MARK: - Actions
 
     /// Delete in flat (search) mode.
@@ -475,5 +522,6 @@ private let itemsListPreviewContainer: ModelContainer = {
     NavigationStack {
         ItemsListView()
             .modelContainer(itemsListPreviewContainer)
+            .environment(PurchaseManager())
     }
 }

@@ -21,6 +21,12 @@ private enum DeletionPhase: Equatable {
     case failed(String)
 }
 
+/// Local, non-persisted feedback state for the Restore Purchases action.
+private enum RestoreResult: Equatable {
+    case entitled
+    case notFound
+}
+
 struct DataPrivacySettingsView: View {
     /// Called once a full data reset has been verified successful and the
     /// user has dismissed the result. The caller is responsible for
@@ -28,9 +34,13 @@ struct DataPrivacySettingsView: View {
     let onDataResetCompleted: () -> Void
 
     @Environment(\.modelContext) private var modelContext
+    @Environment(PurchaseManager.self) private var purchaseManager
 
     @State private var isShowingDeleteConfirmation = false
     @State private var deletionPhase: DeletionPhase = .idle
+
+    @State private var isRestoring = false
+    @State private var restoreResult: RestoreResult?
 
     var body: some View {
         ScrollView {
@@ -65,6 +75,48 @@ struct DataPrivacySettingsView: View {
                             .foregroundStyle(Theme.primary)
                             .padding(.top, Theme.spacing.xs)
                     }
+                }
+
+                VStack(alignment: .leading, spacing: Theme.spacing.small) {
+                    Text("Full Catalog Access")
+                        .ltcSectionHeaderStyle()
+
+                    VStack(alignment: .leading, spacing: Theme.spacing.small) {
+                        if purchaseManager.hasFullCatalogAccess {
+                            Label("Full Catalog Access: Active", systemImage: "checkmark.circle.fill")
+                                .font(Theme.bodyFont.weight(.semibold))
+                                .foregroundStyle(Theme.text)
+                        } else {
+                            Text("Full Catalog Access removes the free catalog item limit. It's offered as a one-time purchase when you reach your catalog allowance.")
+                                .font(Theme.secondaryFont)
+                                .foregroundStyle(Theme.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        Button {
+                            restorePurchases()
+                        } label: {
+                            HStack {
+                                if isRestoring {
+                                    ProgressView()
+                                }
+                                Text("Restore Purchases")
+                                    .font(Theme.bodyFont.weight(.semibold))
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, Theme.spacing.medium)
+                            .background(Color(.systemGray6))
+                            .foregroundStyle(Theme.primary)
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        }
+                        .disabled(isRestoring)
+
+                        Text("Restore Purchases recovers a Full Catalog Access purchase already made with this Apple Account on this device. It does not restore deleted catalog data.")
+                            .font(.caption)
+                            .foregroundStyle(Theme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .ltcCardBackground()
                 }
 
                 VStack(alignment: .leading, spacing: Theme.spacing.small) {
@@ -115,6 +167,38 @@ struct DataPrivacySettingsView: View {
                 }
             )
             .interactiveDismissDisabled(deletionPhase == .inProgress)
+        }
+        .alert(
+            restoreResult == .entitled ? "Full Catalog Access Restored" : "No Purchase Found",
+            isPresented: Binding(
+                get: { restoreResult != nil },
+                set: { newValue in
+                    if !newValue { restoreResult = nil }
+                }
+            ),
+            actions: {
+                Button("OK", role: .cancel) { restoreResult = nil }
+            },
+            message: {
+                Text(
+                    restoreResult == .entitled
+                        ? "Full Catalog Access is now active on this device."
+                        : "We didn't find a previous Full Catalog Access purchase for this Apple Account."
+                )
+            }
+        )
+    }
+
+    // MARK: - Restore Purchases
+
+    private func restorePurchases() {
+        guard !isRestoring else { return }
+        isRestoring = true
+
+        Task {
+            await purchaseManager.restorePurchases()
+            isRestoring = false
+            restoreResult = purchaseManager.hasFullCatalogAccess ? .entitled : .notFound
         }
     }
 
@@ -271,5 +355,6 @@ private struct DeleteAllDataConfirmationView: View {
 #Preview {
     NavigationStack {
         DataPrivacySettingsView(onDataResetCompleted: {})
+            .environment(PurchaseManager())
     }
 }

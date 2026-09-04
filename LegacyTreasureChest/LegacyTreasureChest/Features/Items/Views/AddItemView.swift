@@ -17,6 +17,7 @@ import UIKit
 struct AddItemView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Environment(PurchaseManager.self) private var purchaseManager
 
     @State private var name: String = ""
     @State private var itemDescription: String = ""
@@ -175,7 +176,7 @@ struct AddItemView: View {
                 if isSaving {
                     ProgressView()
                 } else {
-                    Button("Save") { saveItem() }
+                    Button("Save") { Task { await saveItem() } }
                         .disabled(!canSave)
                 }
             }
@@ -332,10 +333,35 @@ struct AddItemView: View {
 
     // MARK: - Save
 
-    private func saveItem() {
+    private func saveItem() async {
         errorMessage = nil
         didSave = false
         isSaving = true
+
+        // Defensive re-check immediately before persistence: the primary
+        // gate already ran before this screen opened (see ItemsListView),
+        // this guards against a stale count in the rare case capacity
+        // changed while the form was open. Reuses the same centralized
+        // gate -- no capacity arithmetic is duplicated here. isSaving is
+        // already true here, so the toolbar's existing ProgressView also
+        // covers the brief wait if entitlement resolution is still in
+        // flight -- no separate "checking" UI needed for this path.
+        switch await ItemCreationGate.evaluate(
+            requestedItemCount: 1,
+            modelContext: modelContext,
+            purchaseManager: purchaseManager
+        ) {
+        case .allowed:
+            break
+        case .requiresFullCatalogAccess:
+            isSaving = false
+            errorMessage = "Your free catalog allowance has been reached. Close this screen and unlock Full Catalog Access to save this item."
+            return
+        case .entitlementResolving:
+            isSaving = false
+            errorMessage = "Still checking Full Catalog Access. Please try again in a moment."
+            return
+        }
 
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedDescription = itemDescription.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -441,5 +467,6 @@ private let addItemPreviewContainer: ModelContainer = {
     NavigationStack {
         AddItemView()
             .modelContainer(addItemPreviewContainer)
+            .environment(PurchaseManager())
     }
 }

@@ -22,9 +22,16 @@ struct HomeView: View {
     /// Data) has been verified successful and dismissed by the user.
     let onDataResetCompleted: () -> Void
 
+    @Environment(PurchaseManager.self) private var purchaseManager
+
     @Query private var items: [LTCItem]
 
     @State private var isShowingGuide: Bool = false
+
+    // One-time, informational-only message for an existing migrated user
+    // already at/above the standard free allowance. See
+    // evaluateCatalogAccessLimitMessage().
+    @State private var isShowingCatalogAccessLimitMessage: Bool = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -138,6 +145,22 @@ struct HomeView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .ltcCardBackground()
                         }
+
+                        NavigationLink {
+                            PurchaseTestView()
+                        } label: {
+                            VStack(alignment: .leading, spacing: Theme.spacing.small) {
+                                Text("Purchase Test Lab")
+                                    .font(Theme.bodyFont.weight(.semibold))
+                                    .foregroundStyle(Theme.text)
+
+                                Text("Validate StoreKit product loading, purchase, restore, and entitlement against the local StoreKit Configuration.")
+                                    .font(Theme.secondaryFont)
+                                    .foregroundStyle(Theme.textSecondary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .ltcCardBackground()
+                        }
                     }
                     .padding(.top, Theme.spacing.large)
                     #endif
@@ -178,6 +201,31 @@ struct HomeView: View {
                 onDataResetCompleted()
             })
         }
+        .onAppear {
+            evaluateCatalogAccessLimitMessage()
+        }
+        .sheet(isPresented: $isShowingCatalogAccessLimitMessage) {
+            CatalogAccessLimitMessageView()
+        }
+    }
+
+    // MARK: - Catalog Access Limit Message
+
+    /// Decides whether to show the one-time existing-user explanation.
+    /// Self-guarding: marks the flag as shown at the moment it decides to
+    /// present, so repeated `onAppear` calls (e.g. returning from Guide)
+    /// never show it twice. Suppressed entirely for a brand-new user
+    /// (baseline below the standard limit) and, when already entitled,
+    /// left unmarked so a later loss of entitlement can still surface it.
+    private func evaluateCatalogAccessLimitMessage() {
+        let stateManager = CatalogAccessStateManager()
+
+        guard !stateManager.hasShownCatalogAccessLimitMessage else { return }
+        guard stateManager.migrationBaselineItemCount >= AppConstants.Monetization.standardFreeItemLimit else { return }
+        guard !purchaseManager.hasFullCatalogAccess else { return }
+
+        stateManager.markCatalogAccessLimitMessageShown()
+        isShowingCatalogAccessLimitMessage = true
     }
 
     // MARK: - Home Metrics Helpers
@@ -315,5 +363,6 @@ private struct HomePrimaryCard: View {
                 configurations: ModelConfiguration(isStoredInMemoryOnly: true)
             )
         )
+        .environment(PurchaseManager())
     }
 }

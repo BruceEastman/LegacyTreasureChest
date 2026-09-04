@@ -37,6 +37,34 @@ enum AppConstants {
         /// Raw value of AICloudConsentStatus — the user's choice about
         /// sending selected item data off-device for AI / Local Help.
         static let aiCloudConsentStatus = "aiCloudConsentStatus"
+
+        // MARK: - Catalog Access (Monetization / Migration)
+
+        /// Whether the LTC 1.0 → 1.1 migration baseline has already been
+        /// captured on this device. See `CatalogAccessStateManager`.
+        static let migrationBaselineCaptured = "ltc_migrationBaselineCaptured"
+
+        /// The persisted LTCItem count captured once as this device's
+        /// migration baseline capacity ceiling.
+        static let migrationBaselineItemCount = "ltc_migrationBaselineItemCount"
+
+        /// Whether the one-time "you're already at/above your limit"
+        /// explanatory message has been shown to an existing user.
+        static let catalogAccessLimitMessageShown = "ltc_catalogAccessLimitMessageShown"
+    }
+
+    /// Monetization values that are not UserDefaults keys.
+    enum Monetization {
+        /// Free allowance for new (non-migrated) users: current `LTCItem`
+        /// count, not lifetime items ever created. See `ItemCreationPolicy`.
+        static let standardFreeItemLimit = 25
+
+        /// App Store Connect In-App Purchase Product ID for the
+        /// "Full Catalog Access" non-consumable. Permanent once created in
+        /// App Store Connect -- do not change after the product exists
+        /// there. Centralized here so no view/service duplicates the
+        /// literal string. See `PurchaseManager`.
+        static let fullCatalogAccessProductID = "com.bruceeastman.LegacyTreasureChest.fullCatalogAccess"
     }
 
     /// URLs related to the app.

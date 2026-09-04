@@ -24,6 +24,7 @@ private struct BatchItemDraft: Identifiable {
 struct BatchAddItemsFromPhotosView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Environment(PurchaseManager.self) private var purchaseManager
 
     @State private var selectedPhotos: [PhotosPickerItem] = []
     @State private var drafts: [BatchItemDraft] = []
@@ -31,6 +32,13 @@ struct BatchAddItemsFromPhotosView: View {
     @State private var globalErrorMessage: String?
 
     @StateObject private var consentGate = AIConsentGate()
+
+    // Batch capacity preflight: blocks the whole batch, before AI analysis
+    // begins, when the selection would exceed remaining free capacity.
+    @State private var isShowingBatchCapacityLimit = false
+    @State private var isShowingFullCatalogAccessPaywall = false
+    @State private var isShowingEntitlementResolvingMessage = false
+    @State private var remainingFreeCapacityForBatch = 0
 
     private var canImport: Bool {
         !isImporting &&
@@ -119,9 +127,71 @@ struct BatchAddItemsFromPhotosView: View {
             .navigationBarTitleDisplayMode(.inline)
             .background(Theme.background.ignoresSafeArea())
             .onChange(of: selectedPhotos) { _, newValue in
-                Task { await consentGate.perform { await loadDrafts(from: newValue) } }
+                guard !newValue.isEmpty else { return }
+                attemptBatchLoad(for: newValue)
             }
             .aiConsentSheet(consentGate)
+            .sheet(isPresented: $isShowingBatchCapacityLimit) {
+                BatchCapacityLimitView(
+                    requestedCount: selectedPhotos.count,
+                    remainingFreeCapacity: remainingFreeCapacityForBatch,
+                    onUnlock: {
+                        isShowingBatchCapacityLimit = false
+                        isShowingFullCatalogAccessPaywall = true
+                    },
+                    onReduceSelection: {
+                        isShowingBatchCapacityLimit = false
+                        selectedPhotos = []
+                    }
+                )
+            }
+            .sheet(isPresented: $isShowingFullCatalogAccessPaywall, onDismiss: {
+                // The batch's selected photos are still in memory here.
+                // If the purchase succeeded, it's safe to continue with
+                // that same selection automatically. If not, the batch
+                // stays blocked and the user can reduce their selection.
+                if purchaseManager.hasFullCatalogAccess, !selectedPhotos.isEmpty {
+                    attemptBatchLoad(for: selectedPhotos)
+                }
+            }) {
+                FullCatalogAccessView()
+            }
+            .alert(
+                "Still Checking",
+                isPresented: $isShowingEntitlementResolvingMessage,
+                actions: {
+                    Button("OK", role: .cancel) {}
+                },
+                message: {
+                    Text("Still checking Full Catalog Access. Please try again in a moment.")
+                }
+            )
+        }
+    }
+
+    // MARK: - Creation Gate
+
+    /// All-or-none capacity preflight, run before AI analysis begins. If
+    /// the full requested batch doesn't fit in remaining free capacity,
+    /// nothing is analyzed or imported -- the user chooses to reduce their
+    /// selection or unlock Full Catalog Access. Runs in a Task since the
+    /// gate briefly waits for entitlement resolution if needed (see
+    /// ItemCreationGate.evaluate).
+    private func attemptBatchLoad(for photos: [PhotosPickerItem]) {
+        Task {
+            switch await ItemCreationGate.evaluate(
+                requestedItemCount: photos.count,
+                modelContext: modelContext,
+                purchaseManager: purchaseManager
+            ) {
+            case .allowed:
+                await consentGate.perform { await loadDrafts(from: photos) }
+            case .requiresFullCatalogAccess(let remaining):
+                remainingFreeCapacityForBatch = remaining
+                isShowingBatchCapacityLimit = true
+            case .entitlementResolving:
+                isShowingEntitlementResolvingMessage = true
+            }
         }
     }
 
@@ -286,6 +356,33 @@ struct BatchAddItemsFromPhotosView: View {
     // MARK: - Import
 
     private func importSelectedDrafts() async {
+        let includedCount = drafts.filter { $0.isIncluded && $0.analysis != nil }.count
+        guard includedCount > 0 else { return }
+
+        // Defensive re-check immediately before persistence: guards against
+        // a stale preflight (count changed since analysis started, e.g. a
+        // concurrent Manual Add) rather than trusting the earlier gate
+        // result indefinitely. Reuses the same centralized gate -- no
+        // capacity arithmetic is duplicated here.
+        switch await ItemCreationGate.evaluate(
+            requestedItemCount: includedCount,
+            modelContext: modelContext,
+            purchaseManager: purchaseManager
+        ) {
+        case .allowed:
+            break
+        case .requiresFullCatalogAccess:
+            await MainActor.run {
+                globalErrorMessage = "Your free catalog allowance has been reached. Unlock Full Catalog Access to import these items."
+            }
+            return
+        case .entitlementResolving:
+            await MainActor.run {
+                globalErrorMessage = "Still checking Full Catalog Access. Please try again in a moment."
+            }
+            return
+        }
+
         await MainActor.run {
             isImporting = true
             globalErrorMessage = nil
@@ -427,6 +524,81 @@ struct BatchAddItemsFromPhotosView: View {
     }
 }
 
+// MARK: - Batch Capacity Limit (local)
+
+/// Shown when the selected batch would exceed remaining free capacity,
+/// before any AI analysis has run. Blocks the whole batch -- there is no
+/// partial-analyze/partial-import path here.
+private struct BatchCapacityLimitView: View {
+    let requestedCount: Int
+    let remainingFreeCapacity: Int
+    let onUnlock: () -> Void
+    let onReduceSelection: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: Theme.spacing.large) {
+                Text(capacityHeadline)
+                    .font(Theme.bodyFont.weight(.semibold))
+                    .foregroundStyle(Theme.text)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(explanation)
+                    .font(Theme.bodyFont)
+                    .foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Button {
+                    onUnlock()
+                } label: {
+                    Text("Unlock Full Catalog Access")
+                        .font(Theme.bodyFont.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, Theme.spacing.medium)
+                        .background(Theme.primary)
+                        .foregroundStyle(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+
+                Button {
+                    onReduceSelection()
+                } label: {
+                    Text("Reduce Selection")
+                        .font(Theme.bodyFont.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, Theme.spacing.medium)
+                        .background(Color(.systemGray6))
+                        .foregroundStyle(Theme.primary)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+
+                Spacer()
+            }
+            .padding(Theme.spacing.xl)
+            .navigationTitle("Free Catalog Limit")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private var capacityHeadline: String {
+        if remainingFreeCapacity == 1 {
+            return "You can add 1 more item with the free catalog."
+        }
+        return "You can add \(remainingFreeCapacity) more items with the free catalog."
+    }
+
+    private var explanation: String {
+        "You selected \(requestedCount) photos. Reduce your selection to \(remainingFreeCapacity), or unlock Full Catalog Access to add all \(requestedCount)."
+    }
+}
+
 // MARK: - Preview
 
 #if DEBUG
@@ -442,6 +614,7 @@ private let batchAddPreviewContainer: ModelContainer = {
     NavigationStack {
         BatchAddItemsFromPhotosView()
             .modelContainer(batchAddPreviewContainer)
+            .environment(PurchaseManager())
     }
 }
 #endif

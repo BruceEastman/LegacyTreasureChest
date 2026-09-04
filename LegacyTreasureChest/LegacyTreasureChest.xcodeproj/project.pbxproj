@@ -24,6 +24,7 @@
 			membershipExceptions = (
 				"Info-Debug.plist",
 				Info.plist,
+				LegacyTreasureChest.storekit,
 			);
 			target = BE3A74662ECE64C000DFEE10 /* LegacyTreasureChest */;
 		};

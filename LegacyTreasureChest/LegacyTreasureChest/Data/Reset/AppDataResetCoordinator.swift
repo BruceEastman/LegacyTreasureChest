@@ -277,7 +277,10 @@ enum AppDataResetCoordinator {
             "ltc_aiGuidanceUserOverride",
             "ltc_itemCreationCount",
             "ltc.lastDisposition.city",
-            "ltc.lastDisposition.region"
+            "ltc.lastDisposition.region",
+            AppConstants.StorageKeys.migrationBaselineCaptured,
+            AppConstants.StorageKeys.migrationBaselineItemCount,
+            AppConstants.StorageKeys.catalogAccessLimitMessageShown
         ]
 
         for key in staticKeysToRemove {

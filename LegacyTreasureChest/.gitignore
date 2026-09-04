@@ -16,6 +16,9 @@ xcuserdata/
 *.xcscmblueprint
 *.xcodeproj/*
 !*.xcodeproj/project.pbxproj
+!*.xcodeproj/xcshareddata/
+!*.xcodeproj/xcshareddata/xcschemes/
+!*.xcodeproj/xcshareddata/xcschemes/*.xcscheme
 !*.xcworkspace/contents.xcworkspacedata
 
 # Swift Package Manager
