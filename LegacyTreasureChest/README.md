@@ -1,3 +1,95 @@
+# Legacy Treasure Chest 1.1 — Full Catalog Access Monetization
+
+**Status:** Implemented, validated, committed, and pushed to main
+**Date:** September 4, 2026
+**Scope:** StoreKit 2 non-consumable purchase, centralized item-creation capacity gating, existing-user migration grandfathering, production paywall and Restore Purchases, entitlement-resolution hardening
+**Commit:** `f6f3d83c234c0b7c0b6359588f2be20b2c7a9124` — "Add Full Catalog Access monetization"
+
+---
+
+## Commercial model
+
+- Free allowance: 25 current `LTCItem` records (current count, not lifetime creation count)
+- Paid product: **Full Catalog Access** — a one-time StoreKit 2 non-consumable
+- No subscription
+- Family Sharing disabled
+- Production price target is $149.99, set in App Store Connect (not yet configured there — see Validation below)
+- The application UI always reads StoreKit's localized `Product.displayPrice`; the price is never hard-coded in Swift source
+
+## What is monetized
+
+Only the creation of additional `LTCItem` records is gated.
+
+These do **not** count independently toward the 25-item limit:
+- Sets
+- Beneficiaries
+- Batches/lots
+- Photos, documents, and audio attached to an existing item
+
+Existing items remain fully usable regardless of whether the free limit has been reached:
+- viewing and editing
+- photos, documents, audio
+- beneficiaries
+- AI analysis and valuation
+- Liquidation Briefs and Plans
+- Local Help
+- reports and exports
+
+## Existing-user migration
+
+- For an in-place 1.0 → 1.1 upgrade, the user's current item count is captured exactly once as a migration baseline
+- Effective free limit = `max(25, migrationBaselineItemCount)`
+- Existing records are never locked, regardless of count
+- Deleting items frees capacity back up to the user's effective ceiling (the baseline is a reusable capacity ceiling, not a lifetime counter)
+- Delete All Data clears the locally stored migration state
+- Delete All Data does **not** revoke an App Store purchase — StoreKit remains authoritative independent of local resets
+
+## Architecture
+
+- **`PurchaseManager`** — the sole StoreKit 2 entitlement service. Owns product loading, purchase initiation, transaction verification, and `Transaction.updates` monitoring. Exposes `entitlementState`.
+- **`EntitlementState`** — tri-state (`resolving` / `notEntitled` / `entitled`) rather than a plain Boolean, so an in-flight StoreKit lookup is never mistaken for a confirmed denial. `hasFullCatalogAccess` remains available as a derived `Bool` convenience for callers that only care about entitled vs. not.
+- **`CatalogAccessStateManager`** — local (`UserDefaults`-backed) migration-baseline and one-time-message state only. Never stores paid/entitlement state.
+- **`CatalogMigrationCoordinator`** — captures the migration baseline once, at launch, from the actual persisted `LTCItem` count.
+- **`ItemCreationPolicy`** — pure capacity arithmetic (`effectiveFreeLimit`, `remainingFreeItemCapacity`, `canCreateItems`), with no I/O of its own.
+- **`ItemCreationGate`** — the single production entry point views call to ask "can N more items be created right now?" Combines the persisted item count, the migration baseline, and `PurchaseManager`'s entitlement state; the only place that touches `ItemCreationPolicy`.
+- **`FullCatalogAccessView`** — the production paywall, driven by `PurchaseManager.product`/`purchaseState`/`hasFullCatalogAccess`.
+
+StoreKit remains the sole authority for the paid entitlement. No permanent local paid Boolean is persisted anywhere in this architecture.
+
+## Creation gating
+
+- Manual Add is checked by `ItemCreationGate` **before** the Add form opens
+- Batch Add is checked **before** AI analysis begins
+- Batch Add is all-or-none with respect to remaining free capacity — no partial analyze/import caused by monetization
+- Defensive checks immediately before persistence (in both Manual Add and Batch Add) reuse the same centralized `ItemCreationGate`/`ItemCreationPolicy` — no duplicated capacity arithmetic anywhere
+- Views never hard-code monetization arithmetic (no `currentCount < 25` or equivalent in view code)
+
+## Restore Purchases
+
+- A production Restore Purchases action is available under Guide → Data & Privacy
+- Restore affects the StoreKit entitlement only
+- It does not restore deleted local inventory data
+
+## Important StoreKit implementation lesson
+
+Physical-device testing exposed a real StoreKit timing issue: immediately after a freshly verified purchase, `Transaction.currentEntitlements` could temporarily report no matching entitlement in the local StoreKit test environment — re-enumerating right after a purchase risked overwriting a correct, fresh `entitled` state with a stale `notEntitled`.
+
+The fix: LTC now trusts the freshly verified, matching StoreKit transaction directly for immediate entitlement, rather than immediately reconciling that purchase through a fresh `currentEntitlements` enumeration. `Transaction.currentEntitlements` remains in use for startup and for explicit Restore Purchases, where a full reconciliation is the correct behavior. `Transaction.updates` applies verified active/revoked entitlement changes directly, the same way.
+
+A related, later hardening pass: unresolved StoreKit state at launch is now represented explicitly as `resolving` rather than defaulting to a false "not entitled." The creation gate waits briefly for resolution and never interprets "still checking" as "not entitled."
+
+## Validation
+
+- Local StoreKit Configuration (`LegacyTreasureChest.storekit`) validated: product loads, localized price displays, purchase succeeds, entitlement becomes active
+- Simulator purchase/relaunch behavior validated: entitlement persists across a fresh launch
+- Physical-device paywall → purchase → Batch Add resume validated end to end
+- Debug and Release builds succeed with zero new warnings
+- No backend changes were required for this monetization work
+
+App Store Connect production IAP configuration and TestFlight validation have **not** been done yet — those are the next release-phase steps, not part of this milestone.
+
+---
+
 # App Store Screenshot / Pre-Release Correction Pass
 
 **Status:** Complete and validated
