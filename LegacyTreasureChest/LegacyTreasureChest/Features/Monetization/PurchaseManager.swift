@@ -265,10 +265,100 @@ final class PurchaseManager {
                 purchaseState = .failed("Unexpected purchase result.")
             }
         } catch {
-            purchaseState = .failed("Purchase failed. Please try again.")
+            #if DEBUG
+            logPurchaseError(error, productID: product.id)
+            #endif
+            purchaseState = .failed(userFacingMessage(for: error))
             print("❌ PurchaseManager: purchase threw: \(error)")
         }
     }
+
+    /// Maps an error thrown by `product.purchase()` to a safe, plain-language
+    /// message. Only narrowly-understood, unambiguous StoreKit cases get a
+    /// distinct message -- everything else (including `StoreKitError`'s
+    /// generic/system cases and any error type not recognized here) falls
+    /// back to the original generic message rather than guessing at a cause.
+    private func userFacingMessage(for error: Error) -> String {
+        if let storeKitError = error as? StoreKitError {
+            switch storeKitError {
+            case .notAvailableInStorefront:
+                return "This purchase isn't currently available for this App Store region."
+            case .networkError:
+                return "The App Store couldn't be reached. Please check your connection and try again."
+            default:
+                return "Purchase failed. Please try again."
+            }
+        }
+
+        if let purchaseError = error as? Product.PurchaseError, purchaseError == .purchaseNotAllowed {
+            return "Purchases aren't allowed on this device."
+        }
+
+        return "Purchase failed. Please try again."
+    }
+
+    #if DEBUG
+    /// Diagnostic-only logging for an error thrown by `product.purchase()`.
+    /// Logs only the product id and the error's own type/description/domain/
+    /// code (plus the specific StoreKit case, where recognized) -- never
+    /// receipts, signed transaction data, Apple ID/account information,
+    /// tokens, device identifiers, or payment information.
+    private func logPurchaseError(_ error: Error, productID: String) {
+        let nsError = error as NSError
+        print("🧪 PurchaseManager[DEBUG]: purchase() threw for product \(productID)")
+        print("🧪 PurchaseManager[DEBUG]: error type=\(type(of: error)), localizedDescription=\(error.localizedDescription)")
+        print("🧪 PurchaseManager[DEBUG]: NSError domain=\(nsError.domain), code=\(nsError.code)")
+
+        if let storeKitError = error as? StoreKitError {
+            switch storeKitError {
+            case .unknown:
+                print("🧪 PurchaseManager[DEBUG]: StoreKitError case = unknown")
+            case .userCancelled:
+                print("🧪 PurchaseManager[DEBUG]: StoreKitError case = userCancelled")
+            case .networkError(let urlError):
+                let nested = urlError as NSError
+                print("🧪 PurchaseManager[DEBUG]: StoreKitError case = networkError, nested type=\(type(of: urlError)), domain=\(nested.domain), code=\(nested.code)")
+            case .systemError(let underlying):
+                let nested = underlying as NSError
+                print("🧪 PurchaseManager[DEBUG]: StoreKitError case = systemError, nested type=\(type(of: underlying)), domain=\(nested.domain), code=\(nested.code)")
+            case .notAvailableInStorefront:
+                print("🧪 PurchaseManager[DEBUG]: StoreKitError case = notAvailableInStorefront")
+            case .notEntitled:
+                print("🧪 PurchaseManager[DEBUG]: StoreKitError case = notEntitled")
+            case .unsupported:
+                print("🧪 PurchaseManager[DEBUG]: StoreKitError case = unsupported")
+            @unknown default:
+                print("🧪 PurchaseManager[DEBUG]: StoreKitError case = @unknown default")
+            }
+            return
+        }
+
+        if let purchaseError = error as? Product.PurchaseError {
+            switch purchaseError {
+            case .invalidQuantity:
+                print("🧪 PurchaseManager[DEBUG]: Product.PurchaseError case = invalidQuantity")
+            case .productUnavailable:
+                print("🧪 PurchaseManager[DEBUG]: Product.PurchaseError case = productUnavailable")
+            case .purchaseNotAllowed:
+                print("🧪 PurchaseManager[DEBUG]: Product.PurchaseError case = purchaseNotAllowed")
+            case .ineligibleForOffer:
+                print("🧪 PurchaseManager[DEBUG]: Product.PurchaseError case = ineligibleForOffer")
+            case .invalidOfferIdentifier:
+                print("🧪 PurchaseManager[DEBUG]: Product.PurchaseError case = invalidOfferIdentifier")
+            case .invalidOfferPrice:
+                print("🧪 PurchaseManager[DEBUG]: Product.PurchaseError case = invalidOfferPrice")
+            case .invalidOfferSignature:
+                print("🧪 PurchaseManager[DEBUG]: Product.PurchaseError case = invalidOfferSignature")
+            case .missingOfferParameters:
+                print("🧪 PurchaseManager[DEBUG]: Product.PurchaseError case = missingOfferParameters")
+            case .paymentMethodBindingConfigurationRequired:
+                print("🧪 PurchaseManager[DEBUG]: Product.PurchaseError case = paymentMethodBindingConfigurationRequired")
+            @unknown default:
+                print("🧪 PurchaseManager[DEBUG]: Product.PurchaseError case = @unknown default")
+            }
+        }
+    }
+    #endif
 
     // MARK: - Restore
 
