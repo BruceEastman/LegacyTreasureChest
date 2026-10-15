@@ -342,6 +342,17 @@ class LocalHelpRouteTests(_RouteTestBase):
         self.assertNotIn("gplaces:r2", ids)
         self.assertNotIn("gplaces:r3", ids)
 
+    def test_vehicle_auctions_are_not_collectibles_auctions(self):
+        self.fake.places_by_keyword = {
+            "auction": [
+                _place("a1", "Main Auction", 43.62, -116.21),
+                _place("a2", "America's Auto Auction", 43.62, -116.21, primary="Car dealer", types=("car_dealer",)),
+            ],
+        }
+        ids = [x["partnerId"] for x in self.post(_request("Collectibles", bulky=False, path="A")).json()["results"]]
+        self.assertIn("gplaces:a1", ids)
+        self.assertNotIn("gplaces:a2", ids)
+
     def test_same_business_appears_once_across_partner_types(self):
         shared = _place("shared", "Thrift and Consignment", 43.62, -116.21)
         self.fake.default = [shared]

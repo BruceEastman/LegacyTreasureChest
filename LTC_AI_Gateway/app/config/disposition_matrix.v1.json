@@ -202,6 +202,7 @@
         },
         {
           "type": "auction",
+          "excludeKeywords": ["car dealer", "auto auction", "car auction", "vehicle", "towing"],
           "queries": [
             { "q": "{city} {region} auction house", "weight": 1.0 },
             { "q": "{city} {region} estate auction", "weight": 0.7 }
@@ -241,6 +242,7 @@
         },
         {
           "type": "auction",
+          "excludeKeywords": ["car dealer", "auto auction", "car auction", "vehicle", "towing"],
           "queries": [
             { "q": "{city} {region} jewelry auction", "weight": 0.8 },
             { "q": "{city} {region} auction house", "weight": 0.6 }
