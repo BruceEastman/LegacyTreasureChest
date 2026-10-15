@@ -13,6 +13,7 @@ import base64
 import json
 import os
 import unittest
+import uuid
 from unittest import mock
 
 # Pin the environment BEFORE importing the app. main.py calls load_dotenv(),
@@ -401,6 +402,213 @@ class LiquidationBriefValuationPromptTests(unittest.TestCase):
         self.assertIn("unit≈0.00 USD", p)
         self.assertNotIn("unknown", p)
         self.assertIn("Estimated set total (all members valued): 80.00 USD", p)
+
+    def test_prompt_specifies_option_fields_and_paths(self):
+        p = self._item(unitValue=120)
+        self.assertIn('"path": "pathA_maximizePrice | pathB_delegateConsign | pathC_quickExit | donate"', p)
+        self.assertIn('"low": <number or null>, "likely": <number or null>, "high": <number or null>', p)
+        self.assertIn("Never include needsInfo in pathOptions", p)
+        self.assertIn("AFTER typical selling costs", p)
+
+
+# Values the shipping iOS app's LiquidationPathDTO / EffortLevelDTO enums decode.
+IOS_PATHS = {"pathA_maximizePrice", "pathB_delegateConsign", "pathC_quickExit", "donate", "needsInfo"}
+IOS_EFFORTS = {"low", "medium", "high", "veryHigh"}
+
+
+def _option(path=..., **kw):
+    opt = {"id": str(uuid.uuid4()), "label": "Option", "effort": "medium", "risks": []}
+    if path is not ...:
+        opt["path"] = path
+    opt.update(kw)
+    return opt
+
+
+def _brief_json(recommended, options, **kw) -> str:
+    obj = {
+        "schemaVersion": 1, "scope": "item", "generatedAt": "2026-10-15T00:00:00Z",
+        "recommendedPath": recommended, "reasoning": "Demo reasoning.",
+        "pathOptions": options, "actionSteps": ["Step one"],
+    }
+    obj.update(kw)
+    return json.dumps(obj)
+
+
+def _money(low, likely, high):
+    return {"currencyCode": "USD", "low": low, "likely": likely, "high": high}
+
+
+class LiquidationBriefOptionTests(unittest.TestCase):
+    """Exercise /ai/generate-liquidation-brief option normalization with a stubbed Gemini."""
+
+    VALUED_ITEM = {"scope": "item", "title": "Demo mantel clock", "category": "Decor", "quantity": 1,
+                   "unitValue": 120, "valuationLow": 80, "valuationLikely": 120, "valuationHigh": 160,
+                   "currencyCode": "USD", "inputs": {"goal": "balanced"}}
+    UNVALUED_ITEM = {"scope": "item", "title": "Demo figurine", "category": "Decor", "quantity": 1,
+                     "currencyCode": "USD", "inputs": {"goal": "balanced"}}
+
+    @classmethod
+    def setUpClass(cls):
+        cls._net_patch = mock.patch.object(gemini_client, "_post_gemini", _no_network)
+        cls._net_patch.start()
+        cls.client = TestClient(main.app)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._net_patch.stop()
+
+    def _post(self, request: dict, *gemini_responses: str) -> dict:
+        queue = list(gemini_responses)
+
+        async def _stub(*, prompt: str, photo_base64=None) -> str:
+            return queue.pop(0)
+
+        with mock.patch.object(route, "call_gemini_for_liquidation_brief", _stub):
+            r = self.client.post("/ai/generate-liquidation-brief", json=request,
+                                 headers={"X-LTC-Device-ID": f"brief-{uuid.uuid4()}"})
+        self.assertEqual(r.status_code, 200, r.text)
+        body = r.json()
+        self._assert_ios_decodable(body)
+        return body
+
+    def _assert_ios_decodable(self, body: dict) -> None:
+        self.assertIn(body["recommendedPath"], IOS_PATHS)
+        self.assertIsInstance(body["reasoning"], str)
+        self.assertIsInstance(body["actionSteps"], list)
+        for opt in body["pathOptions"]:
+            uuid.UUID(opt["id"])
+            self.assertIn(opt["path"], IOS_PATHS)
+            self.assertIn(opt["effort"], IOS_EFFORTS)
+            self.assertIsInstance(opt["label"], str)
+            self.assertIsInstance(opt["risks"], list)
+            np = opt.get("netProceeds")
+            if np is not None:
+                self.assertIsInstance(np["currencyCode"], str)
+
+    @staticmethod
+    def _paths(body: dict) -> list:
+        return [o["path"] for o in body["pathOptions"]]
+
+    def test_A_valued_item_keeps_distinct_alternatives_and_proceeds(self):
+        body = self._post(self.VALUED_ITEM, _brief_json("pathB_delegateConsign", [
+            _option("pathA_maximizePrice", effort="high", netProceeds=_money(70, 95, 125)),
+            _option("pathB_delegateConsign", netProceeds=_money(55, 70, 90)),
+            _option("pathC_quickExit", effort="low", netProceeds=_money(25, 35, 50)),
+        ]))
+        self.assertEqual(self._paths(body), ["pathA_maximizePrice", "pathB_delegateConsign", "pathC_quickExit"])
+        self.assertEqual(body["pathOptions"][0]["netProceeds"], _money(70.0, 95.0, 125.0))
+        self.assertEqual(body["pathOptions"][2]["netProceeds"], _money(25.0, 35.0, 50.0))
+
+    def test_B_missing_path_field_is_inferred_from_name_not_recommendation(self):
+        # Shape Gemini actually returned in production (2026-10-15): "name" + min/max proceeds.
+        options = [
+            {"id": str(uuid.uuid4()), "name": "Maximize Price (DIY Sale)", "effort": "high",
+             "netProceeds": {"min": 80.0, "max": 140.0}},
+            {"id": str(uuid.uuid4()), "name": "Delegate/Consign", "effort": "medium",
+             "netProceeds": {"min": 60.0, "max": 90.0}},
+            {"id": str(uuid.uuid4()), "name": "Quick Exit (Bulk Buyer/Donation)", "effort": "low",
+             "netProceeds": {"min": 20.0, "max": 50.0}},
+        ]
+        body = self._post(self.VALUED_ITEM, _brief_json("pathA_maximizePrice", options))
+        self.assertEqual(self._paths(body), ["pathA_maximizePrice", "pathB_delegateConsign", "pathC_quickExit"])
+        self.assertEqual(body["pathOptions"][1]["netProceeds"], _money(60.0, None, 90.0))
+        self.assertEqual(body["pathOptions"][0]["label"], "Maximize Price (DIY or multi-step)")
+
+    def test_B_unidentifiable_option_is_dropped_not_copied(self):
+        body = self._post(self.VALUED_ITEM, _brief_json("pathB_delegateConsign", [
+            _option(effort="high", label="Option 1"),
+            _option("pathB_delegateConsign"),
+        ]))
+        self.assertEqual(self._paths(body), ["pathB_delegateConsign"])
+
+    def test_C_repeated_invalid_and_needsinfo_options_are_removed(self):
+        body = self._post(self.VALUED_ITEM, _brief_json("pathA_maximizePrice", [
+            _option("pathA_maximizePrice", id="not-a-uuid", effort="extreme"),
+            _option("pathA_maximizePrice"),
+            _option("pathZ_teleport"),
+            _option("needsInfo"),
+            _option("Path C", effort="Very High"),
+            _option("donation", netProceeds=None),
+        ]))
+        self.assertEqual(self._paths(body), ["pathA_maximizePrice", "pathC_quickExit", "donate"])
+        self.assertNotEqual(body["pathOptions"][0]["id"], "not-a-uuid")
+        self.assertEqual(body["pathOptions"][0]["effort"], "high")  # path default for an invalid effort
+        self.assertEqual(body["pathOptions"][1]["effort"], "veryHigh")
+
+    def test_C_unrecognized_recommendation_becomes_needs_info(self):
+        body = self._post(self.VALUED_ITEM, _brief_json("sell it soon", [_option("pathA_maximizePrice")]))
+        self.assertEqual(body["recommendedPath"], "needsInfo")
+
+    def test_D_unvalued_item_keeps_needs_info_without_proceeds(self):
+        body = self._post(self.UNVALUED_ITEM, _brief_json("needsInfo", [
+            _option("pathA_maximizePrice", netProceeds=_money(40, 60, 80)),
+            _option("pathB_delegateConsign", netProceeds="$30-$50"),
+            _option("pathC_quickExit", netProceeds=None),
+            _option("needsInfo"),
+        ]))
+        self.assertEqual(body["recommendedPath"], "needsInfo")
+        self.assertEqual(self._paths(body), ["pathA_maximizePrice", "pathB_delegateConsign", "pathC_quickExit"])
+        self.assertTrue(all(o["netProceeds"] is None for o in body["pathOptions"]))
+
+    def test_E_partially_valued_set_keeps_known_subtotal_proceeds(self):
+        request = {"scope": "set", "title": "Demo china", "currencyCode": "USD",
+                   "setContext": {"setType": "china", "memberSummaries": [
+                       {"title": "Plate", "quantity": 8, "unitValue": 12}, {"title": "Teapot", "quantity": 1}]}}
+        body = self._post(request, _brief_json("needsInfo", [
+            _option("pathA_maximizePrice", netProceeds=_money(50, 70, 90)),
+            _option("pathB_delegateConsign", netProceeds=_money(35, 50, 65)),
+            _option("pathC_quickExit", netProceeds=_money(20, 35, 50)),
+        ], scope="set"))
+        self.assertEqual(body["recommendedPath"], "needsInfo")
+        self.assertEqual(body["pathOptions"][0]["netProceeds"], _money(50.0, 70.0, 90.0))
+
+    def test_E_unvalued_set_has_no_proceeds(self):
+        request = {"scope": "set", "title": "Demo china", "currencyCode": "USD",
+                   "setContext": {"memberSummaries": [{"title": "Plate", "quantity": 8}]}}
+        body = self._post(request, _brief_json("needsInfo", [
+            _option("pathA_maximizePrice", netProceeds=_money(50, 70, 90))], scope="set"))
+        self.assertIsNone(body["pathOptions"][0]["netProceeds"])
+
+    def test_F_genuine_zero_value_item_keeps_zero_proceeds(self):
+        request = dict(self.UNVALUED_ITEM, unitValue=0, valuationLow=0, valuationLikely=0, valuationHigh=0)
+        body = self._post(request, _brief_json("donate", [
+            _option("pathC_quickExit", effort="low", netProceeds=_money(0, 0, 5)),
+            _option("donate", effort="low", netProceeds=None),
+        ]))
+        self.assertEqual(body["recommendedPath"], "donate")
+        self.assertEqual(body["pathOptions"][0]["netProceeds"], _money(0.0, 0.0, 5.0))
+
+    def test_G_missing_or_uncertain_proceeds_are_null_not_zero(self):
+        body = self._post(self.VALUED_ITEM, _brief_json("pathB_delegateConsign", [
+            _option("pathA_maximizePrice", netProceeds="unknown"),
+            _option("pathB_delegateConsign", netProceeds={"currencyCode": "USD", "low": None, "high": None}),
+            _option("pathC_quickExit", netProceeds={"min": "$20", "max": "-5"}),
+            _option("donate"),
+        ]))
+        self.assertIsNone(body["pathOptions"][0]["netProceeds"])
+        self.assertIsNone(body["pathOptions"][1]["netProceeds"])
+        self.assertEqual(body["pathOptions"][2]["netProceeds"], _money(20.0, None, None))
+        self.assertIsNone(body["pathOptions"][3]["netProceeds"])
+
+    def test_H_existing_valid_brief_is_preserved(self):
+        opts = [
+            _option("pathA_maximizePrice", label="Sell it yourself online", effort="high",
+                    netProceeds=_money(80, 100, 120), timeEstimate="2-4 weeks",
+                    risks=["Shipping damage"], logisticsNotes="Pack carefully."),
+            _option("pathB_delegateConsign", label="Consign locally", netProceeds=_money(60, 72, 85)),
+            _option("pathC_quickExit", label="Sell to a dealer", effort="low", netProceeds=_money(30, 40, 50)),
+        ]
+        body = self._post(self.VALUED_ITEM, _brief_json(
+            "pathB_delegateConsign", opts, missingDetails=["Maker"], confidence=0.6))
+        self.assertEqual(body["recommendedPath"], "pathB_delegateConsign")
+        self.assertEqual(body["missingDetails"], ["Maker"])
+        for got, sent in zip(body["pathOptions"], opts):
+            for key in ("id", "path", "label", "effort", "risks"):
+                self.assertEqual(got[key], sent[key])
+            self.assertEqual(got["netProceeds"], {k: (float(v) if isinstance(v, int) else v)
+                                                  for k, v in sent["netProceeds"].items()})
+        self.assertEqual(body["pathOptions"][0]["timeEstimate"], "2-4 weeks")
+        self.assertEqual(body["pathOptions"][0]["logisticsNotes"], "Pack carefully.")
 
 
 class RateLimiterTests(unittest.TestCase):

@@ -5,7 +5,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException
 from pydantic import ValidationError
@@ -233,6 +233,16 @@ def _normalize_path_value(path: Any) -> Any:
         "quickexit": "pathC_quickExit",
         "fastestexit": "pathC_quickExit",
         "donation": "donate",
+        "patha": "pathA_maximizePrice",
+        "pathb": "pathB_delegateConsign",
+        "pathc": "pathC_quickExit",
+        "maximizevalue": "pathA_maximizePrice",
+        "consign": "pathB_delegateConsign",
+        "consignment": "pathB_delegateConsign",
+        "quicksale": "pathC_quickExit",
+        "needsinfo": "needsInfo",
+        "needs_info": "needsInfo",
+        "needsmoreinfo": "needsInfo",
     }
     key = s.replace(" ", "").replace("-", "_").lower()
     return alias.get(key, s)
@@ -250,6 +260,112 @@ def _normalize_effort_value(effort: Any) -> Any:
     }
     return alias.get(s, effort)
 
+
+# Path values the iOS LiquidationPathDTO enum can decode.
+_BRIEF_PATHS = ("pathA_maximizePrice", "pathB_delegateConsign", "pathC_quickExit", "donate", "needsInfo")
+# needsInfo is a recommendation state, not a disposition alternative, so it never appears in pathOptions.
+_OPTION_PATHS = ("pathA_maximizePrice", "pathB_delegateConsign", "pathC_quickExit", "donate")
+_EFFORT_VALUES = ("low", "medium", "high", "veryHigh")
+# Used only when Gemini omits or garbles an option's effort (required by the iOS decoder).
+_DEFAULT_EFFORT_BY_PATH = {
+    "pathA_maximizePrice": "high",
+    "pathB_delegateConsign": "medium",
+    "pathC_quickExit": "low",
+    "donate": "low",
+}
+_PATH_KEYWORDS = (
+    ("maximiz", "pathA_maximizePrice"),
+    ("diy", "pathA_maximizePrice"),
+    ("consign", "pathB_delegateConsign"),
+    ("delegat", "pathB_delegateConsign"),
+    ("specialist", "pathB_delegateConsign"),
+    ("quick", "pathC_quickExit"),
+    ("bulk", "pathC_quickExit"),
+    ("donat", "donate"),
+    ("more info", "needsInfo"),
+    ("needs info", "needsInfo"),
+)
+
+
+def _path_from_text(text: Any) -> Optional[str]:
+    """Path named by free text, using the earliest keyword: 'Quick Exit (Bulk Buyer/Donation)' -> pathC."""
+    if not isinstance(text, str):
+        return None
+    lowered = text.lower()
+    hits = [(lowered.find(k), path) for k, path in _PATH_KEYWORDS if k in lowered]
+    return min(hits)[1] if hits else None
+
+
+def _infer_option_path(opt: Dict[str, Any]) -> Optional[str]:
+    """Identify an option's path from its own fields; never from the recommendation."""
+    for key in ("path", "pathType", "pathId", "type", "route", "option", "key"):
+        val = _normalize_path_value(opt.get(key))
+        if val in _BRIEF_PATHS:
+            return val
+    for key in ("path", "name", "label", "title", "type"):
+        val = _path_from_text(opt.get(key))
+        if val:
+            return val
+    return None
+
+
+def _is_uuid(value: Any) -> bool:
+    try:
+        UUID(str(value))
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
+def _coerce_amount(value: Any) -> Optional[float]:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        amount = float(value)
+    elif isinstance(value, str):
+        try:
+            amount = float(value.replace("$", "").replace(",", "").strip())
+        except ValueError:
+            return None
+    else:
+        return None
+    return amount if amount >= 0 else None
+
+
+def _normalize_money_dict(np: Dict[str, Any], currency: str) -> Optional[Dict[str, Any]]:
+    """Map Gemini's key drift (min/max, mid, ...) onto MoneyRangeDTO; None when no amount is usable."""
+    def first(*keys: str) -> Optional[float]:
+        for k in keys:
+            amount = _coerce_amount(np.get(k))
+            if amount is not None:
+                return amount
+        return None
+
+    low = first("low", "min", "minimum", "lowEstimate", "from")
+    high = first("high", "max", "maximum", "highEstimate", "to")
+    likely = first("likely", "mid", "expected", "estimate", "typical", "median")
+    if low is not None and high is not None and high < low:
+        low, high = high, low
+    if likely is not None and ((low is not None and likely < low) or (high is not None and likely > high)):
+        likely = None
+    if low is None and likely is None and high is None:
+        return None
+    code = np.get("currencyCode")
+    return {
+        "currencyCode": code if isinstance(code, str) and code else currency,
+        "low": low,
+        "likely": likely,
+        "high": high,
+    }
+
+
+def _brief_request_has_value(request: LiquidationBriefRequest) -> bool:
+    """Whether any value estimate was supplied (a genuine 0 counts); mirrors the prompt's VALUATION block."""
+    if request.scope == "set" and request.setContext:
+        return any(m.unitValue is not None for m in request.setContext.memberSummaries)
+    return request.unitValue is not None or request.valuationLikely is not None
+
+
 def _normalize_liquidation_brief_obj(*, raw_json: str, request: LiquidationBriefRequest) -> Dict[str, Any]:
     """
     Make the backend tolerant of:
@@ -258,8 +374,10 @@ def _normalize_liquidation_brief_obj(*, raw_json: str, request: LiquidationBrief
     - missing pathOptions ids (generate UUIDs pre-validation)
     - enum drift for recommendedPath/pathOptions[].path and effort
     - schemaVersion drift (e.g., "0.0.1" or "1" as string) -> int
-    - pathOptions drift: missing "path" or using alternate keys -> map to "path"
-    - netProceeds drift (string ranges) -> MoneyRangeDTO dict
+    - pathOptions drift: missing "path" or using alternate keys/names -> map to "path";
+      options with no identifiable path, repeated paths, or needsInfo are dropped
+    - netProceeds drift (string ranges, min/max keys) -> MoneyRangeDTO dict; null when
+      the request carries no value estimate
     - missing label -> fill from path
     - actionSteps drift (list of objects) -> list of strings
     """
@@ -300,7 +418,11 @@ def _normalize_liquidation_brief_obj(*, raw_json: str, request: LiquidationBrief
 
     # Normalize recommended path
     if "recommendedPath" in obj:
-        obj["recommendedPath"] = _normalize_path_value(obj.get("recommendedPath"))
+        rec = _normalize_path_value(obj.get("recommendedPath"))
+        if rec not in _BRIEF_PATHS:
+            # An unrecognizable recommendation is never guessed into a selling path.
+            rec = _path_from_text(rec) or "needsInfo"
+        obj["recommendedPath"] = rec
 
     currency = request.currencyCode or "USD"
 
@@ -358,80 +480,65 @@ def _normalize_liquidation_brief_obj(*, raw_json: str, request: LiquidationBrief
 
         obj["actionSteps"] = normalized_steps
 
-    # Normalize pathOptions
-    if "pathOptions" in obj and isinstance(obj["pathOptions"], list):
+    def _normalize_proceeds(np: Any) -> Optional[Dict[str, Any]]:
+        if isinstance(np, str):
+            parsed = _parse_money_range(np)
+            return parsed if parsed["low"] is not None else None
+        if isinstance(np, (list, tuple)):
+            vals = [a for a in (_coerce_amount(v) for v in np) if a is not None]
+            if not vals:
+                return None
+            low, high = min(vals[:2]), max(vals[:2])
+            likely = round((low + high) / 2.0, 2) if len(vals) >= 2 else low
+            return {"currencyCode": currency, "low": low, "likely": likely, "high": high}
+        if isinstance(np, dict):
+            return _normalize_money_dict(np, currency)
+        return None
+
+    # Normalize pathOptions: one option per identifiable disposition path. An option
+    # whose path cannot be identified is dropped, never relabeled as the recommendation.
+    if isinstance(obj.get("pathOptions"), list):
+        has_value = _brief_request_has_value(request)
+        options: List[Dict[str, Any]] = []
+        seen_paths: set = set()
         for opt in obj["pathOptions"]:
             if not isinstance(opt, dict):
                 continue
 
-            if not opt.get("id"):
+            path = _infer_option_path(opt)
+            if path not in _OPTION_PATHS or path in seen_paths:
+                continue
+            seen_paths.add(path)
+            opt["path"] = path
+
+            if not _is_uuid(opt.get("id")):
                 opt["id"] = str(uuid4())
 
-            if not opt.get("path"):
-                for alt_key in ("type", "partnerType", "route", "option"):
-                    alt_val = opt.get(alt_key)
-                    if alt_val:
-                        opt["path"] = alt_val
-                        break
+            label = opt.get("label")
+            if not isinstance(label, str) or not label.strip():
+                opt["label"] = label_by_path[path]
 
-            if not opt.get("path"):
-                opt["path"] = obj.get("recommendedPath") or "needsInfo"
+            effort = _normalize_effort_value(opt.get("effort"))
+            opt["effort"] = effort if effort in _EFFORT_VALUES else _DEFAULT_EFFORT_BY_PATH[path]
 
-            opt["path"] = _normalize_path_value(opt.get("path"))
+            # Without any value estimate there is no basis for proceeds.
+            opt["netProceeds"] = _normalize_proceeds(opt.get("netProceeds")) if has_value else None
 
-            if not opt.get("label"):
-                p = opt.get("path")
-                if isinstance(p, str) and p in label_by_path:
-                    opt["label"] = label_by_path[p]
-                else:
-                    opt["label"] = "Recommended Path"
+            risks = opt.get("risks")
+            if isinstance(risks, str):
+                opt["risks"] = [risks] if risks.strip() else []
+            elif isinstance(risks, list):
+                opt["risks"] = [str(r) for r in risks if r is not None and str(r).strip()]
+            else:
+                opt["risks"] = []
 
-            if "effort" in opt:
-                opt["effort"] = _normalize_effort_value(opt.get("effort"))
+            for key in ("timeEstimate", "logisticsNotes"):
+                val = opt.get(key)
+                if val is not None and not isinstance(val, str):
+                    opt[key] = str(val)
 
-            if "netProceeds" in opt:
-                np = opt.get("netProceeds")
-
-                # Case 1: string like "$700-$840" or "700 to 840"
-                if isinstance(np, str):
-                    opt["netProceeds"] = _parse_money_range(np)
-
-                # Case 2: list/tuple like [700, 840]
-                elif isinstance(np, (list, tuple)):
-                    try:
-                        vals = [v for v in np if isinstance(v, (int, float))]
-                        if len(vals) >= 2:
-                            low = float(vals[0])
-                            high = float(vals[1])
-                            if high < low:
-                                low, high = high, low
-                            likely = round((low + high) / 2.0, 2)
-                            opt["netProceeds"] = {
-                                "currencyCode": currency,
-                                "low": low,
-                                "likely": likely,
-                                "high": high,
-                            }
-                        elif len(vals) == 1:
-                            v = float(vals[0])
-                            opt["netProceeds"] = {
-                                "currencyCode": currency,
-                                "low": v,
-                                "likely": v,
-                                "high": v,
-                            }
-                        else:
-                            # no numeric values found
-                            opt["netProceeds"] = {"currencyCode": currency, "low": None, "likely": None, "high": None}
-                    except Exception:
-                        opt["netProceeds"] = {"currencyCode": currency, "low": None, "likely": None, "high": None}
-
-                # Case 3: already a dict/object
-                elif np is None:
-                    pass
-                elif isinstance(np, dict):
-                    np.setdefault("currencyCode", currency)
-                    opt["netProceeds"] = np
+            options.append(opt)
+        obj["pathOptions"] = options
 
     # Ensure lists exist if omitted (to avoid nulls)
     if obj.get("pathOptions") is None:
@@ -585,14 +692,34 @@ Rules:
 - Always include: schemaVersion, scope, generatedAt, recommendedPath, reasoning, pathOptions, actionSteps.
 - recommendedPath MUST be one of:
   pathA_maximizePrice | pathB_delegateConsign | pathC_quickExit | donate | needsInfo
-- Include the primary A/B/C paths in pathOptions.
-- pathOptions[].effort MUST be one of: low | medium | high | veryHigh
-- pathOptions[].id MUST be a UUID string
-- Use pathOptions[].netProceeds as a COARSE lot-level range.
+
+PATH OPTIONS (pathOptions array):
+- Include exactly one option for EACH of pathA_maximizePrice, pathB_delegateConsign, and
+  pathC_quickExit. Add one donate option only when donation is a realistic choice.
+- Never repeat a path. Never include needsInfo in pathOptions; needsInfo is only a
+  recommendedPath value.
+- Every option MUST use exactly these field names:
+  {{"id": "<UUID string>",
+    "path": "pathA_maximizePrice | pathB_delegateConsign | pathC_quickExit | donate",
+    "label": "<short name>",
+    "netProceeds": {{"currencyCode": "{currency}", "low": <number or null>, "likely": <number or null>, "high": <number or null>}} or null,
+    "effort": "low | medium | high | veryHigh",
+    "timeEstimate": "<string>" or null,
+    "risks": ["<string>"],
+    "logisticsNotes": "<string>" or null}}
+
+NET PROCEEDS:
+- netProceeds is the COARSE range the owner would likely keep from that path for the whole
+  item or set (quantity included) AFTER typical selling costs: marketplace or auction fees,
+  consignment commission, shipping, and discounts for selling quickly. It is not the item's value.
+- When a value estimate is supplied, give a range for each selling path that reflects that
+  path's costs, effort, and uncertainty. Selling costs normally keep net proceeds below the
+  estimated value; a quick exit usually nets the least.
+- For a donate option, set netProceeds to null.
 - Treat any supplied value as decision support, not a guaranteed selling price. Weigh likely
   net proceeds against effort, costs, and uncertainty for each path.
-- If the value is not estimated, do not invent one: set netProceeds to null and recommend
-  needsInfo unless the item clearly has no resale market.
+- If the value is not estimated, do not invent one: set netProceeds to null for every option
+  and recommend needsInfo unless the item clearly has no resale market.
 - If a set total is INCOMPLETE, base proceeds only on the known subtotal, say it is partial,
   and do not recommend donate solely because the known subtotal is low.
 """
