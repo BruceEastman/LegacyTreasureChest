@@ -1,3 +1,46 @@
+# Local Help Restored: Real Google Places Results (2026-10-15)
+
+**Status:** Gateway fixed and deployed to production; iOS fix in 1.2 build 8
+**Scope:** Local Help partner discovery (item, Set, and Set Execute Plan partner picker)
+
+## What was wrong
+
+- Production never set `PARTNER_DISCOVERY_PROVIDER`, and the Gateway defaulted to the stub. Every Local Help search on Cloud Run since March returned fictitious businesses (Heritage Consignment, 555 numbers, example.com).
+- Local `.env` sets `google`, but `.env` is excluded from the container, so local testing never showed the problem.
+- iOS Local Help hardcoded Boise (city and coordinates). Typing another city still sent Boise coordinates.
+- The partner picker's "Use Current Location" parsed MapKit's short address as "city, region", which put the street address in City.
+
+## What changed
+
+**Gateway** (revisions `ltc-ai-gateway-00015` through `00017`)
+- Provider defaults to Google Places API (New). The stub must be selected explicitly and is refused on Cloud Run; stub IDs are also stripped from production responses.
+- One Text Search call per query, minimal field mask, no Place Details calls. Closed businesses dropped. Bias radius clamped to the 50 km Places limit.
+- Distances only from real coordinates. App 1.1's fixed Boise point is ignored when another city is searched.
+- Trust gates use Google's own name/type data. Wrong kinds of businesses (rug cleaners, car auctions, clothing stores for furniture) are excluded.
+- New scenarios: rugs, china and crystal, donate path. Set types route to the right scenarios.
+- Honest `localDiscoveryStatus` and `notice` when Places is disabled, unavailable, over budget, or finds nothing. Curated luxury hubs unchanged.
+- Cost controls: `LTC_DISABLE_PLACES` enforced, 50 Places calls per instance per day, 20 searches per device per day, 2 queries per partner type, 15-minute cache.
+
+**Cloud configuration**
+- Cloud Run: `PARTNER_DISCOVERY_PROVIDER=google`, `GOOGLE_PLACES_API_KEY` from secret `ltc-google-places-api-key`, plus the limits above. Existing settings preserved.
+- Places key project `ltc-places-2026`: hard daily quota of 100 Text Search and 20 Place Details requests.
+- The existing $50 monthly billing budget alert covers Places spend.
+
+**iOS (1.2)**
+- No hardcoded location. Last-used city/region, or the current location on first use (When In Use permission).
+- Device coordinates are used only while the fields still match the device's place; a typed city is geocoded on device. Coordinates are rounded to about 1 km and never saved.
+- City and state from MapKit's structured fields.
+- Results show the business address, the Gateway's notice, and "Business information from Google Maps".
+- New `LegacyTreasureChestTests` target (Swift Testing). Live production checks run only with `LTC_LIVE_TESTS=1`.
+
+## Verification
+
+- Gateway: 88 automated tests pass.
+- Production: real businesses verified for furniture, rugs, china and crystal, collectibles, and jewelry in Boise, and for Denver, CO and Portland, OR. Two results matched Google Place Details exactly. No stub data in any response.
+- iOS: 20 unit tests pass. Live simulator tests passed for simulated Denver device location, manual Boise entry, denied permission, and curated luxury hubs.
+
+---
+
 # Legacy Treasure Chest 1.1 — Full Catalog Access Monetization
 
 **Status:** Implemented, validated, committed, and pushed to main

@@ -4,7 +4,8 @@
 //
 //  Disposition Engine UI (v1)
 //  - Item-scoped OR Set-scoped partner discovery (advisor mode)
-//  - Editable location + radius
+//  - Editable location + radius; "Use Current Location" (When In Use permission)
+//  - Coordinates resolved per search (see LocalHelpLocation.swift); never hardcoded
 //  - Calls backend: POST /ai/disposition/partners/search
 //
 
@@ -34,14 +35,16 @@ struct DispositionPartnersView: View {
 
     // MARK: - Location + UI state
 
-    @State private var city: String = "Boise"
-    @State private var region: String = "ID"
-    @State private var countryCode: String = "US"
+    @State private var city: String = ""
+    @State private var region: String = ""
+    @State private var countryCode: String = Locale.current.region?.identifier ?? "US"
     @State private var radiusMiles: Int = 25
 
-    // Optional coordinates (we can wire device location later)
-    @State private var latitude: Double? = 43.6150
-    @State private var longitude: Double? = -116.2023
+    @StateObject private var autofill = LTCLocationAutofill()
+
+    /// True when the user tapped "Use Current Location" (fields are replaced);
+    /// false for the automatic lookup on open (fields are only filled if empty).
+    @State private var autofillWasExplicit: Bool = false
 
     @State private var isSearching: Bool = false
     @State private var errorMessage: String?
@@ -194,6 +197,20 @@ struct DispositionPartnersView: View {
                             .foregroundStyle(Theme.textSecondary)
                     }
                 }
+
+                if let status = autofill.statusText {
+                    Text(status)
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                }
+
+                Button {
+                    autofillWasExplicit = true
+                    autofill.requestOnce()
+                } label: {
+                    Label(autofill.isWorking ? "Locating…" : "Use Current Location", systemImage: "location.fill")
+                }
+                .disabled(autofill.isWorking)
             } header: {
                 Text("Search near")
                     .ltcSectionHeaderStyle()
@@ -231,12 +248,17 @@ struct DispositionPartnersView: View {
             if let response {
                 Section {
                     if response.results.isEmpty {
-                        Text(UserFacingTerms.Disposition.noLocalHelpFound)
+                        Text(response.notice ?? UserFacingTerms.Disposition.noLocalHelpFound)
                             .font(Theme.secondaryFont)
                             .foregroundStyle(Theme.textSecondary)
                     } else {
                         ForEach(response.results) { partner in
                             partnerCard(partner)
+                        }
+                        if let notice = response.notice {
+                            Text(notice)
+                                .font(Theme.secondaryFont)
+                                .foregroundStyle(Theme.textSecondary)
                         }
                     }
                 } header: {
@@ -256,6 +278,13 @@ struct DispositionPartnersView: View {
                         .foregroundStyle(Theme.textSecondary)
                         .padding(.bottom, 4)
 
+                    if response.hasGooglePlacesResults {
+                        Text(UserFacingTerms.Disposition.googleMapsAttribution)
+                            .font(Theme.secondaryFont)
+                            .foregroundStyle(Theme.textSecondary)
+                            .padding(.bottom, 4)
+                    }
+
                     Text("Last updated: \(response.generatedAt.formatted(date: .abbreviated, time: .shortened))")
                         .font(Theme.secondaryFont)
                         .foregroundStyle(Theme.textSecondary)
@@ -268,6 +297,29 @@ struct DispositionPartnersView: View {
         .navigationBarTitleDisplayMode(.inline)
         .aiConsentSheet(consentGate)
         .tint(Theme.accent)
+        .onAppear {
+            // Last-used city/region (text only; coordinates are never saved).
+            let lastCity = UserDefaults.standard.string(forKey: LocalHelpLocationResolver.lastCityKey) ?? ""
+            let lastRegion = UserDefaults.standard.string(forKey: LocalHelpLocationResolver.lastRegionKey) ?? ""
+            if city.isEmpty { city = lastCity }
+            if region.isEmpty { region = lastRegion }
+
+            // Nothing saved: offer the current location (asks permission once).
+            if city.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                autofillWasExplicit = false
+                autofill.requestOnce()
+            }
+        }
+        .onReceive(autofill.$deviceFix) { fix in
+            guard let fix else { return }
+            // An explicit tap replaces the fields; the automatic lookup only
+            // fills them if the user hasn’t typed anything yet.
+            let cityIsEmpty = city.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            guard autofillWasExplicit || cityIsEmpty else { return }
+            city = fix.city
+            region = fix.region
+            if !fix.countryCode.isEmpty { countryCode = fix.countryCode }
+        }
     }
 
     // MARK: - Header copy labels
@@ -362,6 +414,13 @@ struct DispositionPartnersView: View {
                         }
                         .font(Theme.secondaryFont)
                         .foregroundStyle(Theme.textSecondary)
+
+                        if let address = partner.contact.address, !address.isEmpty {
+                            Text(address)
+                                .font(Theme.secondaryFont)
+                                .foregroundStyle(Theme.textSecondary)
+                                .lineLimit(2)
+                        }
 
                         if let why = cleanedWhyRecommended(partner.whyRecommended), !why.isEmpty {
                             Text(why)
@@ -482,13 +541,23 @@ struct DispositionPartnersView: View {
         isSearching = true
         defer { isSearching = false }
 
-        let loc = DispositionLocationDTO(
-            city: city.trimmingCharacters(in: .whitespacesAndNewlines),
-            region: region.trimmingCharacters(in: .whitespacesAndNewlines),
-            countryCode: countryCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased(),
+        UserDefaults.standard.set(city, forKey: LocalHelpLocationResolver.lastCityKey)
+        UserDefaults.standard.set(region, forKey: LocalHelpLocationResolver.lastRegionKey)
+
+        // Device coordinates only if the fields still show the device's place;
+        // otherwise the typed city's own coordinates; otherwise none.
+        let coordinates = await LocalHelpLocationResolver.resolveCoordinates(
+            city: city,
+            region: region,
+            countryCode: countryCode,
+            fix: autofill.deviceFix
+        )
+        let loc = LocalHelpLocationResolver.makeLocationDTO(
+            city: city,
+            region: region,
+            countryCode: countryCode,
             radiusMiles: radiusMiles,
-            latitude: latitude,
-            longitude: longitude
+            coordinates: coordinates
         )
 
         do {

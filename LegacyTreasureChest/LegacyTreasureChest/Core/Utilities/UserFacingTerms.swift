@@ -37,6 +37,7 @@ enum UserFacingTerms {
         static let findLocalHelpCTA = "Find Local Help"
         static let localHelpOptionsHeader = "Local Help Options"
         static let noLocalHelpFound = "No local help found. Try a larger radius or adjust the item/category."
+        static let googleMapsAttribution = "Business information from Google Maps"
     }
 
     // MARK: - Liquidation language (UI-only)

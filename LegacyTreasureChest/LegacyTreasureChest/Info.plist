@@ -3,8 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Legacy Treasure Chest uses your location to help identify nearby auction houses, dealers, estate sale companies, and other local services relevant to your items.
-Legacy Treasure Chest uses your location to help identify nearby auction houses, dealers, estate sale companies, and other local services relevant to your items.</string>
+	<string>Legacy Treasure Chest uses your location to help identify nearby auction houses, dealers, estate sale companies, and other local services relevant to your items.</string>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

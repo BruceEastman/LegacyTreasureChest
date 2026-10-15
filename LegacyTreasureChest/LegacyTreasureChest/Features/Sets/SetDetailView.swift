@@ -6,8 +6,6 @@
 import SwiftUI
 import SwiftData
 import UIKit
-import CoreLocation
-import MapKit
 import Combine
 
 // MARK: - Shared partner selection model (file-level, accessible everywhere)
@@ -1150,144 +1148,6 @@ private struct SetExecutePlanView: View {
     }
 }
 
-private final class LTCLocationAutofill: NSObject, ObservableObject, CLLocationManagerDelegate {
-    private let manager = CLLocationManager()
-
-    @Published var city: String = ""
-    @Published var region: String = ""
-    @Published var countryCode: String = ""
-
-    @Published var statusText: String? = nil
-    @Published var isWorking: Bool = false
-
-    override init() {
-        super.init()
-        manager.delegate = self
-    }
-
-    func requestOnce() {
-        // Don’t spam requests
-        guard !isWorking else { return }
-        isWorking = true
-        statusText = "Using your current location…"
-
-        let status = manager.authorizationStatus
-        switch status {
-        case .notDetermined:
-            manager.requestWhenInUseAuthorization()
-        case .authorizedAlways, .authorizedWhenInUse:
-            manager.requestLocation()
-        case .denied, .restricted:
-            statusText = "Location access is off. Enter a city or enable Location Services."
-            isWorking = false
-        @unknown default:
-            statusText = "Location status unknown. Enter a city."
-            isWorking = false
-        }
-    }
-
-    // MARK: CLLocationManagerDelegate
-
-    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        let status = manager.authorizationStatus
-        switch status {
-        case .authorizedAlways, .authorizedWhenInUse:
-            manager.requestLocation()
-        case .denied, .restricted:
-            statusText = "Location access is off. Enter a city or enable Location Services."
-            isWorking = false
-        case .notDetermined:
-            break
-        @unknown default:
-            statusText = "Location status unknown. Enter a city."
-            isWorking = false
-        }
-    }
-
-    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        statusText = "Couldn’t get current location. Enter a city."
-        isWorking = false
-    }
-
-    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let loc = locations.first else {
-            statusText = "Couldn’t get current location. Enter a city."
-            isWorking = false
-            return
-        }
-
-        guard let request = MKReverseGeocodingRequest(location: loc) else {
-            statusText = "Couldn’t determine your location details. Enter a city."
-            isWorking = false
-            return
-        }
-
-        Task { [weak self] in
-            guard let self else { return }
-
-            do {
-                let mapItems = try await request.mapItems
-                let mapItem = mapItems.first
-
-                let fullAddress = mapItem?.address?.fullAddress ?? ""
-                let shortAddress = mapItem?.address?.shortAddress ?? ""
-
-                let city = Self.extractCity(from: shortAddress, fallback: fullAddress)
-                let region = Self.extractRegion(from: shortAddress, fallback: fullAddress)
-                let cc = Self.extractCountryCode(from: fullAddress)
-
-                await MainActor.run {
-                    if !city.isEmpty { self.city = city }
-                    if !region.isEmpty { self.region = region }
-                    if !cc.isEmpty { self.countryCode = cc }
-
-                    self.statusText = nil
-                    self.isWorking = false
-                }
-            } catch {
-                await MainActor.run {
-                    self.statusText = "Couldn’t determine your location details. Enter a city."
-                    self.isWorking = false
-                }
-            }
-        }
-    }
-
-    private static func extractCity(from shortAddress: String, fallback fullAddress: String) -> String {
-        let source = shortAddress.isEmpty ? fullAddress : shortAddress
-        let parts = source
-            .split(separator: ",")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-
-        return parts.first ?? ""
-    }
-    
-    private static func extractRegion(from shortAddress: String, fallback fullAddress: String) -> String {
-        let source = shortAddress.isEmpty ? fullAddress : shortAddress
-        let parts = source
-            .split(separator: ",")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-
-        guard parts.count >= 2 else { return "" }
-        return parts[1]
-    }
-
-    private static func extractCountryCode(from fullAddress: String) -> String {
-        let normalized = fullAddress.lowercased()
-
-        if normalized.contains("united states") || normalized.contains("usa") {
-            return "US"
-        }
-        if normalized.contains("canada") {
-            return "CA"
-        }
-        if normalized.contains("united kingdom") {
-            return "GB"
-        }
-
-        return ""
-    }
-}
 private struct SetPartnerPickerView: View {
     @Environment(\.dismiss) private var dismiss
     
@@ -1315,6 +1175,10 @@ private struct SetPartnerPickerView: View {
     
     @StateObject private var autofill = LTCLocationAutofill()
     @StateObject private var consentGate = AIConsentGate()
+
+    /// True when the user tapped "Use Current Location" (fields are replaced);
+    /// false for the automatic lookup on open (fields are only filled if empty).
+    @State private var autofillWasExplicit: Bool = false
 
     private enum Field {
         case city
@@ -1482,6 +1346,7 @@ private struct SetPartnerPickerView: View {
                 }
                 
                 Button {
+                    autofillWasExplicit = true
                     autofill.requestOnce()
                 } label: {
                     Label(autofill.isWorking ? "Locating…" : "Use Current Location", systemImage: "location.fill")
@@ -1509,12 +1374,22 @@ private struct SetPartnerPickerView: View {
                 Section {
                     DisclosureGroup(isExpanded: $isResultsExpanded) {
                         if response.results.isEmpty {
-                            Text(UserFacingTerms.Disposition.noSellingOptionsFound)
+                            Text(response.notice ?? UserFacingTerms.Disposition.noSellingOptionsFound)
                                 .font(Theme.secondaryFont)
                                 .foregroundStyle(Theme.textSecondary)
                         } else {
                             ForEach(response.results) { p in
                                 partnerRowButton(p)
+                            }
+                            if let notice = response.notice {
+                                Text(notice)
+                                    .font(Theme.secondaryFont)
+                                    .foregroundStyle(Theme.textSecondary)
+                            }
+                            if response.hasGooglePlacesResults {
+                                Text(UserFacingTerms.Disposition.googleMapsAttribution)
+                                    .font(.caption)
+                                    .foregroundStyle(Theme.textSecondary)
                             }
                         }
                     } label: {
@@ -1548,32 +1423,27 @@ private struct SetPartnerPickerView: View {
         }
         .onAppear {
             // If we have last-used values, keep them.
-            let lastCity = UserDefaults.standard.string(forKey: "ltc.lastDisposition.city") ?? ""
-            let lastRegion = UserDefaults.standard.string(forKey: "ltc.lastDisposition.region") ?? ""
+            let lastCity = UserDefaults.standard.string(forKey: LocalHelpLocationResolver.lastCityKey) ?? ""
+            let lastRegion = UserDefaults.standard.string(forKey: LocalHelpLocationResolver.lastRegionKey) ?? ""
             
             if city.isEmpty { city = lastCity }
             if region.isEmpty { region = lastRegion }
             
             // If still empty, try current location autofill.
             if city.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                autofillWasExplicit = false
                 autofill.requestOnce()
             }
         }
-        .onReceive(autofill.$city) { newCity in
-            // Only auto-fill if user hasn’t typed anything yet
-            if city.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !newCity.isEmpty {
-                city = newCity
-            }
-        }
-        .onReceive(autofill.$region) { newRegion in
-            if region.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !newRegion.isEmpty {
-                region = newRegion
-            }
-        }
-        .onReceive(autofill.$countryCode) { newCC in
-            if countryCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !newCC.isEmpty {
-                countryCode = newCC
-            }
+        .onReceive(autofill.$deviceFix) { fix in
+            guard let fix else { return }
+            // An explicit tap replaces the fields; the automatic lookup only
+            // fills them if the user hasn’t typed anything yet.
+            let cityIsEmpty = city.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            guard autofillWasExplicit || cityIsEmpty else { return }
+            city = fix.city
+            region = fix.region
+            if !fix.countryCode.isEmpty { countryCode = fix.countryCode }
         }
         .aiConsentSheet(consentGate)
     }
@@ -1627,7 +1497,14 @@ private struct SetPartnerPickerView: View {
                 Text(type)
                     .font(Theme.secondaryFont)
                     .foregroundStyle(Theme.textSecondary)
-                
+
+                if let address = p.contact.address, !address.isEmpty {
+                    Text(address)
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(2)
+                }
+
                 if let why {
                     Text(why)
                         .font(Theme.secondaryFont)
@@ -1661,8 +1538,8 @@ private struct SetPartnerPickerView: View {
         focusedField = nil
         
         // Persist last used (still useful for contemporary/local searches)
-        UserDefaults.standard.set(city, forKey: "ltc.lastDisposition.city")
-        UserDefaults.standard.set(region, forKey: "ltc.lastDisposition.region")
+        UserDefaults.standard.set(city, forKey: LocalHelpLocationResolver.lastCityKey)
+        UserDefaults.standard.set(region, forKey: LocalHelpLocationResolver.lastRegionKey)
         
         guard let blockForService else {
             errorMessage = "This block does not require a partner."
@@ -2222,13 +2099,18 @@ private struct SetPartnerPickerView: View {
 
         // Contemporary (and any non-luxury paths): use backend search
         do {
-            let loc = DispositionLocationDTO(
-                city: city.trimmingCharacters(in: .whitespacesAndNewlines),
-                region: region.trimmingCharacters(in: .whitespacesAndNewlines),
-                countryCode: countryCode.trimmingCharacters(in: .whitespacesAndNewlines),
+            let coordinates = await LocalHelpLocationResolver.resolveCoordinates(
+                city: city,
+                region: region,
+                countryCode: countryCode,
+                fix: autofill.deviceFix
+            )
+            let loc = LocalHelpLocationResolver.makeLocationDTO(
+                city: city,
+                region: region,
+                countryCode: countryCode,
                 radiusMiles: radiusMiles,
-                latitude: nil,
-                longitude: nil
+                coordinates: coordinates
             )
             
             let resp = try await dispositionAI.searchPartners(

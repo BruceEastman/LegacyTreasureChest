@@ -78,6 +78,18 @@ struct DispositionPartnersSearchResponse: Codable {
     var scenarioId: String?
     var partnerTypes: [String]
     var results: [DispositionPartnerResult]
+
+    // Optional so older/curated responses still decode.
+    var disclaimer: String? = nil
+    /// ok | no_results | unavailable | disabled | limited | not_applicable
+    var localDiscoveryStatus: String? = nil
+    /// User-facing explanation when local results are missing for a reason.
+    var notice: String? = nil
+
+    /// True when any result came from Google Places (attribution required).
+    var hasGooglePlacesResults: Bool {
+        results.contains { $0.partnerId.hasPrefix("gplaces:") }
+    }
 }
 
 struct DispositionPartnerResult: Codable, Identifiable {

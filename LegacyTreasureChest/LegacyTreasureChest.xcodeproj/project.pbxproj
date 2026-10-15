@@ -11,7 +11,18 @@
 		BEB528382F241290004CBD2D /* Luxury_Readiness_Checklists_v1.md in Resources */ = {isa = PBXBuildFile; fileRef = BEB528372F24126A004CBD2D /* Luxury_Readiness_Checklists_v1.md */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		AA1000000000000000000007 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = BE3A745F2ECE64C000DFEE10 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = BE3A74662ECE64C000DFEE10;
+			remoteInfo = LegacyTreasureChest;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
+		AA1000000000000000000001 /* LegacyTreasureChestTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LegacyTreasureChestTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		BE3A74672ECE64C000DFEE10 /* LegacyTreasureChest.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LegacyTreasureChest.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BE57CB512F6863C1002BD573 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
 		BEB528372F24126A004CBD2D /* Luxury_Readiness_Checklists_v1.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = Luxury_Readiness_Checklists_v1.md; sourceTree = "<group>"; };
@@ -31,6 +42,11 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		AA1000000000000000000002 /* LegacyTreasureChestTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = LegacyTreasureChestTests;
+			sourceTree = "<group>";
+		};
 		BE3A74692ECE64C000DFEE10 /* LegacyTreasureChest */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -42,6 +58,13 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		AA1000000000000000000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		BE3A74642ECE64C000DFEE10 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -59,6 +82,7 @@
 				BEB528372F24126A004CBD2D /* Luxury_Readiness_Checklists_v1.md */,
 				BEFA6E2F2ED6777500A86ED8 /* README.md */,
 				BE3A74692ECE64C000DFEE10 /* LegacyTreasureChest */,
+				AA1000000000000000000002 /* LegacyTreasureChestTests */,
 				BE3A74682ECE64C000DFEE10 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -67,6 +91,7 @@
 			isa = PBXGroup;
 			children = (
 				BE3A74672ECE64C000DFEE10 /* LegacyTreasureChest.app */,
+				AA1000000000000000000001 /* LegacyTreasureChestTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -74,6 +99,29 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		AA1000000000000000000003 /* LegacyTreasureChestTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA100000000000000000000B /* Build configuration list for PBXNativeTarget "LegacyTreasureChestTests" */;
+			buildPhases = (
+				AA1000000000000000000004 /* Sources */,
+				AA1000000000000000000005 /* Frameworks */,
+				AA1000000000000000000006 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AA1000000000000000000008 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				AA1000000000000000000002 /* LegacyTreasureChestTests */,
+			);
+			name = LegacyTreasureChestTests;
+			packageProductDependencies = (
+			);
+			productName = LegacyTreasureChestTests;
+			productReference = AA1000000000000000000001 /* LegacyTreasureChestTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		BE3A74662ECE64C000DFEE10 /* LegacyTreasureChest */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = BE3A74722ECE64C100DFEE10 /* Build configuration list for PBXNativeTarget "LegacyTreasureChest" */;
@@ -106,6 +154,10 @@
 				LastSwiftUpdateCheck = 2610;
 				LastUpgradeCheck = 2610;
 				TargetAttributes = {
+					AA1000000000000000000003 = {
+						CreatedOnToolsVersion = 26.1.1;
+						TestTargetID = BE3A74662ECE64C000DFEE10;
+					};
 					BE3A74662ECE64C000DFEE10 = {
 						CreatedOnToolsVersion = 26.1.1;
 					};
@@ -126,11 +178,19 @@
 			projectRoot = "";
 			targets = (
 				BE3A74662ECE64C000DFEE10 /* LegacyTreasureChest */,
+				AA1000000000000000000003 /* LegacyTreasureChestTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		AA1000000000000000000006 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		BE3A74652ECE64C000DFEE10 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -143,6 +203,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		AA1000000000000000000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		BE3A74632ECE64C000DFEE10 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -152,7 +219,61 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		AA1000000000000000000008 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = BE3A74662ECE64C000DFEE10 /* LegacyTreasureChest */;
+			targetProxy = AA1000000000000000000007 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		AA1000000000000000000009 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 7;
+				DEVELOPMENT_TEAM = 8TNF6SJ6QB;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.1;
+				MARKETING_VERSION = 1.2;
+				PRODUCT_BUNDLE_IDENTIFIER = com.bruceeastman.LegacyTreasureChestTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LegacyTreasureChest.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/LegacyTreasureChest";
+			};
+			name = Debug;
+		};
+		AA100000000000000000000A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 7;
+				DEVELOPMENT_TEAM = 8TNF6SJ6QB;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.1;
+				MARKETING_VERSION = 1.2;
+				PRODUCT_BUNDLE_IDENTIFIER = com.bruceeastman.LegacyTreasureChestTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LegacyTreasureChest.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/LegacyTreasureChest";
+			};
+			name = Release;
+		};
 		BE3A74702ECE64C100DFEE10 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -347,6 +468,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		AA100000000000000000000B /* Build configuration list for PBXNativeTarget "LegacyTreasureChestTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA1000000000000000000009 /* Debug */,
+				AA100000000000000000000A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		BE3A74622ECE64C000DFEE10 /* Build configuration list for PBXProject "LegacyTreasureChest" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
