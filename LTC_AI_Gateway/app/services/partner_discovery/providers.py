@@ -13,6 +13,21 @@ logger = logging.getLogger(__name__)
 
 PartnerCandidate = Dict[str, Any]
 
+# Places API (New) rejects a locationBias circle larger than 50 km.
+_MAX_BIAS_RADIUS_METERS = 50_000.0
+
+
+class PartnerDiscoveryUnavailable(Exception):
+    """
+    Raised when the configured provider cannot return results right now
+    (upstream error, timeout, quota). The route turns this into an honest
+    "unavailable" response; it never falls back to fabricated businesses.
+    """
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
 
 @dataclass(frozen=True)
 class PartnerDiscoveryQuery:
@@ -28,6 +43,9 @@ class PartnerDiscoveryQuery:
 
 
 class PartnerDiscoveryProvider(Protocol):
+    name: str
+    is_stub: bool
+
     def search(self, q: PartnerDiscoveryQuery) -> List[PartnerCandidate]:
         ...
 
@@ -70,8 +88,12 @@ def _safe_int(x: Any) -> Optional[int]:
 
 class StubPartnerDiscoveryProvider:
     """
-    Thin wrapper so the stub stays intact and selectable.
+    Thin wrapper so the stub stays available for local development and tests.
+    The factory refuses to build it on Cloud Run.
     """
+
+    name = "stub"
+    is_stub = True
 
     def __init__(self, stub_fn):
         self._stub_fn = stub_fn
@@ -88,38 +110,61 @@ class StubPartnerDiscoveryProvider:
 
 class GooglePlacesNewProvider:
     """
-    Google Places API (New) provider.
+    Google Places API (New) provider: one Text Search call per query.
+
+    The Text Search field mask already returns everything the app shows, so
+    there are no per-result Place Details calls.
     """
 
-    SEARCH_TEXT_URL = "https://places.googleapis.com/v1/places:searchText"
-    PLACE_DETAILS_URL_TMPL = "https://places.googleapis.com/v1/places/{place_id}"
+    name = "google"
+    is_stub = False
 
-    def __init__(self, api_key: str, timeout_s: float = 8.0):
+    SEARCH_TEXT_URL = "https://places.googleapis.com/v1/places:searchText"
+
+    # Only the fields the app uses. Rating, phone, and website are the
+    # reason this is billed as Text Search Enterprise.
+    FIELD_MASK = ",".join(
+        [
+            "places.id",
+            "places.displayName",
+            "places.formattedAddress",
+            "places.location",
+            "places.rating",
+            "places.userRatingCount",
+            "places.googleMapsUri",
+            "places.websiteUri",
+            "places.nationalPhoneNumber",
+            "places.businessStatus",
+            "places.primaryTypeDisplayName",
+            "places.types",
+        ]
+    )
+
+    def __init__(
+        self,
+        api_key: str,
+        timeout_s: float = 8.0,
+        transport: Optional[httpx.BaseTransport] = None,
+        max_attempts: int = 2,
+    ):
         if not api_key:
             raise ValueError("GooglePlacesNewProvider requires a non-empty API key.")
         self._api_key = api_key
         self._timeout = timeout_s
+        self._transport = transport
+        self._max_attempts = max(1, max_attempts)
 
     def search(self, q: PartnerDiscoveryQuery) -> List[PartnerCandidate]:
         places = self._search_text(q)
 
-        enriched: List[PartnerCandidate] = []
-        for p in places[:12]:
-            place_id = p.get("_google_place_id")
-            if place_id:
-                details = self._place_details(place_id)
-                if details:
-                    p = self._merge_details(p, details)
-            enriched.append(self._to_candidate(p, q))
-
-        return enriched
-
-    def _headers(self, field_mask: str) -> Dict[str, str]:
-        return {
-            "Content-Type": "application/json",
-            "X-Goog-Api-Key": self._api_key,
-            "X-Goog-FieldMask": field_mask,
-        }
+        out: List[PartnerCandidate] = []
+        for rank, p in enumerate(places):
+            # Closed businesses are never useful recommendations.
+            status = p.get("businessStatus")
+            if status and status != "OPERATIONAL":
+                continue
+            out.append(self._to_candidate(p, q, rank))
+        return out
 
     def _search_text(self, q: PartnerDiscoveryQuery) -> List[Dict[str, Any]]:
         body: Dict[str, Any] = {
@@ -133,200 +178,121 @@ class GooglePlacesNewProvider:
             body["locationBias"] = {
                 "circle": {
                     "center": {"latitude": q.center_lat, "longitude": q.center_lng},
-                    "radius": _miles_to_meters(q.radius_miles),
+                    "radius": min(_miles_to_meters(q.radius_miles), _MAX_BIAS_RADIUS_METERS),
                 }
             }
 
-        field_mask = ",".join(
-            [
-                "places.id",
-                "places.displayName",
-                "places.formattedAddress",
-                "places.location",
-                "places.rating",
-                "places.userRatingCount",
-                "places.googleMapsUri",
-                "places.websiteUri",
-                "places.nationalPhoneNumber",
-                "places.internationalPhoneNumber",
-            ]
-        )
+        headers = {
+            "Content-Type": "application/json",
+            "X-Goog-Api-Key": self._api_key,
+            "X-Goog-FieldMask": self.FIELD_MASK,
+        }
 
-        headers = dict(self._headers(field_mask))  # fresh dict per call (avoids shared mutation bugs)
-
-        # Intermittent 400s and other transient failures happen in practice.
-        # We'll retry a few times with small backoff. If it keeps failing, we raise.
-        last_exc: Optional[Exception] = None
-        max_attempts = 3
-
-        with httpx.Client(timeout=self._timeout) as client:
-            for attempt in range(1, max_attempts + 1):
+        with httpx.Client(timeout=self._timeout, transport=self._transport) as client:
+            for attempt in range(1, self._max_attempts + 1):
                 try:
                     resp = client.post(self.SEARCH_TEXT_URL, headers=headers, json=body)
-
-                    if resp.status_code >= 400:
-                        # Content-free diagnostics only: no request body, no query text,
-                        # no coordinates, no response body, no API key.
-                        logger.error(
-                            "Partner discovery upstream error provider=%s operation=%s attempt=%s/%s status=%s",
-                            "google_places",
-                            "searchText",
-                            attempt,
-                            max_attempts,
-                            resp.status_code,
-                        )
-
-                    # Retry on common transient classes.
-                    # - 429: rate limited
-                    # - 5xx: server errors
-                    # - 408: timeout
-                    # - Some intermittent 400s are transient; we retry once or twice.
-                    if resp.status_code in (408, 429) or 500 <= resp.status_code <= 599 or resp.status_code == 400:
-                        if attempt < max_attempts:
-                            time.sleep(0.4 * attempt)
-                            continue
-
-                    resp.raise_for_status()
-                    data = resp.json()
-                    break  # success
-
-                except (httpx.TimeoutException, httpx.NetworkError, httpx.HTTPStatusError) as exc:
-                    last_exc = exc
-                    if attempt < max_attempts:
+                except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                    logger.error(
+                        "Partner discovery upstream failure provider=%s operation=%s attempt=%s/%s error=%s",
+                        "google_places",
+                        "searchText",
+                        attempt,
+                        self._max_attempts,
+                        type(exc).__name__,
+                    )
+                    if attempt < self._max_attempts:
                         time.sleep(0.4 * attempt)
                         continue
-                    raise
-            else:
-                # Should never happen due to break/raise above, but keep as guardrail.
-                if last_exc:
-                    raise last_exc
-                raise httpx.HTTPError("Google Places searchText failed without exception detail.")
+                    raise PartnerDiscoveryUnavailable("upstream_unreachable") from exc
 
-        raw_places = data.get("places", []) or []
-        normalized: List[Dict[str, Any]] = []
+                if resp.status_code == 200:
+                    try:
+                        data = resp.json()
+                    except ValueError as exc:
+                        raise PartnerDiscoveryUnavailable("upstream_bad_response") from exc
+                    return data.get("places", []) or []
 
-        for pl in raw_places:
-            place_id = pl.get("id")
-            name_obj = pl.get("displayName") or {}
-            display_name = name_obj.get("text") if isinstance(name_obj, dict) else None
+                # Content-free diagnostics only: no request body, no query text,
+                # no coordinates, no response body, no API key.
+                logger.error(
+                    "Partner discovery upstream error provider=%s operation=%s attempt=%s/%s status=%s",
+                    "google_places",
+                    "searchText",
+                    attempt,
+                    self._max_attempts,
+                    resp.status_code,
+                )
 
-            normalized.append(
-                {
-                    "_google_place_id": place_id,
-                    "name": display_name or "(unknown)",
-                    "formattedAddress": pl.get("formattedAddress"),
-                    "location": pl.get("location"),
-                    "rating": pl.get("rating"),
-                    "userRatingCount": pl.get("userRatingCount"),
-                    "googleMapsUri": pl.get("googleMapsUri"),
-                    "websiteUri": pl.get("websiteUri"),
-                    "nationalPhoneNumber": pl.get("nationalPhoneNumber"),
-                    "internationalPhoneNumber": pl.get("internationalPhoneNumber"),
-                }
-            )
+                # Retry only transient server-side failures. 4xx (including 429
+                # quota exhaustion and 403 key problems) will not improve on retry.
+                if 500 <= resp.status_code <= 599 and attempt < self._max_attempts:
+                    time.sleep(0.4 * attempt)
+                    continue
 
-        return normalized
+                if resp.status_code == 429:
+                    raise PartnerDiscoveryUnavailable("upstream_quota")
+                if resp.status_code in (401, 403):
+                    raise PartnerDiscoveryUnavailable("upstream_auth")
+                raise PartnerDiscoveryUnavailable(f"upstream_status_{resp.status_code}")
 
-    def _place_details(self, place_id: str) -> Optional[Dict[str, Any]]:
-        url = self.PLACE_DETAILS_URL_TMPL.format(place_id=place_id)
+        raise PartnerDiscoveryUnavailable("upstream_unreachable")
 
-        field_mask = ",".join(
-            [
-                "id",
-                "displayName",
-                "formattedAddress",
-                "location",
-                "rating",
-                "userRatingCount",
-                "googleMapsUri",
-                "websiteUri",
-                "nationalPhoneNumber",
-                "internationalPhoneNumber",
-            ]
-        )
+    def _to_candidate(self, pl: Dict[str, Any], q: PartnerDiscoveryQuery, rank: int) -> PartnerCandidate:
+        place_id = pl.get("id") or "unknown"
+        name_obj = pl.get("displayName") or {}
+        name = (name_obj.get("text") if isinstance(name_obj, dict) else None) or "(unknown)"
+        type_obj = pl.get("primaryTypeDisplayName") or {}
+        primary_type = type_obj.get("text") if isinstance(type_obj, dict) else None
+        types = [t for t in (pl.get("types") or []) if isinstance(t, str)]
+        address = pl.get("formattedAddress") or ""
 
-        try:
-            with httpx.Client(timeout=self._timeout) as client:
-                resp = client.get(url, headers=self._headers(field_mask))
-                resp.raise_for_status()
-                return resp.json()
-        except Exception:
-            return None
-
-    def _merge_details(self, base: Dict[str, Any], details: Dict[str, Any]) -> Dict[str, Any]:
-        name_obj = details.get("displayName") or {}
-        display_name = name_obj.get("text") if isinstance(name_obj, dict) else None
-
-        merged = dict(base)
-        merged["name"] = display_name or merged.get("name")
-        merged["formattedAddress"] = details.get("formattedAddress") or merged.get("formattedAddress")
-        merged["location"] = details.get("location") or merged.get("location")
-        merged["rating"] = details.get("rating") if details.get("rating") is not None else merged.get("rating")
-        merged["userRatingCount"] = details.get("userRatingCount") or merged.get("userRatingCount")
-        merged["googleMapsUri"] = details.get("googleMapsUri") or merged.get("googleMapsUri")
-        merged["websiteUri"] = details.get("websiteUri") or merged.get("websiteUri")
-        merged["nationalPhoneNumber"] = details.get("nationalPhoneNumber") or merged.get("nationalPhoneNumber")
-        merged["internationalPhoneNumber"] = details.get("internationalPhoneNumber") or merged.get(
-            "internationalPhoneNumber"
-        )
-        return merged
-
-    def _to_candidate(self, pl: Dict[str, Any], q: PartnerDiscoveryQuery) -> PartnerCandidate:
-        place_id = pl.get("_google_place_id") or "unknown"
-        partner_id = f"gplaces:{place_id}"
-
-        dist_mi = float(q.radius_miles)
+        # Distance only when both ends are real coordinates. Never invented.
+        dist_mi: Optional[float] = None
         loc = pl.get("location") or {}
         lat2 = _safe_float(loc.get("latitude"))
         lng2 = _safe_float(loc.get("longitude"))
-
         if q.center_lat is not None and q.center_lng is not None and lat2 is not None and lng2 is not None:
             dist_mi = float(round(_haversine_miles(q.center_lat, q.center_lng, lat2, lng2), 2))
 
         rating = _safe_float(pl.get("rating"))
-
-        # Google calls it userRatingCount; your app wants userRatingsTotal (fine).
         user_ratings_total = _safe_int(pl.get("userRatingCount"))
 
-        if isinstance(user_ratings_total, int) and user_ratings_total > 0:
-            urc_txt = f"{user_ratings_total} ratings"
-        else:
-            urc_txt = "ratings"
-
         website = pl.get("websiteUri") or pl.get("googleMapsUri")
-        phone = pl.get("nationalPhoneNumber") or pl.get("internationalPhoneNumber")
+        phone = pl.get("nationalPhoneNumber")
 
-        website_snippet = (
-            f"{pl.get('name')} — {q.partner_type.replace('_', ' ')}. {pl.get('formattedAddress') or ''}".strip()
-        )
-        place_details = (
-            f"Address: {pl.get('formattedAddress') or 'unknown'}; "
-            f"Phone: {phone or 'unknown'}; "
-            f"Website: {website or 'unknown'}"
-        )
+        # Evidence text comes only from Google's data for this place. The
+        # searched-for partner type is NOT injected, so trust gates reflect
+        # what the business actually is.
+        type_words = " ".join(t.replace("_", " ") for t in types)
+        website_snippet = f"{name}. {primary_type or ''}. {type_words}".strip()
+        place_details = f"Address: {address or 'unknown'}"
 
         if rating is None:
-            reviews_snippet = "Google rating unavailable"
+            reviews_snippet = ""
+        elif user_ratings_total:
+            reviews_snippet = f"Google rating {rating:.1f}/5 ({user_ratings_total} ratings)"
         else:
-            reviews_snippet = f"Google rating {rating:.1f}/5 ({urc_txt})"
-
-        contact = {
-            "phone": phone,
-            "website": website,
-            "email": None,
-            "address": pl.get("formattedAddress") or "",
-            "city": q.city,
-            "region": q.region,
-        }
+            reviews_snippet = f"Google rating {rating:.1f}/5"
 
         return {
-            "partnerId": partner_id,
-            "name": pl.get("name"),
+            "partnerId": f"gplaces:{place_id}",
+            "name": name,
             "partnerType": q.partner_type,
-            "contact": contact,
-            "distanceMiles": float(dist_mi),
-            "rating": float(rating) if rating is not None else None,
-            "userRatingsTotal": int(user_ratings_total) if isinstance(user_ratings_total, int) else None,
+            "contact": {
+                "phone": phone,
+                "website": website,
+                "email": None,
+                # The full Google address is authoritative. The searched city is
+                # not copied here, since the business may be in a neighboring town.
+                "address": address,
+                "city": None,
+                "region": None,
+            },
+            "distanceMiles": dist_mi,
+            "rating": rating,
+            "userRatingsTotal": user_ratings_total,
+            "providerRank": rank,
             "sources": {
                 "website_snippet": website_snippet,
                 "place_details": place_details,

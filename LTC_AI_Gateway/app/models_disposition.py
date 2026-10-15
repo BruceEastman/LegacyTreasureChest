@@ -59,7 +59,7 @@ class DispositionPartnersSearchRequest(BaseModel):
     scope: str = "item"  # item|set (set not used in v1)
     itemId: Optional[str] = None
     planId: Optional[str] = None
-    chosenPath: str  # A|B|C|DONATE (iOS can map from liquidation paths)
+    chosenPath: Optional[str] = None  # A|B|C|donate|needsInfo (iOS maps from liquidation paths)
     scenario: DispositionScenarioDTO
     location: DispositionLocationDTO
     hints: Optional[DispositionHintsDTO] = None
@@ -120,6 +120,12 @@ class DispositionPartnersSearchResponse(BaseModel):
     results: List[DispositionPartnerResultDTO] = Field(default_factory=list)
     disclaimer: str
     recommendedRefreshDays: int = 30
+
+    # Local (Google Places) discovery outcome, so the app can say why there are
+    # no local results instead of implying a search found nothing.
+    # ok | no_results | unavailable | disabled | limited | not_applicable
+    localDiscoveryStatus: str = "ok"
+    notice: Optional[str] = None
 
 
 # -----------------------------

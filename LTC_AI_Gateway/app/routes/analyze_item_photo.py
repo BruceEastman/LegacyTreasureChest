@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import ValidationError
 
+from app.core import config as ltc_config
+from app.core.rate_limiter import rate_limiter
 from app.models import AnalyzeItemPhotoRequest, CANONICAL_ITEM_CATEGORIES, ItemAIHints, ItemAnalysis, ValueHints
 
 from app.models_liquidation import (
@@ -924,7 +927,33 @@ _DISPOSITION_MATRIX_PATH = Path(__file__).resolve().parents[1] / "config" / "dis
 # Simple in-memory cache (v1)
 # key -> (created_at_utc_epoch_seconds, response_dict)
 _DISPOSITION_CACHE: dict[str, tuple[float, dict]] = {}
-_DISPOSITION_CACHE_TTL_SECONDS = 24 * 60 * 60  # 24 hours
+# Short on purpose: it only absorbs repeat taps. Google Places content is not
+# meant to be stored, and businesses change.
+_DISPOSITION_CACHE_TTL_SECONDS = 15 * 60
+
+# Partner types served from curated lists, never from Places.
+_CURATED_PARTNER_TYPES = {"luxury_hub_mailin"}
+
+# Shared rate-limiter key for the per-instance daily Places call budget.
+_PLACES_GLOBAL_BUDGET_KEY = "__all_devices__"
+
+# A business whose Google data does not show the searched type is kept only
+# if it was among Google's top N matches for the query.
+_UNCONFIRMED_TOP_RANK = 5
+
+_LOCAL_DISCOVERY_NOTICES = {
+    "no_results": "No matching local businesses were found in this area. Try a larger radius or a nearby city.",
+    "unavailable": "Local business search is temporarily unavailable. Please try again later.",
+    "disabled": "Local business search is temporarily unavailable. Please try again later.",
+    "limited": "Local business search has reached its usage limit for now. Please try again later.",
+}
+
+
+class _PlacesBudgetExhausted(Exception):
+    """The per-instance daily Places call budget is used up."""
+
+
+logger = logging.getLogger(__name__)
 
 
 
@@ -948,6 +977,21 @@ def _norm(s: str) -> str:
     return (s or "").strip().lower()
 
 
+_GOAL_ALIASES = {
+    "maximizeprice": "maximize_price",
+    "maximize_value": "maximize_price",
+    "minimizework": "min_effort",
+    "minimize_work": "min_effort",
+}
+
+
+def _canonical_goal(goal: Optional[str]) -> Optional[str]:
+    if goal is None:
+        return None
+    g = goal.strip().lower()
+    return _GOAL_ALIASES.get(g, g)
+
+
 def _scenario_matches(when: dict, req: DispositionPartnersSearchRequest) -> bool:
     """
     Matching rules:
@@ -962,7 +1006,8 @@ def _scenario_matches(when: dict, req: DispositionPartnersSearchRequest) -> bool
         if when_val == "*" or when_val is None:
             return True
         if req_val is None:
-            return False
+            # A "*" inside a list admits a missing value (same rule as valueBand UNKNOWN).
+            return isinstance(when_val, list) and "*" in when_val
         if isinstance(when_val, list):
             if normalize_text and isinstance(req_val, str):
                 return any(_norm(x) == _norm(req_val) for x in when_val)
@@ -995,14 +1040,14 @@ def _scenario_matches(when: dict, req: DispositionPartnersSearchRequest) -> bool
         if not match_value(when.get("fragile"), sc.fragile):
             return False
 
-    # goals
+    # goals (iOS sends camelCase, e.g. "maximizePrice"; the matrix uses snake_case)
     if "goals" in when:
-        if not match_value(when.get("goals"), sc.goal):
+        if not match_value(when.get("goals"), _canonical_goal(sc.goal), normalize_text=True):
             return False
 
-    # chosenPaths
+    # chosenPaths (case-insensitive: iOS sends "donate", older docs say "DONATE")
     if "chosenPaths" in when:
-        if not match_value(when.get("chosenPaths"), req.chosenPath):
+        if not match_value(when.get("chosenPaths"), req.chosenPath, normalize_text=True):
             return False
 
     return True
@@ -1045,18 +1090,19 @@ def _cache_set(key: str, payload: dict) -> None:
     _DISPOSITION_CACHE[key] = (time.time(), payload)
 
 
-def _mk_cache_key(req: DispositionPartnersSearchRequest, *, partner_type: str, radius: int, query: str) -> str:
-    loc = req.location
-    parts = [
-        "v1",
-        partner_type,
-        _norm(query),
-        f"{_norm(loc.city)}|{_norm(loc.region)}|{_norm(loc.countryCode)}",
-        str(radius),
-        _norm(req.scenario.category or ""),
-        _norm(req.scenario.goal or ""),
-        _norm(req.chosenPath or ""),
-    ]
+def _mk_cache_key(
+    *,
+    provider_name: str,
+    partner_type: str,
+    query: str,
+    center_lat: Optional[float],
+    center_lng: Optional[float],
+    radius: int,
+) -> str:
+    # Provider results depend only on the query text, the bias center, and
+    # the bias radius. Center is rounded to ~1 km so nearby repeats share.
+    center = "none" if center_lat is None or center_lng is None else f"{center_lat:.2f},{center_lng:.2f}"
+    parts = ["v2", provider_name, partner_type, _norm(query), center, str(radius)]
     return "||".join(parts)
 
 
@@ -1378,6 +1424,34 @@ def _build_questions(partner_type: str, req: DispositionPartnersSearchRequest) -
             "Do you offer pickup?",
             *common,
         ][:6]
+    if partner_type in ("dealer", "antique_dealer", "rug_dealer"):
+        return [
+            "Do you buy outright, take items on consignment, or both?",
+            "Do you handle items like mine? Can I send photos first?",
+            "How do you arrive at an offer, and what fees apply?",
+            *common,
+        ][:6]
+    if partner_type == "estate_jeweler":
+        return [
+            "Do you buy estate jewelry outright or offer consignment?",
+            "Is there a fee for an evaluation or a written appraisal?",
+            "How do you test and price metals and stones?",
+            *common,
+        ][:6]
+    if partner_type == "electronics_resale":
+        return [
+            "Which brands, models, and conditions do you buy?",
+            "Do you wipe data, or should I reset devices first?",
+            "How is the offer determined and paid?",
+            *common,
+        ][:6]
+    if partner_type == "recycling":
+        return [
+            "Which items do you accept, and is there a fee?",
+            "Do you provide certificates of data destruction?",
+            "Do you offer drop-off hours or pickup?",
+            *common,
+        ][:6]
     if partner_type == "junk_haul":
         return [
             "Can you provide a written estimate and disposal policy?",
@@ -1416,22 +1490,29 @@ def _apply_required_gates(gates: list[dict]) -> bool:
 @router.post("/disposition/partners/search", response_model=DispositionPartnersSearchResponse)
 async def disposition_partners_search(
     payload: DispositionPartnersSearchRequest,
+    request: Request,
 ) -> DispositionPartnersSearchResponse:
     """
     Disposition Engine v1:
     - Select scenario via matrix (priority + wildcard + fallback)
-    - Run partner-type searches (provider abstraction: stub or Google Places New)
+    - Run partner-type searches (Google Places API (New); the stub is dev-only)
     - Evaluate trust gates (required vs boost)
     - Rank + return "why recommended" and "questions to ask"
-    - Radius expansion when results are too few
-    - In-memory cache to limit provider calls
+    - Radius expansion when results are too few (filters the same results)
+    - Short-lived in-memory cache plus per-device and daily Places limits
+    - If Places is disabled, unconfigured, over budget, or failing, the
+      response says so (localDiscoveryStatus); it never substitutes stubs
 
     v1.1 addition:
     - partnerType == "luxury_hub_mailin" returns curated hub/national channels
       (does NOT depend on Google Places; suitable for secondary markets like Boise).
     """
-    from app.services.partner_discovery.factory import get_partner_discovery_provider
-    from app.services.partner_discovery.providers import PartnerDiscoveryQuery
+    from app.services.partner_discovery.factory import (
+        PartnerDiscoveryConfigError,
+        get_partner_discovery_provider,
+        running_on_cloud_run,
+    )
+    from app.services.partner_discovery.providers import PartnerDiscoveryQuery, PartnerDiscoveryUnavailable
 
     def _safe_getattr(obj, name: str, default=None):
         try:
@@ -1582,16 +1663,115 @@ async def disposition_partners_search(
     base_radius = int(payload.location.radiusMiles or default_radius)
     max_radius = int(matrix.get("maxRadiusMiles", 100))
     min_results = int(matrix.get("minResults", 6))
+    max_per_type = int(matrix.get("maxResultsPerType", 8))
+    max_queries = max(1, int(ltc_config.PLACES_MAX_QUERIES_PER_TYPE))
 
     partner_types: list[dict] = scenario.get("partnerTypes", []) or []
     all_results: list[dict] = []
-
-    provider = get_partner_discovery_provider(stub_fn=_stub_places_search)
 
     _normalize_brand_hints()
 
     center_lat = _as_float(_safe_getattr(payload.location, "latitude", None))
     center_lng = _as_float(_safe_getattr(payload.location, "longitude", None))
+    if center_lat is None or center_lng is None:
+        # Never pair one real coordinate with a missing one.
+        center_lat = center_lng = None
+
+    # ---- Local (Places) discovery availability, decided once per request ----
+    local_types = [
+        pt for pt in partner_types if pt.get("type") and pt.get("type") not in _CURATED_PARTNER_TYPES
+    ]
+    discovery_status: Optional[str] = None  # disabled | unavailable | limited, when discovery cannot run
+    provider = None
+
+    if local_types:
+        if ltc_config.DISABLE_PLACES:
+            discovery_status = "disabled"
+        else:
+            try:
+                provider = get_partner_discovery_provider(stub_fn=_stub_places_search)
+            except PartnerDiscoveryConfigError as exc:
+                logger.error("Partner discovery not configured: %s", exc)
+                discovery_status = "unavailable"
+
+        if provider is not None:
+            device_id = getattr(request.state, "device_id", None) or "unknown"
+            allowed, _retry = rate_limiter.check_daily(
+                device_id=device_id,
+                scope="places-search",
+                limit=ltc_config.PLACES_SEARCHES_PER_DEVICE_DAY_LIMIT,
+            )
+            if not allowed:
+                provider = None
+                discovery_status = "limited"
+
+    def _discover(query_str: str, partner_type: str) -> list[dict]:
+        """
+        One provider call per distinct query (short-lived cache). Raises
+        PartnerDiscoveryUnavailable or _PlacesBudgetExhausted.
+        """
+        cache_key = _mk_cache_key(
+            provider_name=provider.name,
+            partner_type=partner_type,
+            query=query_str,
+            center_lat=center_lat,
+            center_lng=center_lng,
+            radius=base_radius,
+        )
+        cached = _cache_get(cache_key)
+        if cached is not None:
+            return cached.get("candidates", [])
+
+        if not provider.is_stub:
+            allowed, _retry = rate_limiter.check_daily(
+                device_id=_PLACES_GLOBAL_BUDGET_KEY,
+                scope="places-calls",
+                limit=ltc_config.PLACES_PER_DAY_LIMIT,
+            )
+            if not allowed:
+                raise _PlacesBudgetExhausted()
+
+        candidates = provider.search(
+            PartnerDiscoveryQuery(
+                query=query_str,
+                city=payload.location.city,
+                region=payload.location.region,
+                radius_miles=base_radius,
+                partner_type=partner_type,
+                center_lat=center_lat,
+                center_lng=center_lng,
+                language_code="en",
+                region_code=(payload.location.countryCode or "US").strip().upper() or "US",
+            )
+        )
+        _cache_set(cache_key, {"candidates": candidates})
+        return candidates
+
+    def _radius_tier_filter(pool: list[dict]) -> list[dict]:
+        """
+        Keep candidates inside the requested radius; widen (50, then 100 miles)
+        only when too few qualify. Uses the same results, no extra calls.
+        Without a search center there is no distance, so nothing is filtered.
+        """
+        if center_lat is None:
+            return pool
+        if pool and not any(
+            c.get("distanceMiles") is not None and float(c["distanceMiles"]) <= max_radius for c in pool
+        ):
+            # Every match is far from the supplied center, so the center does
+            # not describe the searched city (e.g. app 1.1 always sends Boise
+            # coordinates). Keep the city's results; drop the wrong distances.
+            return [dict(c, distanceMiles=None) for c in pool]
+        tiers = [base_radius] + [r for r in (50, 100) if base_radius < r <= max_radius]
+        chosen: list[dict] = []
+        for radius in tiers:
+            chosen = [
+                c for c in pool
+                if c.get("distanceMiles") is not None and float(c["distanceMiles"]) <= radius
+            ]
+            if len(chosen) >= min_results:
+                break
+        return chosen
 
     for pt in partner_types:
         partner_type = pt.get("type")
@@ -1670,173 +1850,170 @@ async def disposition_partners_search(
                     }
                 )
 
-            all_results.extend(found_for_type[: int(matrix.get("maxResultsPerType", 8))])
+            all_results.extend(found_for_type[:max_per_type])
             continue
 
-        # ---- Normal Places/stub discovery flow for all other partner types ----
+        # ---- Local discovery (Google Places in production) ----
+        if provider is None:
+            continue
 
-        radii: list[int] = [base_radius]
-        if base_radius < 50:
-            radii.append(50)
-        if 100 not in radii:
-            radii.append(100)
-        radii = [r for r in radii if r <= max_radius]
+        # Businesses whose own name/type text shows they are the wrong kind
+        # (e.g. rug cleaners when looking for rug dealers).
+        exclude_keywords = [_norm(k) for k in (pt.get("excludeKeywords") or []) if isinstance(k, str) and k.strip()]
 
-        found_for_type: list[dict] = []
+        pool: dict[str, dict] = {}
+        query_for_candidate: dict[str, str] = {}
 
-        for radius in radii:
-            for q in queries:
-                q_template = q.get("q") if isinstance(q, dict) else None
-                if not q_template:
-                    continue
+        for q in queries[:max_queries]:
+            q_template = q.get("q") if isinstance(q, dict) else None
+            if not q_template:
+                continue
 
-                query_str = (
-                    q_template.replace("{city}", payload.location.city)
-                    .replace("{region}", payload.location.region)
-                    .replace("{category}", payload.scenario.category or "")
-                )
+            query_str = (
+                q_template.replace("{city}", payload.location.city)
+                .replace("{region}", payload.location.region)
+                .replace("{category}", payload.scenario.category or "")
+            )
 
-                if payload.scenario.brandHints:
-                    query_str = f"{query_str} {' '.join(payload.scenario.brandHints[:2])}"
-
-                cache_key = _mk_cache_key(
-                    payload,
-                    partner_type=partner_type,
-                    radius=radius,
-                    query=query_str,
-                )
-                cached = _cache_get(cache_key)
-                if cached is not None:
-                    candidates = cached.get("candidates", [])
-                else:
-                    candidates = provider.search(
-                        PartnerDiscoveryQuery(
-                            query=query_str,
-                            city=payload.location.city,
-                            region=payload.location.region,
-                            radius_miles=radius,
-                            partner_type=partner_type,
-                            center_lat=center_lat,
-                            center_lng=center_lng,
-                            language_code="en",
-                            region_code="US",
-                        )
-                    )
-                    _cache_set(cache_key, {"candidates": candidates})
-
-                for c in candidates:
-                    sources = c.get("sources", {}) or {}
-                    gates_eval, trust_score, signals = _evaluate_trust(
-                        matrix,
-                        partner_payload_sources=sources,
-                        trust_gate_ids=trust_gates,
-                    )
-
-                    if not _apply_required_gates(gates_eval):
-                        continue
-
-                    rel = _relevance_score(c, query_str)
-
-                    dist_miles_raw = c.get("distanceMiles", None)
-                    try:
-                        dist_miles = float(dist_miles_raw) if dist_miles_raw is not None else float(radius)
-                    except Exception:
-                        dist_miles = float(radius)
-
-                    dist_score = _distance_score(dist_miles, radius)
-                    rev_score = _review_score(c.get("rating"))
-
-                    score = _rank_candidates(
-                        rank_weights=rank_weights,
-                        trust_score=trust_score,
-                        relevance=rel,
-                        distance_score=dist_score,
-                        review_score=rev_score,
-                    )
-
-                    reasons = _summarize_reasons(
-                        partner_type=partner_type,
-                        req=payload,
-                        trust_score=trust_score,
-                        rel=rel,
-                        gates_eval=gates_eval,
-                    )
-
-                    found_for_type.append(
-                        {
-                            "partnerId": c.get("partnerId"),
-                            "name": c.get("name"),
-                            "partnerType": partner_type,
-                            "contact": c.get("contact", {}),
-                            "distanceMiles": c.get("distanceMiles"),
-                            "rating": c.get("rating"),
-                            "userRatingsTotal": c.get("userRatingsTotal") or c.get("userRatingCount"),
-                            "trust": {
-                                "trustScore": trust_score,
-                                "claimLevel": "claimed",
-                                "gates": gates_eval,
-                                "signals": signals[:12],
-                            },
-                            "ranking": {
-                                "score": score,
-                                "reasons": reasons,
-                            },
-                            "whyRecommended": " ; ".join(reasons[:2]),
-                            "questionsToAsk": _build_questions(partner_type, payload),
-                        }
-                    )
-
-                    if len(found_for_type) >= min_results:
-                        break
-
-                if len(found_for_type) >= min_results:
-                    break
-
-            if len(found_for_type) >= min_results:
+            try:
+                candidates = _discover(query_str, partner_type)
+            except PartnerDiscoveryUnavailable as exc:
+                logger.error("Partner discovery unavailable partner_type=%s reason=%s", partner_type, exc.reason)
+                discovery_status = "limited" if exc.reason == "upstream_quota" else "unavailable"
+                provider = None
+                break
+            except _PlacesBudgetExhausted:
+                logger.error("Partner discovery daily Places budget reached")
+                discovery_status = "limited"
+                provider = None
                 break
 
-        def _fingerprint(r: dict) -> str:
-            c = r.get("contact") or {}
-            name = _norm(r.get("name", ""))
-            phone = _norm(c.get("phone") or "")
-            web = _norm(c.get("website") or "")
-            addr = _norm(c.get("address") or "")
-            city = _norm(c.get("city") or "")
-            region = _norm(c.get("region") or "")
-            return f"{name}|{phone}|{web}|{addr}|{city}|{region}"
+            for c in candidates:
+                pid = c.get("partnerId")
+                if pid and pid not in pool:
+                    pool[pid] = c
+                    query_for_candidate[pid] = query_str
 
-        seen_fp: set[str] = set()
-        deduped: list[dict] = []
-        for r in sorted(
-            found_for_type,
-            key=lambda x: float(x.get("ranking", {}).get("score", 0.0)),
-            reverse=True,
-        ):
-            fp = _fingerprint(r)
-            if fp in seen_fp:
+            if len(_radius_tier_filter(list(pool.values()))) >= min_results:
+                break
+
+        found_for_type = []
+        for c in _radius_tier_filter(list(pool.values())):
+            sources = c.get("sources", {}) or {}
+            evidence = _norm(sources.get("website_snippet", ""))
+            if any(k in evidence for k in exclude_keywords):
                 continue
-            seen_fp.add(fp)
-            deduped.append(r)
+            gates_eval, trust_score, signals = _evaluate_trust(
+                matrix,
+                partner_payload_sources=sources,
+                trust_gate_ids=trust_gates,
+            )
 
-        all_results.extend(deduped[: int(matrix.get("maxResultsPerType", 8))])
+            # A failed required gate means Google's data does not show the
+            # business type. Keep it only if it was one of Google's top matches
+            # for the query (shown as "likely match, verify").
+            provider_rank = c.get("providerRank")
+            if not _apply_required_gates(gates_eval):
+                if provider_rank is None or int(provider_rank) >= _UNCONFIRMED_TOP_RANK:
+                    continue
 
+            query_str = query_for_candidate.get(c.get("partnerId"), "")
+            rel = _relevance_score(c, query_str)
+            if provider_rank is not None:
+                # Google's own text relevance is the strongest signal available.
+                rel = round(0.5 * rel + 0.5 * (1.0 - min(int(provider_rank), 19) / 19.0), 3)
+
+            dist_miles = c.get("distanceMiles")
+            dist_score = _distance_score(float(dist_miles), base_radius) if dist_miles is not None else 0.5
+            rev_score = _review_score(c.get("rating"))
+
+            score = _rank_candidates(
+                rank_weights=rank_weights,
+                trust_score=trust_score,
+                relevance=rel,
+                distance_score=dist_score,
+                review_score=rev_score,
+            )
+
+            reasons = _summarize_reasons(
+                partner_type=partner_type,
+                req=payload,
+                trust_score=trust_score,
+                rel=rel,
+                gates_eval=gates_eval,
+            )
+
+            found_for_type.append(
+                {
+                    "partnerId": c.get("partnerId"),
+                    "name": c.get("name"),
+                    "partnerType": partner_type,
+                    "contact": c.get("contact", {}),
+                    "distanceMiles": dist_miles,
+                    "rating": c.get("rating"),
+                    "userRatingsTotal": c.get("userRatingsTotal") or c.get("userRatingCount"),
+                    "trust": {
+                        "trustScore": trust_score,
+                        "claimLevel": "claimed",
+                        "gates": gates_eval,
+                        "signals": signals[:12],
+                    },
+                    "ranking": {
+                        "score": score,
+                        "reasons": reasons,
+                    },
+                    "whyRecommended": " ; ".join(reasons[:2]),
+                    "questionsToAsk": _build_questions(partner_type, payload),
+                }
+            )
+
+        found_for_type.sort(key=lambda x: float(x.get("ranking", {}).get("score", 0.0)), reverse=True)
+        all_results.extend(found_for_type[:max_per_type])
+
+    # Production guard: fictitious stub businesses never leave Cloud Run.
+    if running_on_cloud_run():
+        all_results = [r for r in all_results if not str(r.get("partnerId", "")).startswith("stub:")]
+
+    # The same business can match two partner types (e.g. consignment and
+    # donation). Show it once, under its best-scoring type.
     all_results_sorted = sorted(
         all_results,
         key=lambda x: float(x.get("ranking", {}).get("score", 0.0)),
         reverse=True,
     )
+    seen_ids: set[str] = set()
+    deduped: list[dict] = []
+    for r in all_results_sorted:
+        pid = str(r.get("partnerId") or "")
+        if pid in seen_ids:
+            continue
+        seen_ids.add(pid)
+        deduped.append(r)
+
+    local_count = sum(1 for r in deduped if r.get("trust", {}).get("claimLevel") != "curated")
+    if not local_types:
+        local_status = "not_applicable"
+    elif discovery_status:
+        local_status = discovery_status
+    elif local_count == 0:
+        local_status = "no_results"
+    else:
+        local_status = "ok"
 
     return DispositionPartnersSearchResponse(
         schemaVersion=1,
         generatedAt=_utcnow(),
         scenarioId=scenario.get("id", "unknown"),
         partnerTypes=[pt.get("type") for pt in partner_types if pt.get("type")],
-        results=all_results_sorted[: int(matrix.get("maxResultsTotal", 15))],
+        results=deduped[: int(matrix.get("maxResultsTotal", 15))],
         disclaimer=(
-            "Partner information is best-effort and may be outdated. "
+            "Local business details come from Google Maps and may change. "
+            "Verify services, fees, and terms directly with each business. "
             "For curated hub channels, verify current fees, intake rules, and authentication steps directly."
         ),
         recommendedRefreshDays=int(matrix.get("recommendedRefreshDays", 30)),
+        localDiscoveryStatus=local_status,
+        notice=_LOCAL_DISCOVERY_NOTICES.get(local_status),
     )
 
 @router.post("/disposition/outreach/compose", response_model=DispositionOutreachComposeResponse)

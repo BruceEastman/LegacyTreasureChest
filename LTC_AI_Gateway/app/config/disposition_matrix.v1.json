@@ -7,36 +7,52 @@
   "maxResultsTotal": 15,
   "recommendedRefreshDays": 30,
   "defaultScenarioId": "default_any",
-
   "scenarios": [
+    {
+      "id": "donate_path",
+      "priority": 200,
+      "when": {
+        "chosenPaths": ["donate"]
+      },
+      "partnerTypes": [
+        {
+          "type": "donation",
+          "queries": [
+            { "q": "{city} {region} donation center", "weight": 1.0 },
+            { "q": "{city} {region} thrift store donations", "weight": 0.7 }
+          ],
+          "trustGates": ["required:donation_language", "receipt_language"],
+          "rankWeights": {
+            "trustScore": 0.4,
+            "relevanceScore": 0.3,
+            "distanceScore": 0.2,
+            "reviewScore": 0.1
+          }
+        }
+      ]
+    },
     {
       "id": "furniture_bulky_med_balanced",
       "priority": 100,
       "when": {
-        "categories": ["Furniture"],
-        "valueBand": ["MED", "HIGH", "*"],
-        "bulky": true,
-        "goals": ["balanced", "min_effort"],
-        "chosenPaths": ["B", "C"]
+        "categories": ["Furniture", "Dining Room", "Bedroom", "Furniture Suite"],
+        "valueBand": ["MED", "HIGH", "*"]
       },
       "partnerTypes": [
         {
           "type": "consignment",
+          "excludeKeywords": ["clothing store", "shoe store"],
           "queries": [
             { "q": "{city} {region} furniture consignment", "weight": 1.0 },
             { "q": "{city} {region} home consignment store", "weight": 0.7 },
             { "q": "{city} {region} vintage consignment furniture", "weight": 0.5 }
           ],
-          "trustGates": [
-            "required:consignment_language",
-            "established_language",
-            "quality_curation_language"
-          ],
+          "trustGates": ["required:consignment_language", "established_language", "quality_curation_language"],
           "rankWeights": {
             "trustScore": 0.35,
-            "relevanceScore": 0.30,
+            "relevanceScore": 0.3,
             "distanceScore": 0.25,
-            "reviewScore": 0.10
+            "reviewScore": 0.1
           }
         },
         {
@@ -45,21 +61,93 @@
             { "q": "{city} {region} estate sale company", "weight": 1.0 },
             { "q": "{city} {region} estate liquidation services", "weight": 0.8 }
           ],
-          "trustGates": [
-            "required:estate_experience_language",
-            "professional_services_language",
-            "established_language"
-          ],
+          "trustGates": ["required:estate_experience_language", "professional_services_language", "established_language"],
           "rankWeights": {
-            "trustScore": 0.40,
+            "trustScore": 0.4,
             "relevanceScore": 0.25,
             "distanceScore": 0.25,
-            "reviewScore": 0.10
+            "reviewScore": 0.1
           }
         }
       ]
     },
-
+    {
+      "id": "rug_any",
+      "priority": 90,
+      "when": {
+        "categories": ["Rug", "Rugs", "Rug Collection"]
+      },
+      "partnerTypes": [
+        {
+          "type": "rug_dealer",
+          "excludeKeywords": ["cleaning", "binding", "carpet", "flooring", "repair"],
+          "queries": [
+            { "q": "{city} {region} oriental rug dealer", "weight": 1.0 },
+            { "q": "{city} {region} rug gallery", "weight": 0.7 }
+          ],
+          "trustGates": ["required:rug_language", "established_language"],
+          "rankWeights": {
+            "trustScore": 0.4,
+            "relevanceScore": 0.3,
+            "distanceScore": 0.2,
+            "reviewScore": 0.1
+          }
+        },
+        {
+          "type": "consignment",
+          "excludeKeywords": ["clothing store", "shoe store"],
+          "queries": [
+            { "q": "{city} {region} home furnishings consignment", "weight": 1.0 },
+            { "q": "{city} {region} consignment store", "weight": 0.7 }
+          ],
+          "trustGates": ["required:consignment_language", "established_language"],
+          "rankWeights": {
+            "trustScore": 0.4,
+            "relevanceScore": 0.3,
+            "distanceScore": 0.2,
+            "reviewScore": 0.1
+          }
+        }
+      ]
+    },
+    {
+      "id": "china_crystal_any",
+      "priority": 90,
+      "when": {
+        "categories": ["China & Crystal", "China/Dinnerware", "Crystal/Stemware", "Flatware/Silverware"]
+      },
+      "partnerTypes": [
+        {
+          "type": "antique_dealer",
+          "queries": [
+            { "q": "{city} {region} antique store", "weight": 1.0 },
+            { "q": "{city} {region} antique mall", "weight": 0.7 }
+          ],
+          "trustGates": ["required:antique_language", "established_language"],
+          "rankWeights": {
+            "trustScore": 0.4,
+            "relevanceScore": 0.3,
+            "distanceScore": 0.2,
+            "reviewScore": 0.1
+          }
+        },
+        {
+          "type": "consignment",
+          "excludeKeywords": ["clothing store", "shoe store"],
+          "queries": [
+            { "q": "{city} {region} home goods consignment store", "weight": 1.0 },
+            { "q": "{city} {region} consignment store", "weight": 0.7 }
+          ],
+          "trustGates": ["required:consignment_language", "established_language"],
+          "rankWeights": {
+            "trustScore": 0.4,
+            "relevanceScore": 0.3,
+            "distanceScore": 0.2,
+            "reviewScore": 0.1
+          }
+        }
+      ]
+    },
     {
       "id": "clothing_luxury_med_high_value",
       "priority": 65,
@@ -86,7 +174,6 @@
         }
       ]
     },
-
     {
       "id": "collectibles_cards_toys_balanced",
       "priority": 60,
@@ -105,14 +192,11 @@
             { "q": "{city} {region} sports card shop", "weight": 0.9 },
             { "q": "{city} {region} comic and collectibles shop", "weight": 0.6 }
           ],
-          "trustGates": [
-            "required:dealer_language",
-            "established_language"
-          ],
+          "trustGates": ["required:dealer_language", "established_language"],
           "rankWeights": {
-            "trustScore": 0.40,
+            "trustScore": 0.4,
             "relevanceScore": 0.35,
-            "distanceScore": 0.20,
+            "distanceScore": 0.2,
             "reviewScore": 0.05
           }
         },
@@ -122,30 +206,22 @@
             { "q": "{city} {region} auction house", "weight": 1.0 },
             { "q": "{city} {region} estate auction", "weight": 0.7 }
           ],
-          "trustGates": [
-            "required:auction_language",
-            "professional_services_language",
-            "established_language"
-          ],
+          "trustGates": ["required:auction_language", "professional_services_language", "established_language"],
           "rankWeights": {
-            "trustScore": 0.40,
-            "relevanceScore": 0.30,
-            "distanceScore": 0.20,
-            "reviewScore": 0.10
+            "trustScore": 0.4,
+            "relevanceScore": 0.3,
+            "distanceScore": 0.2,
+            "reviewScore": 0.1
           }
         }
       ]
     },
-
     {
       "id": "jewelry_luxury_high_value",
       "priority": 70,
       "when": {
         "categories": ["Jewelry", "Luxury Personal Items"],
-        "valueBand": ["MED", "HIGH", "*"],
-        "bulky": false,
-        "goals": ["maximize_price", "balanced", "*"],
-        "chosenPaths": ["A", "B", "*"]
+        "valueBand": ["MED", "HIGH", "*"]
       },
       "partnerTypes": [
         {
@@ -155,16 +231,12 @@
             { "q": "{city} {region} jewelry appraiser", "weight": 0.7 },
             { "q": "{city} {region} jewelry consignment", "weight": 0.6 }
           ],
-          "trustGates": [
-            "required:jewelry_language",
-            "professional_services_language",
-            "established_language"
-          ],
+          "trustGates": ["required:jewelry_language", "professional_services_language", "established_language"],
           "rankWeights": {
             "trustScore": 0.45,
-            "relevanceScore": 0.30,
+            "relevanceScore": 0.3,
             "distanceScore": 0.15,
-            "reviewScore": 0.10
+            "reviewScore": 0.1
           }
         },
         {
@@ -173,30 +245,22 @@
             { "q": "{city} {region} jewelry auction", "weight": 0.8 },
             { "q": "{city} {region} auction house", "weight": 0.6 }
           ],
-          "trustGates": [
-            "required:auction_language",
-            "professional_services_language",
-            "established_language"
-          ],
+          "trustGates": ["required:auction_language", "professional_services_language", "established_language"],
           "rankWeights": {
-            "trustScore": 0.40,
-            "relevanceScore": 0.30,
-            "distanceScore": 0.20,
-            "reviewScore": 0.10
+            "trustScore": 0.4,
+            "relevanceScore": 0.3,
+            "distanceScore": 0.2,
+            "reviewScore": 0.1
           }
         }
       ]
     },
-
     {
       "id": "electronics_small_to_mid",
       "priority": 40,
       "when": {
         "categories": ["Electronics"],
-        "valueBand": ["LOW", "MED", "*"],
-        "bulky": false,
-        "goals": ["min_effort", "balanced", "*"],
-        "chosenPaths": ["B", "C", "*"]
+        "valueBand": ["LOW", "MED", "*"]
       },
       "partnerTypes": [
         {
@@ -206,13 +270,10 @@
             { "q": "{city} {region} electronics resale", "weight": 0.8 },
             { "q": "{city} {region} computer store used", "weight": 0.5 }
           ],
-          "trustGates": [
-            "required:electronics_language",
-            "established_language"
-          ],
+          "trustGates": ["required:electronics_language", "established_language"],
           "rankWeights": {
-            "trustScore": 0.40,
-            "relevanceScore": 0.30,
+            "trustScore": 0.4,
+            "relevanceScore": 0.3,
             "distanceScore": 0.25,
             "reviewScore": 0.05
           }
@@ -223,20 +284,16 @@
             { "q": "{city} {region} electronics recycling", "weight": 1.0 },
             { "q": "{city} {region} e-waste recycling", "weight": 0.7 }
           ],
-          "trustGates": [
-            "required:recycling_language",
-            "established_language"
-          ],
+          "trustGates": ["required:recycling_language", "established_language"],
           "rankWeights": {
-            "trustScore": 0.40,
+            "trustScore": 0.4,
             "relevanceScore": 0.25,
             "distanceScore": 0.25,
-            "reviewScore": 0.10
+            "reviewScore": 0.1
           }
         }
       ]
     },
-
     {
       "id": "default_any",
       "priority": 1,
@@ -249,15 +306,12 @@
           "queries": [
             { "q": "{city} {region} consignment store", "weight": 1.0 }
           ],
-          "trustGates": [
-            "required:consignment_language",
-            "established_language"
-          ],
+          "trustGates": ["required:consignment_language", "established_language"],
           "rankWeights": {
             "trustScore": 0.35,
-            "relevanceScore": 0.30,
+            "relevanceScore": 0.3,
             "distanceScore": 0.25,
-            "reviewScore": 0.10
+            "reviewScore": 0.1
           }
         },
         {
@@ -266,102 +320,99 @@
             { "q": "{city} {region} donation center", "weight": 1.0 },
             { "q": "{city} {region} thrift donation", "weight": 0.7 }
           ],
-          "trustGates": [
-            "required:donation_language",
-            "receipt_language"
-          ],
+          "trustGates": ["required:donation_language", "receipt_language"],
           "rankWeights": {
-            "trustScore": 0.40,
+            "trustScore": 0.4,
             "relevanceScore": 0.25,
             "distanceScore": 0.25,
-            "reviewScore": 0.10
+            "reviewScore": 0.1
           }
         }
       ]
     }
   ],
-
   "trustGateDefinitions": {
     "consignment_language": {
       "type": "keyword_any",
-      "keywords": ["consignment", "consign"],
+      "keywords": ["consignment", "consign", "resale", "second hand", "secondhand"],
       "sources": ["website_snippet", "place_details", "reviews_snippet"],
       "sourceWeights": { "website_snippet": 1.0, "place_details": 0.7, "reviews_snippet": 0.5 }
     },
-
     "estate_experience_language": {
       "type": "keyword_any",
       "keywords": ["estate sale", "estate liquidation", "downsizing", "executor"],
       "sources": ["website_snippet", "place_details", "reviews_snippet"],
       "sourceWeights": { "website_snippet": 1.0, "place_details": 0.7, "reviews_snippet": 0.5 }
     },
-
     "established_language": {
       "type": "keyword_any",
       "keywords": ["since", "established", "serving", "years", "family-owned", "locally owned", "in business"],
       "sources": ["website_snippet", "place_details", "reviews_snippet"],
       "sourceWeights": { "website_snippet": 1.0, "place_details": 0.7, "reviews_snippet": 0.5 }
     },
-
     "quality_curation_language": {
       "type": "keyword_any",
       "keywords": ["curated", "quality", "high-end", "fine", "premium", "designer", "vintage", "antique"],
       "sources": ["website_snippet", "place_details", "reviews_snippet"],
       "sourceWeights": { "website_snippet": 1.0, "place_details": 0.7, "reviews_snippet": 0.5 }
     },
-
     "professional_services_language": {
       "type": "keyword_any",
       "keywords": ["consultation", "appointment", "appraisal", "full service", "staging", "pricing", "liquidation"],
       "sources": ["website_snippet", "place_details", "reviews_snippet"],
       "sourceWeights": { "website_snippet": 1.0, "place_details": 0.7, "reviews_snippet": 0.5 }
     },
-
     "donation_language": {
       "type": "keyword_any",
-      "keywords": ["donation", "donate", "thrift"],
+      "keywords": ["donation", "donate", "thrift", "charity", "goodwill", "habitat", "restore", "salvation army", "st. vincent", "deseret industries"],
       "sources": ["website_snippet", "place_details", "reviews_snippet"],
       "sourceWeights": { "website_snippet": 1.0, "place_details": 0.7, "reviews_snippet": 0.5 }
     },
-
     "receipt_language": {
       "type": "keyword_any",
       "keywords": ["receipt", "tax receipt", "donation receipt", "itemized"],
       "sources": ["website_snippet", "place_details", "reviews_snippet"],
       "sourceWeights": { "website_snippet": 1.0, "place_details": 0.7, "reviews_snippet": 0.5 }
     },
-
     "dealer_language": {
       "type": "keyword_any",
       "keywords": ["dealer", "buy", "we buy", "collectibles", "sports cards", "trading cards", "comic"],
       "sources": ["website_snippet", "place_details", "reviews_snippet"],
       "sourceWeights": { "website_snippet": 1.0, "place_details": 0.7, "reviews_snippet": 0.5 }
     },
-
     "auction_language": {
       "type": "keyword_any",
       "keywords": ["auction", "auctioneer", "estate auction", "consignment auction"],
       "sources": ["website_snippet", "place_details", "reviews_snippet"],
       "sourceWeights": { "website_snippet": 1.0, "place_details": 0.7, "reviews_snippet": 0.5 }
     },
-
     "jewelry_language": {
       "type": "keyword_any",
       "keywords": ["jewelry", "jeweller", "jeweler", "estate jewelry", "appraisal", "appraiser"],
       "sources": ["website_snippet", "place_details", "reviews_snippet"],
       "sourceWeights": { "website_snippet": 1.0, "place_details": 0.7, "reviews_snippet": 0.5 }
     },
-
     "electronics_language": {
       "type": "keyword_any",
       "keywords": ["electronics", "computers", "laptop", "phone", "used", "resale", "repair"],
       "sources": ["website_snippet", "place_details", "reviews_snippet"],
       "sourceWeights": { "website_snippet": 1.0, "place_details": 0.7, "reviews_snippet": 0.5 }
     },
-
     "recycling_language": {
       "type": "keyword_any",
       "keywords": ["recycling", "e-waste", "electronics recycling", "ewaste", "responsible disposal"],
+      "sources": ["website_snippet", "place_details", "reviews_snippet"],
+      "sourceWeights": { "website_snippet": 1.0, "place_details": 0.7, "reviews_snippet": 0.5 }
+    },
+    "rug_language": {
+      "type": "keyword_any",
+      "keywords": ["rug", "rugs", "oriental", "persian"],
+      "sources": ["website_snippet", "place_details", "reviews_snippet"],
+      "sourceWeights": { "website_snippet": 1.0, "place_details": 0.7, "reviews_snippet": 0.5 }
+    },
+    "antique_language": {
+      "type": "keyword_any",
+      "keywords": ["antique", "antiques", "estate"],
       "sources": ["website_snippet", "place_details", "reviews_snippet"],
       "sourceWeights": { "website_snippet": 1.0, "place_details": 0.7, "reviews_snippet": 0.5 }
     }
