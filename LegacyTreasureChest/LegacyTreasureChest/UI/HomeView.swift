@@ -232,10 +232,7 @@ struct HomeView: View {
     // Uses the same effective value / legacy logic you provided from EstateDashboardView.
 
     private func effectiveUnitValue(for item: LTCItem) -> Double {
-        if let estimated = item.valuation?.estimatedValue, estimated > 0 {
-            return estimated
-        }
-        return max(item.value, 0)
+        item.estimatedUnitValue ?? 0
     }
 
     private func effectiveTotalValue(for item: LTCItem) -> Double {

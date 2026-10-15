@@ -298,10 +298,7 @@ enum OutreachPacketComposer {
     // MARK: - Helpers
 
     private static func effectiveUnitValue(for item: LTCItem) -> Double {
-        if let estimated = item.valuation?.estimatedValue, estimated > 0 {
-            return estimated
-        }
-        return max(item.value, 0)
+        item.estimatedUnitValue ?? 0
     }
 
     private static func midpoint(of range: OutreachValueRange) -> Double {

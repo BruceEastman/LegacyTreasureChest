@@ -136,10 +136,7 @@ struct BatchListView: View {
     }
 
     private func effectiveUnitValue(for item: LTCItem) -> Double {
-        if let estimated = item.valuation?.estimatedValue, estimated > 0 {
-            return estimated
-        }
-        return max(item.value, 0)
+        item.estimatedUnitValue ?? 0
     }
     private func estimateSetTotalValue(_ itemSet: LTCItemSet) -> Double {
         var total: Double = 0
@@ -670,10 +667,7 @@ private struct BatchDetailView: View {
     }
 
     private func effectiveUnitValue(for item: LTCItem) -> Double {
-        if let estimated = item.valuation?.estimatedValue, estimated > 0 {
-            return estimated
-        }
-        return max(item.value, 0)
+        item.estimatedUnitValue ?? 0
     }
 
     private func effectiveTotalValue(for item: LTCItem) -> Double {
@@ -940,8 +934,7 @@ private struct LotDetailView: View {
             guard let item = entry.item else { return partial }
 
             let unit: Double = {
-                if let estimated = item.valuation?.estimatedValue, estimated > 0 { return estimated }
-                return max(item.value, 0)
+                return item.estimatedUnitValue ?? 0
             }()
 
             let qty = max(item.quantity, 1)

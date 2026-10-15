@@ -114,10 +114,7 @@ struct DispositionPartnersView: View {
     private var totalValueDisplay: String {
         switch scope {
         case .item(let item):
-            let unit = max(item.valuation?.estimatedValue ?? item.value, 0)
-            let qty = Double(max(item.quantity, 1))
-            let total = unit * qty
-            return CurrencyText.string(total)
+            return CurrencyFormat.dollarsOrNotEstimated(item.estimatedTotalValue)
         case .itemSet(let set):
             let total = estimateSetTotalValue(set)
             return CurrencyText.string(total)        }

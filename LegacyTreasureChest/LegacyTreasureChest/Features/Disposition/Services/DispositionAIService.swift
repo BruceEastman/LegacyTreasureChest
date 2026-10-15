@@ -88,11 +88,10 @@ final class DispositionAIService {
         radiusMiles: Int
     ) -> DispositionPartnersSearchRequest {
 
-        let unitValue = max(item.valuation?.estimatedValue ?? item.value, 0)
-        let qty = Double(max(item.quantity, 1))
-        let totalValue = unitValue * qty
+        let totalValue = item.estimatedTotalValue
 
         let valueBand: DispositionValueBand = {
+            guard let totalValue else { return .UNKNOWN }
             if totalValue < 100 { return .LOW }
             if totalValue < 500 { return .MED }
             return .HIGH
@@ -157,6 +156,7 @@ final class DispositionAIService {
         let totalValue = estimateSetTotalValue(itemSet)
 
         let valueBand: DispositionValueBand = {
+            if !itemSet.memberships.contains(where: { $0.item?.hasValueEstimate == true }) { return .UNKNOWN }
             if totalValue < 200 { return .LOW }
             if totalValue < 1000 { return .MED }
             return .HIGH

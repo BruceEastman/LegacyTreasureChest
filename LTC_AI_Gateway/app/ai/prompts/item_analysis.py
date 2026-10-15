@@ -22,6 +22,20 @@ _CATEGORY_RULES_BLOCK = (
     "- If no listed category reasonably fits, return exactly \"Other\".\n"
 )
 
+# Shared valuation-basis instruction reused by both the photo and text-only
+# prompts so every value in valueHints means the same thing.
+_VALUATION_BASIS_BLOCK = (
+    "VALUATION BASIS (applies to every value in valueHints):\n"
+    "- Estimate the item's CURRENT SECONDARY-MARKET RESALE value: what a typical private seller\n"
+    "  could reasonably expect to receive for this used item today through ordinary resale channels.\n"
+    "- Be conservative. When uncertain, favor the lower end of what is realistic.\n"
+    "- Express uncertainty as a range (valueLow to valueHigh) rather than overstating precision.\n"
+    "- Do NOT substitute original retail price, current new retail price, replacement cost,\n"
+    "  insurance value, or formal appraisal value, even if one is visible or provided.\n"
+    "- Base the estimate on general knowledge of comparable items. Do not claim that specific\n"
+    "  completed sales were checked or verified.\n"
+)
+
 
 def _format_hints(hints: ItemAIHints | None) -> str:
     if hints is None:
@@ -41,8 +55,8 @@ def _format_hints(hints: ItemAIHints | None) -> str:
 def build_item_analysis_prompt(hints: ItemAIHints | None) -> str:
     hints_block = _format_hints(hints)
 
-    # IMPORTANT: Require ValueHints with numeric range.
-    # If uncertain, allow wide range + low confidence + missingDetails, but DO NOT omit.
+    # IMPORTANT: Always return ValueHints. Use a numeric range when the item can be
+    # reasonably estimated; otherwise leave the numbers null ("Not estimated").
     return f"""You are an expert estate inventory and valuation assistant.
 You analyze a single household item (from photo and/or description) and respond with STRICT JSON ONLY.
 No Markdown. No backticks. No commentary.
@@ -50,18 +64,22 @@ No Markdown. No backticks. No commentary.
 Return a JSON object that matches the ItemAnalysis schema.
 
 {_CATEGORY_RULES_BLOCK}
+{_VALUATION_BASIS_BLOCK}
 CRITICAL VALUE RULES:
 - Always include valueHints with:
-  - valueLow (number)
-  - estimatedValue (number)
-  - valueHigh (number)
+  - valueLow (number or null)
+  - estimatedValue (number or null)
+  - valueHigh (number or null)
   - currencyCode (e.g., "USD")
   - confidenceScore (0.0 to 1.0)
   - aiNotes (string)
   - missingDetails (array of strings; can be empty)
-- If you are uncertain, provide a WIDE but plausible range for the category,
-  set confidenceScore low (e.g., 0.15–0.35), and list what details are missing.
-- Do NOT return null for all value fields. Do NOT omit valueHints.
+- If you can identify the item well enough for a reasonable estimate but are uncertain,
+  give a WIDE range for this specific item, set confidenceScore low (e.g., 0.15–0.35),
+  and list what details are missing.
+- If the information is not sufficient to estimate this specific item, set valueLow,
+  estimatedValue, and valueHigh to null, explain why in aiNotes, and list what is missing.
+- Never substitute a generic or typical range for the category. Do NOT omit valueHints.
 
 Here are hints from the user (may be empty):
 
@@ -124,10 +142,13 @@ Return JSON that matches this schema EXACTLY:
 }}
 
 {_CATEGORY_RULES_BLOCK}
+{_VALUATION_BASIS_BLOCK}
 Rules:
 - The top-level fields "title", "description", and "category" are REQUIRED and must be present.
-- If you are unsure about value from text alone, set "valueHints" to null.
-- If you provide valueHints, prefer a low/estimated/high range and include "currencyCode" (use "USD" unless user text implies otherwise).
+- Always include "valueHints" with "currencyCode" (use "USD" unless user text implies otherwise).
+- If the text supports a reasonable estimate for this specific item, give a low/estimated/high range.
+- If it does not, set valueLow, estimatedValue, and valueHigh to null, explain why in "aiNotes",
+  and list what is missing. Never substitute a generic or typical range for the category.
 - Use "missingDetails" to list what would improve confidence (especially: add a clear photo, labels, stamps, measurements, condition).
 
 User text:
@@ -150,6 +171,6 @@ Your previous JSON:
 {raw_json}
 
 Return STRICT JSON ONLY that fixes the schema errors.
-Follow the CRITICAL VALUE RULES (valueHints must contain numeric range).
+Follow the CRITICAL VALUE RULES (always include valueHints; use null values when not estimable).
 No markdown. No backticks.
 """

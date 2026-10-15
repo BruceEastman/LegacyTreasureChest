@@ -66,6 +66,10 @@ enum EstateReportGenerator {
 
             drawKeyValue("Total estate (conservative resale)", currencyString(aggregates.totalEstateValue))
             drawKeyValue("Total cataloged items", "\(aggregates.totalItems)")
+            let notEstimatedCount = aggregates.items.filter { !$0.hasValueEstimate }.count
+            if notEstimatedCount > 0 {
+                drawKeyValue("Items not estimated (excluded from totals)", "\(notEstimatedCount)")
+            }
             cursorY += 6
 
             drawBullet("Legacy: \(aggregates.legacyItemCount) item\(aggregates.legacyItemCount == 1 ? "" : "s") · \(currencyString(aggregates.legacyValue)) (\(percentString(aggregates.legacyValueShare)) of value)")
@@ -73,7 +77,7 @@ enum EstateReportGenerator {
 
             cursorY += 10
             cursorY = drawCaptionText(
-                "Totals reflect quantity (unit value × quantity). Values use the best available estimate (valuation estimate if present; otherwise the item’s stored value).",
+                "Totals reflect quantity (unit value × quantity). Values use each item’s Estimated Unit Value; items that have not been estimated are excluded.",
                 in: pageRect,
                 y: cursorY
             )
@@ -118,7 +122,7 @@ enum EstateReportGenerator {
             drawRollup(
                 label: "Sets",
                 rollup: aggregates.setDispositionRollup,
-                note: "Set value is computed conservatively from member items (valuation estimate if present; otherwise stored item value) × membership quantity."
+                note: "Set value is computed from member items’ Estimated Unit Values × membership quantity; items not estimated are excluded."
             )
 
             drawRollup(
@@ -241,7 +245,7 @@ enum EstateReportGenerator {
             cursorY += 16
 
             cursorY = drawCaptionText(
-                "This report lists all cataloged items with category, estate path (Legacy or Liquidate), first beneficiary (if any), quantity, unit value, and total value (unit × quantity).",
+                "This report lists all cataloged items with category, estate path (Legacy or Liquidate), first beneficiary (if any), quantity, unit value, and total value (unit × quantity). A dash (—) means the item's value has not been estimated.",
                 in: pageRect,
                 y: cursorY
             )
@@ -304,8 +308,8 @@ enum EstateReportGenerator {
                     path: path,
                     beneficiary: beneficiaryName,
                     quantity: "\(qty)",
-                    unitValue: currencyString(unit),
-                    totalValue: currencyString(total),
+                    unitValue: item.hasValueEstimate ? currencyString(unit) : "—",
+                    totalValue: item.hasValueEstimate ? currencyString(total) : "—",
                     in: pageRect,
                     y: cursorY,
                     isHeader: false
@@ -432,8 +436,9 @@ enum EstateReportGenerator {
                 Self.effectiveTotalValueStatic(for: $0) > Self.effectiveTotalValueStatic(for: $1)
             }
 
-            self.topLegacyItems = Array(sortedByTotalValue.filter { !$0.itemBeneficiaries.isEmpty }.prefix(5))
-            self.topLiquidateItems = Array(sortedByTotalValue.filter { $0.itemBeneficiaries.isEmpty }.prefix(5))
+            let estimatedByTotalValue = sortedByTotalValue.filter { $0.hasValueEstimate }
+            self.topLegacyItems = Array(estimatedByTotalValue.filter { !$0.itemBeneficiaries.isEmpty }.prefix(5))
+            self.topLiquidateItems = Array(estimatedByTotalValue.filter { $0.itemBeneficiaries.isEmpty }.prefix(5))
 
             // Disposition Snapshot v2 rollups
             self.itemDispositionRollup = Self.rollupForItems(items)
@@ -454,10 +459,7 @@ enum EstateReportGenerator {
         }
 
         private static func effectiveUnitValueStatic(for item: LTCItem) -> Double {
-            if let estimated = item.valuation?.estimatedValue, estimated > 0 {
-                return estimated
-            }
-            return max(item.value, 0)
+            item.estimatedUnitValue ?? 0
         }
 
         private static func effectiveTotalValueStatic(for item: LTCItem) -> Double {

@@ -85,7 +85,7 @@ struct SetItemsPickerView: View {
                                     .font(Theme.sectionHeaderFont)
                                     .foregroundStyle(Theme.text)
 
-                                Text("\(item.category) • Qty \(item.quantity) • $\(item.value, specifier: "%.0f")")
+                                Text("\(item.category) • Qty \(item.quantity) • \(CurrencyFormat.dollarsOrNotEstimated(item.estimatedUnitValue))")
                                     .font(Theme.secondaryFont)
                                     .foregroundStyle(Theme.textSecondary)
                             }

@@ -1311,3 +1311,26 @@ extension LTCItem {
         return "Uncategorized"
     }
 }
+
+// MARK: - Estimated Value Helpers
+
+extension LTCItem {
+    /// The item's estimated unit resale value, or nil when it has not been estimated.
+    ///
+    /// `value` (shown and edited as Estimated Unit Value) is the source of truth;
+    /// AI analysis writes its estimate there and the user can override it. Because
+    /// `value` is non-optional, 0 also means "not set". The one supported $0 estimate
+    /// is an AI valuation that explicitly returned 0.
+    var estimatedUnitValue: Double? {
+        if value > 0 { return value }
+        if let estimated = valuation?.estimatedValue, estimated == 0 { return 0 }
+        return nil
+    }
+
+    /// Estimated total value (unit × quantity), or nil when not estimated.
+    var estimatedTotalValue: Double? {
+        estimatedUnitValue.map { $0 * Double(max(quantity, 1)) }
+    }
+
+    var hasValueEstimate: Bool { estimatedUnitValue != nil }
+}

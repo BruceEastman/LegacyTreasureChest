@@ -190,7 +190,7 @@ enum BeneficiaryPacketPDFRenderer {
 
         // Title line (more personal tone, but still structured)
         cursorY = drawBodyText(
-            "• \(item.name) — \(currencyString(item.estimatedTotalValue))",
+            "• \(item.name) — \(item.hasValueEstimate ? currencyString(item.estimatedTotalValue) : CurrencyFormat.notEstimated)",
             in: rect,
             x: textX,
             maxWidth: textMaxWidth,

@@ -551,10 +551,7 @@ struct EstateDashboardView: View {
     // MARK: - Helpers
 
     private func effectiveUnitValue(for item: LTCItem) -> Double {
-        if let estimated = item.valuation?.estimatedValue, estimated > 0 {
-            return estimated
-        }
-        return max(item.value, 0)
+        item.estimatedUnitValue ?? 0
     }
 
     private func effectiveTotalValue(for item: LTCItem) -> Double {
@@ -596,7 +593,7 @@ struct EstateDashboardView: View {
     private var liquidateValueShare: Double { liquidateValue / totalEstateValueNonZero }
 
     private func hasValuation(_ item: LTCItem) -> Bool {
-        effectiveUnitValue(for: item) > 0
+        item.hasValueEstimate
     }
 
     private var valuedItemsCount: Int {

@@ -45,6 +45,8 @@ enum DispositionValueBand: String, Codable {
     case LOW
     case MED
     case HIGH
+    /// No value estimate exists; must not be treated as a known low value.
+    case UNKNOWN
 }
 
 enum DispositionGoal: String, Codable {

@@ -252,11 +252,20 @@ enum LiquidationRequestBuilder {
                         title: $0.name,
                         category: $0.category,
                         quantity: $0.quantity,
-                        unitValue: $0.value
+                        unitValue: $0.estimatedUnitValue
                     )
                 }
             )
         }
+
+        // Send the AI range only while it still describes the current Estimated Unit Value.
+        // A user edit makes the stored range obsolete. Compare in whole dollars, the
+        // precision the value field edits in.
+        let unitValue = item.estimatedUnitValue
+        let aiRangeIsCurrent: Bool = {
+            guard let likely = valuation?.estimatedValue, let unitValue else { return false }
+            return likely.rounded() == unitValue.rounded()
+        }()
 
         return LiquidationBriefRequest(
             schemaVersion: 1,
@@ -265,11 +274,11 @@ enum LiquidationRequestBuilder {
             description: item.itemDescription,
             category: item.category,
             quantity: item.quantity,
-            unitValue: item.value,
+            unitValue: unitValue,
             currencyCode: valuation?.currencyCode ?? "USD",
-            valuationLow: valuation?.valueLow,
-            valuationLikely: valuation?.estimatedValue,
-            valuationHigh: valuation?.valueHigh,
+            valuationLow: aiRangeIsCurrent ? valuation?.valueLow : nil,
+            valuationLikely: aiRangeIsCurrent ? valuation?.estimatedValue : nil,
+            valuationHigh: aiRangeIsCurrent ? valuation?.valueHigh : nil,
             photoJpegBase64: photoBase64,
             setContext: setContext,
             inputs: LiquidationInputsDTO(goal: goal, constraints: constraints, locationHint: locationHint)
@@ -300,7 +309,7 @@ enum LiquidationRequestBuilder {
                 title: item.name,
                 category: item.category,
                 quantity: membership.quantityInSet ?? item.quantity,
-                unitValue: item.value
+                unitValue: item.estimatedUnitValue
             )
         }
 
@@ -429,7 +438,7 @@ enum LiquidationRequestBuilder {
                         title: $0.name,
                         category: $0.category,
                         quantity: $0.quantity,
-                        unitValue: $0.value
+                        unitValue: $0.estimatedUnitValue
                     )
                 }
             ),
@@ -450,10 +459,13 @@ struct LocalLiquidationBriefGenerator {
         let category = (req.category ?? "Uncategorized").trimmingCharacters(in: .whitespacesAndNewlines)
         let qty = max(1, req.quantity ?? 1)
 
-        let likelyTotal: Double = {
+        // nil means no value has been estimated; it must not be treated as $0.
+        let knownLikelyTotal: Double? = {
             // If this is a SET request, compute totals from member summaries when available.
             if req.scope == .set, let ctx = req.setContext, !ctx.memberSummaries.isEmpty {
-                return ctx.memberSummaries.reduce(0) { partial, m in
+                let valued = ctx.memberSummaries.filter { $0.unitValue != nil }
+                guard !valued.isEmpty else { return nil }
+                return valued.reduce(0) { partial, m in
                     let q = Double(max(1, m.quantity ?? 1))
                     let v = max(0, m.unitValue ?? 0)
                     return partial + (q * v)
@@ -461,9 +473,13 @@ struct LocalLiquidationBriefGenerator {
             }
 
             // Otherwise, compute from unit value / valuation.
-            let likelyUnit = req.valuationLikely ?? req.unitValue ?? 0
+            guard let likelyUnit = req.valuationLikely ?? req.unitValue else { return nil }
             return max(0, likelyUnit) * Double(qty)
         }()
+
+        guard let likelyTotal = knownLikelyTotal else {
+            return notEstimatedBrief(from: req, title: title, category: category, backendError: backendError)
+        }
 
         // Conservative bounds if none provided
         let low = req.valuationLow ?? (likelyTotal * 0.75)
@@ -542,6 +558,41 @@ struct LocalLiquidationBriefGenerator {
         )
     }
     
+    /// Fallback brief when no value has been estimated. Recommends gathering more
+    /// information (which blocks plan creation) instead of reasoning from an assumed $0.
+    private func notEstimatedBrief(
+        from req: LiquidationBriefRequest,
+        title: String,
+        category: String,
+        backendError: Error?
+    ) -> LiquidationBriefDTO {
+        LiquidationBriefDTO(
+            schemaVersion: req.schemaVersion,
+            scope: req.scope,
+            generatedAt: .now,
+            aiProvider: "local",
+            aiModel: "heuristic-min",
+            recommendedPath: .needsInfo,
+            reasoning: "Local fallback brief for “\(title)” (\(category)). The resale value has not been estimated, so a selling path is not recommended yet.",
+            pathOptions: [],
+            actionSteps: [
+                "Add identifying details or photos, then run Improve with AI.",
+                "Or enter an Estimated Unit Value if you know it.",
+                "Generate the brief again."
+            ],
+            missingDetails: ["Estimated resale value (run Improve with AI or enter an Estimated Unit Value)"],
+            assumptions: {
+                var a = ["Local fallback used", "Value not estimated"]
+                if let backendError {
+                    a.append("Backend error: \(backendError.localizedDescription)")
+                }
+                return a
+            }(),
+            confidence: nil,
+            inputs: req.inputs
+        )
+    }
+
     private func looksLikeLuxuryHubScenario(_ req: LiquidationBriefRequest) -> Bool {
         var textParts: [String] = []
 

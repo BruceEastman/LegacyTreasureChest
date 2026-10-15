@@ -222,17 +222,19 @@ struct BatchAddItemsFromPhotosView: View {
                             .font(Theme.secondaryFont)
                             .foregroundStyle(Theme.textSecondary)
 
-                        if let value = analysis.valueHints {
-                            // Show either range or single estimate.
-                            if let low = value.valueLow, let high = value.valueHigh {
-                                Text("Estimated: \(CurrencyFormat.dollarsRange(low: low, high: high))")
-                                    .font(Theme.secondaryFont)
-                                    .foregroundStyle(Theme.textSecondary)
-                            } else if let est = value.estimatedValue {
-                                Text("Estimated: \(CurrencyFormat.dollars(est))")
-                                    .font(Theme.secondaryFont)
-                                    .foregroundStyle(Theme.textSecondary)
-                            }
+                        // Show either range or single estimate, or say it is not estimated.
+                        if let value = analysis.valueHints, let low = value.valueLow, let high = value.valueHigh {
+                            Text("Estimated: \(CurrencyFormat.dollarsRange(low: low, high: high))")
+                                .font(Theme.secondaryFont)
+                                .foregroundStyle(Theme.textSecondary)
+                        } else if let est = analysis.valueHints?.estimatedValue {
+                            Text("Estimated: \(CurrencyFormat.dollars(est))")
+                                .font(Theme.secondaryFont)
+                                .foregroundStyle(Theme.textSecondary)
+                        } else {
+                            Text("Estimated: \(CurrencyFormat.notEstimated)")
+                                .font(Theme.secondaryFont)
+                                .foregroundStyle(Theme.textSecondary)
                         }
 
                         Text("Quantity: 1")
@@ -476,8 +478,10 @@ struct BatchAddItemsFromPhotosView: View {
                 return nil
             }()
 
-            if let mid, mid > 0 {
-                item.value = mid
+            // A missing estimate leaves the current value untouched; an explicit
+            // AI estimate of $0 is stored (see LTCItem.estimatedUnitValue).
+            if let mid {
+                item.value = max(mid, 0)
             }
 
             if let high = hints.valueHigh {

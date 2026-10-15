@@ -659,8 +659,10 @@ struct ItemAIAnalysisSheet: View {
                 return nil
             }()
 
-            if let mid, mid > 0 {
-                item.value = mid
+            // A missing estimate leaves the current value untouched; an explicit
+            // AI estimate of $0 is stored (see LTCItem.estimatedUnitValue).
+            if let mid {
+                item.value = max(mid, 0)
             }
 
             if let high = valueHints.valueHigh {

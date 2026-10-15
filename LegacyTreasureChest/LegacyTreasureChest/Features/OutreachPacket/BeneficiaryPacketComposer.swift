@@ -79,6 +79,7 @@ enum BeneficiaryPacketComposer {
         let description: String
         let quantity: Int
         let estimatedTotalValue: Double
+        let hasValueEstimate: Bool
 
         let primaryImageRelativePath: String?
         let ownerNoteSummary: String?
@@ -277,6 +278,7 @@ enum BeneficiaryPacketComposer {
             description: description,
             quantity: qty,
             estimatedTotalValue: totalEstimated,
+            hasValueEstimate: item.hasValueEstimate,
             primaryImageRelativePath: primaryImagePath,
             ownerNoteSummary: summary,
             hasAudio: hasAudio,
@@ -443,10 +445,7 @@ enum BeneficiaryPacketComposer {
     // MARK: - Helpers
 
     private static func effectiveUnitValue(for item: LTCItem) -> Double {
-        if let estimated = item.valuation?.estimatedValue, estimated > 0 {
-            return estimated
-        }
-        return max(item.value, 0)
+        item.estimatedUnitValue ?? 0
     }
 
     private static func sanitizeFilename(_ input: String) -> String {

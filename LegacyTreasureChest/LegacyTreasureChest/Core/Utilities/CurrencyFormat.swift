@@ -26,6 +26,15 @@ enum CurrencyFormat {
     }
 
     /// Formats a currency range as whole dollars: "$4,200 – $5,800"
+    /// Label shown wherever an item has no value estimate.
+    static let notEstimated = "Not estimated"
+
+    /// Whole dollars, or "Not estimated" when there is no estimate.
+    static func dollarsOrNotEstimated(_ value: Double?) -> String {
+        guard let value else { return notEstimated }
+        return dollars(value)
+    }
+
     static func dollarsRange(low: Double?, high: Double?) -> String {
         switch (low, high) {
         case let (l?, h?):

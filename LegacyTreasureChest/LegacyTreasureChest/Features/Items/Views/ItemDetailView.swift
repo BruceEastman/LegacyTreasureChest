@@ -145,20 +145,19 @@ struct ItemDetailView: View {
             Section {
                 TextField(
                     "Estimated Unit Value",
-                    value: Binding<Int>(
-                        get: { Int(item.value.rounded()) },
-                        set: { item.value = Double($0) }
+                    value: Binding<Int?>(
+                        get: { item.estimatedUnitValue.map { Int($0.rounded()) } },
+                        set: { item.value = Double(max($0 ?? 0, 0)) }
                     ),
-                    format: .currency(code: currencyCode).precision(.fractionLength(0))
+                    format: .currency(code: currencyCode).precision(.fractionLength(0)),
+                    prompt: Text(CurrencyFormat.notEstimated)
                 )
                 .keyboardType(.numberPad)
                 .font(Theme.bodyFont)
 
-                if max(item.quantity, 1) > 1 {
-                    let qty = Double(max(item.quantity, 1))
-                    let unit = max(item.valuation?.estimatedValue ?? item.value, 0)
-                    let total = unit * qty
-
+                if max(item.quantity, 1) > 1,
+                   let unit = item.estimatedUnitValue,
+                   let total = item.estimatedTotalValue {
                     Text("Total: \(CurrencyFormat.dollars(total)) (\(CurrencyFormat.dollars(unit)) each)")
                         .font(Theme.secondaryFont)
                         .foregroundStyle(Theme.textSecondary)

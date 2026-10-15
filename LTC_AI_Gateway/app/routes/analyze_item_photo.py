@@ -4,7 +4,7 @@ import base64
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
@@ -72,24 +72,8 @@ router = APIRouter(prefix="/ai", tags=["ai"])
 
 
 # ---------------------------------------------------------------------------
-# Category-aware fallback valuation policy
+# Missing-valuation guidance
 # ---------------------------------------------------------------------------
-
-_CATEGORY_FALLBACKS: dict[str, Tuple[float, float, float]] = {
-    "Jewelry": (1000.0, 3000.0, 8000.0),
-    "Rug": (200.0, 900.0, 4000.0),
-    "Art": (100.0, 500.0, 2500.0),
-    "Furniture": (50.0, 200.0, 800.0),
-    "China & Crystal": (25.0, 125.0, 600.0),
-    "Luxury Personal Items": (150.0, 600.0, 2500.0),
-    "Collectibles": (25.0, 150.0, 900.0),
-    "Decor": (25.0, 125.0, 600.0),
-    "Electronics": (30.0, 150.0, 600.0),
-    "Appliance": (50.0, 200.0, 900.0),
-    "Tools": (20.0, 80.0, 300.0),
-    "Clothing": (20.0, 75.0, 250.0),
-    "Luggage": (25.0, 100.0, 350.0),
-}
 
 _CATEGORY_MISSING_DETAILS: dict[str, List[str]] = {
     "Jewelry": [
@@ -119,12 +103,6 @@ _CATEGORY_MISSING_DETAILS: dict[str, List[str]] = {
 }
 
 
-def _fallback_for_category(category: str | None) -> Tuple[float, float, float]:
-    if not category:
-        return (25.0, 125.0, 600.0)
-    return _CATEGORY_FALLBACKS.get(category, (25.0, 125.0, 600.0))
-
-
 def _missing_details_for_category(category: str | None) -> List[str]:
     if not category:
         return ["Brand/maker", "Materials", "Dimensions/size", "Condition", "Any receipts/certificates"]
@@ -149,29 +127,35 @@ def _normalize_category(category: str | None) -> str:
     return _CANONICAL_CATEGORY_LOOKUP.get(category.strip().lower(), "Other")
 
 
+# Upper bound on confidence reported when no value could be estimated.
+_NOT_ESTIMATED_MAX_CONFIDENCE = 0.20
+
+_NOT_ESTIMATED_NOTE = (
+    "Not estimated. The available information was not sufficient for a reasonable resale estimate "
+    "of this specific item. Add the missing details and run the analysis again."
+)
+
+
 def _apply_value_policy(analysis: ItemAnalysis) -> ItemAnalysis:
     """
     Enforce:
-    - valueHints exists
-    - includes numeric range (low/estimated/high)
-    - if Gemini left them empty, apply category fallback with low confidence and explicit notes
+    - valueHints exists (so the app always receives confidence, notes, and missing details)
+    - partial numbers are completed into a range from the numbers provided
+    - if the AI provided no numbers, the value stays unset ("Not estimated"): no generic
+      category range is substituted
     """
     now_iso = _now_iso_z()
 
     if analysis.valueHints is None:
-        low, mid, high = _fallback_for_category(getattr(analysis, "category", None))
         analysis.valueHints = ValueHints(
-            valueLow=low,
-            estimatedValue=mid,
-            valueHigh=high,
+            valueLow=None,
+            estimatedValue=None,
+            valueHigh=None,
             currencyCode="USD",
-            confidenceScore=0.20,
+            confidenceScore=_NOT_ESTIMATED_MAX_CONFIDENCE,
             valuationDate=now_iso,
             aiProvider=GEMINI_MODEL,
-            aiNotes=(
-                "Low-confidence placeholder range. The provided information was insufficient to estimate value precisely. "
-                "Add the missing details to tighten the range."
-            ),
+            aiNotes=_NOT_ESTIMATED_NOTE,
             missingDetails=_missing_details_for_category(getattr(analysis, "category", None)),
         )
         return analysis
@@ -188,15 +172,12 @@ def _apply_value_policy(analysis: ItemAnalysis) -> ItemAnalysis:
 
     all_missing = (vh.valueLow is None and vh.estimatedValue is None and vh.valueHigh is None)
     if all_missing:
-        low, mid, high = _fallback_for_category(getattr(analysis, "category", None))
-        vh.valueLow = low
-        vh.estimatedValue = mid
-        vh.valueHigh = high
-        vh.confidenceScore = min(vh.confidenceScore or 1.0, 0.25)
-        vh.aiNotes = (
-            "Low-confidence placeholder range because the AI could not infer a valuation from the provided inputs alone. "
-            "This is not a verified appraisal. Add the missing details to improve accuracy."
+        # Leave the numbers unset. Keep any explanation the AI gave.
+        vh.confidenceScore = min(
+            vh.confidenceScore if vh.confidenceScore is not None else _NOT_ESTIMATED_MAX_CONFIDENCE,
+            _NOT_ESTIMATED_MAX_CONFIDENCE,
         )
+        vh.aiNotes = vh.aiNotes or _NOT_ESTIMATED_NOTE
         vh.missingDetails = vh.missingDetails or _missing_details_for_category(getattr(analysis, "category", None))
         return analysis
 
@@ -808,7 +789,13 @@ def _scenario_matches(when: dict, req: DispositionPartnersSearchRequest) -> bool
 
     # valueBand
     if "valueBand" in when:
-        if not match_value(when.get("valueBand"), sc.valueBand):
+        allowed = when.get("valueBand")
+        if sc.valueBand in (None, "UNKNOWN"):
+            # An unknown value must not be treated as a known low value: it matches
+            # any rule that admits "*".
+            if not (allowed in (None, "*") or (isinstance(allowed, list) and "*" in allowed)):
+                return False
+        elif not match_value(allowed, sc.valueBand):
             return False
 
     # bulky / fragile
