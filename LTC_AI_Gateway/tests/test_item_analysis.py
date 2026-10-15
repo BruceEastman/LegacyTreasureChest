@@ -328,6 +328,81 @@ class DispositionValueBandTests(unittest.TestCase):
         self.assertFalse(self._matches("jewelry_luxury_high_value", "Furniture", "UNKNOWN"))
 
 
+class LiquidationBriefValuationPromptTests(unittest.TestCase):
+    """Valuation context in the server Liquidation Brief prompt."""
+
+    def _item(self, **kw):
+        from app.models_liquidation import LiquidationBriefRequest
+        base = {"scope": "item", "title": "Demo", "category": "Decor", "quantity": 1, "currencyCode": "USD"}
+        base.update(kw)
+        return route._build_liquidation_brief_prompt(LiquidationBriefRequest.model_validate(base))
+
+    def _set(self, members):
+        from app.models_liquidation import LiquidationBriefRequest
+        req = LiquidationBriefRequest.model_validate({
+            "scope": "set", "title": "Demo Set", "category": "China & Crystal", "currencyCode": "USD",
+            "setContext": {"setType": "China/Dinnerware", "memberSummaries": members},
+        })
+        return route._build_liquidation_brief_prompt(req)
+
+    def test_rules_treat_value_as_decision_support(self):
+        p = self._item(unitValue=100)
+        self.assertIn("not a guaranteed selling price", p)
+        self.assertIn("do not invent one", p)
+
+    def test_1_item_with_current_ai_range(self):
+        p = self._item(unitValue=450, valuationLow=300, valuationLikely=450, valuationHigh=600, quantity=2)
+        self.assertIn("Estimated unit resale value: 450.00 USD", p)
+        self.assertIn("Estimated total for quantity 2: 900.00 USD", p)
+        self.assertIn("AI unit resale range: 300.00 USD to 600.00 USD", p)
+
+    def test_2_user_edited_value_omits_obsolete_range(self):
+        # The app omits the range after an edit; the server also guards against a stale one.
+        p = self._item(unitValue=400)
+        self.assertIn("Estimated unit resale value: 400.00 USD", p)
+        self.assertNotIn("AI unit resale range", p)
+        p = self._item(unitValue=400, valuationLow=100, valuationLikely=150, valuationHigh=200)
+        self.assertIn("Estimated unit resale value: 400.00 USD", p)
+        self.assertNotIn("AI unit resale range", p)
+
+    def test_3_item_without_estimate(self):
+        p = self._item()
+        self.assertIn("Estimated unit resale value: not estimated", p)
+        self.assertIn("Do NOT invent one", p)
+        self.assertNotIn("0.00 USD", p)
+
+    def test_4_genuine_zero_estimate(self):
+        p = self._item(unitValue=0, valuationLow=0, valuationLikely=0, valuationHigh=0)
+        self.assertIn("Estimated unit resale value: 0.00 USD", p)
+        self.assertNotIn("Estimated unit resale value: not estimated", p)
+
+    def test_5_fully_valued_set(self):
+        p = self._set([{"title": "Plate", "quantity": 8, "unitValue": 10},
+                       {"title": "Cup", "quantity": 8, "unitValue": 5}])
+        self.assertIn("Estimated set total (all members valued): 120.00 USD", p)
+        self.assertNotIn("Known subtotal", p)
+
+    def test_6_partially_valued_set(self):
+        p = self._set([{"title": "Plate", "quantity": 8, "unitValue": 10},
+                       {"title": "Cup", "quantity": 8, "unitValue": None}])
+        self.assertIn("Known subtotal for 1 of 2 members: 80.00 USD", p)
+        self.assertIn("INCOMPLETE", p)
+        self.assertIn("unit≈not estimated", p)
+        self.assertNotIn("Estimated set total", p)
+
+    def test_7_unvalued_set(self):
+        p = self._set([{"title": "Plate", "quantity": 8}, {"title": "Cup", "quantity": 8}])
+        self.assertIn("Set value: not estimated", p)
+        self.assertNotIn("0.00 USD", p)
+
+    def test_8_set_with_genuine_zero_member(self):
+        p = self._set([{"title": "Plate", "quantity": 8, "unitValue": 10},
+                       {"title": "Chipped saucer", "quantity": 2, "unitValue": 0}])
+        self.assertIn("unit≈0.00 USD", p)
+        self.assertNotIn("unknown", p)
+        self.assertIn("Estimated set total (all members valued): 80.00 USD", p)
+
+
 class RateLimiterTests(unittest.TestCase):
     def test_limit_blocks_after_n_and_rejections_are_not_counted(self):
         limiter = InMemoryRateLimiter()

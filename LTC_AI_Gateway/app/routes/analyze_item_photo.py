@@ -15,6 +15,7 @@ from app.models import AnalyzeItemPhotoRequest, CANONICAL_ITEM_CATEGORIES, ItemA
 from app.models_liquidation import (
     LiquidationBriefDTO,
     LiquidationBriefRequest,
+    LiquidationMemberSummary,
     LiquidationPlanChecklistDTO,
     LiquidationPlanRequest,
 )
@@ -472,6 +473,58 @@ def _normalize_liquidation_plan_obj(*, raw_json: str, request: LiquidationPlanRe
 # ---------------------------------------------------------------------------
 # Liquidation prompt helpers
 # ---------------------------------------------------------------------------
+def _format_money_or_not_estimated(value: Optional[float], currency: str) -> str:
+    """A missing value is 'not estimated'; a genuine 0 is shown as 0."""
+    if value is None:
+        return "not estimated"
+    return f"{value:,.2f} {currency}"
+
+
+def _brief_item_valuation_block(payload: LiquidationBriefRequest, currency: str) -> str:
+    """Valuation context for a single-item brief, built only from supplied request data."""
+    qty = payload.quantity or 1
+    unit = payload.unitValue if payload.unitValue is not None else payload.valuationLikely
+    if unit is None:
+        return (
+            "VALUATION:\n"
+            "- Estimated unit resale value: not estimated\n"
+            "- No value estimate is available. Do NOT invent one or assume the item has little value.\n"
+        )
+
+    lines = [
+        "VALUATION (decision support, not a guaranteed selling price):",
+        f"- Estimated unit resale value: {_format_money_or_not_estimated(unit, currency)}",
+        f"- Estimated total for quantity {qty}: {_format_money_or_not_estimated(unit * qty, currency)}",
+    ]
+    # Include the AI range only while it still describes the current value
+    # (whole-dollar comparison, matching the app's value field precision).
+    likely = payload.valuationLikely
+    if (likely is not None and round(likely) == round(unit)
+            and payload.valuationLow is not None and payload.valuationHigh is not None):
+        lines.append(
+            f"- AI unit resale range: {_format_money_or_not_estimated(payload.valuationLow, currency)}"
+            f" to {_format_money_or_not_estimated(payload.valuationHigh, currency)}"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def _brief_set_valuation_line(members: List[LiquidationMemberSummary], currency: str) -> str:
+    """Known subtotal vs. incomplete total for a set; missing member values are never treated as 0."""
+    valued = [m for m in members if m.unitValue is not None]
+    missing = len(members) - len(valued)
+    if not valued:
+        return "- Set value: not estimated (no member has a value estimate). Do NOT invent one or assume low value.\n"
+    subtotal = sum((m.unitValue or 0.0) * (m.quantity or 1) for m in valued)
+    if missing == 0:
+        return f"- Estimated set total (all members valued): {_format_money_or_not_estimated(subtotal, currency)}\n"
+    return (
+        f"- Known subtotal for {len(valued)} of {len(members)} members: "
+        f"{_format_money_or_not_estimated(subtotal, currency)}. "
+        f"{missing} member(s) not estimated, so the full set value is INCOMPLETE and may be higher. "
+        "Do not treat this subtotal as the set's total value or assume unvalued members are worthless.\n"
+    )
+
+
 def _build_liquidation_brief_prompt(payload: LiquidationBriefRequest) -> str:
     title = payload.title or "Untitled Set"
     description = payload.description or ""
@@ -489,7 +542,7 @@ def _build_liquidation_brief_prompt(payload: LiquidationBriefRequest) -> str:
         members = ""
         if ctx.memberSummaries:
             members = "\n".join(
-                f"- {m.title} | {m.category} | qty={m.quantity or 1} | unit≈{m.unitValue or 'unknown'}"
+                f"- {m.title} | {m.category} | qty={m.quantity or 1} | unit≈{_format_money_or_not_estimated(m.unitValue, currency)}"
                 for m in ctx.memberSummaries[:30]
             )
 
@@ -504,6 +557,9 @@ SET STORY / METADATA:
 
 MEMBER SUMMARY:
 {members or "(none)"}
+
+SET VALUATION:
+{_brief_set_valuation_line(ctx.memberSummaries, currency) if ctx.memberSummaries else "- Set value: not estimated"}
 """
 
     return f"""You are an expert estate liquidation assistant.
@@ -524,7 +580,7 @@ Context:
 - Currency: {currency}
 
 {set_block}
-
+{"" if (payload.scope == "set" and payload.setContext) else _brief_item_valuation_block(payload, currency)}
 Rules:
 - Always include: schemaVersion, scope, generatedAt, recommendedPath, reasoning, pathOptions, actionSteps.
 - recommendedPath MUST be one of:
@@ -533,6 +589,12 @@ Rules:
 - pathOptions[].effort MUST be one of: low | medium | high | veryHigh
 - pathOptions[].id MUST be a UUID string
 - Use pathOptions[].netProceeds as a COARSE lot-level range.
+- Treat any supplied value as decision support, not a guaranteed selling price. Weigh likely
+  net proceeds against effort, costs, and uncertainty for each path.
+- If the value is not estimated, do not invent one: set netProceeds to null and recommend
+  needsInfo unless the item clearly has no resale market.
+- If a set total is INCOMPLETE, base proceeds only on the known subtotal, say it is partial,
+  and do not recommend donate solely because the known subtotal is low.
 """
 
 def _build_liquidation_plan_prompt(req: LiquidationPlanRequest) -> str:

@@ -481,6 +481,11 @@ struct LocalLiquidationBriefGenerator {
             return notEstimatedBrief(from: req, title: title, category: category, backendError: backendError)
         }
 
+        // Set members without an estimate make the total incomplete (a known subtotal only).
+        let setMembers = (req.scope == .set) ? (req.setContext?.memberSummaries ?? []) : []
+        let unvaluedMemberCount = setMembers.filter { $0.unitValue == nil }.count
+        let isIncompleteTotal = unvaluedMemberCount > 0
+
         // Conservative bounds if none provided
         let low = req.valuationLow ?? (likelyTotal * 0.75)
         let high = req.valuationHigh ?? (likelyTotal * 1.25)
@@ -490,13 +495,20 @@ struct LocalLiquidationBriefGenerator {
         let isBulky = lowerCat.contains("furniture") || lowerCat.contains("rug") || lowerCat.contains("appliance")
 
         let recommended: LiquidationPathDTO = {
-            if likelyTotal < 50 { return .donate }
+            // A low known subtotal says nothing about unvalued members.
+            if likelyTotal < 50 { return isIncompleteTotal ? .needsInfo : .donate }
             if isBulky { return .pathC_quickExit }
             if likelyTotal >= 200 { return .pathA_maximizePrice }
             return .pathC_quickExit
         }()
 
-        let reasoning = "Local fallback brief for “\(title)” (\(category)) — qty \(qty). Estimated total ~\(formatMoney(likelyTotal)) (range \(formatMoney(low))–\(formatMoney(high)))."
+        let reasoning: String = {
+            if isIncompleteTotal {
+                let valuedCount = setMembers.count - unvaluedMemberCount
+                return "Local fallback brief for “\(title)” (\(category)). Known subtotal ~\(formatMoney(likelyTotal)) for \(valuedCount) of \(setMembers.count) members; \(unvaluedMemberCount) not estimated, so the set total is incomplete and may be higher."
+            }
+            return "Local fallback brief for “\(title)” (\(category)) — qty \(qty). Estimated total ~\(formatMoney(likelyTotal)) (range \(formatMoney(low))–\(formatMoney(high)))."
+        }()
 
         let isLuxuryHub = looksLikeLuxuryHubScenario(req)
 
@@ -545,7 +557,9 @@ struct LocalLiquidationBriefGenerator {
             reasoning: reasoning,
             pathOptions: options,
             actionSteps: steps,
-            missingDetails: [],
+            missingDetails: isIncompleteTotal
+                ? ["Estimated values for \(unvaluedMemberCount) set member(s)"]
+                : [],
             assumptions: {
                 var a = ["Local fallback used"]
                 if let backendError {
