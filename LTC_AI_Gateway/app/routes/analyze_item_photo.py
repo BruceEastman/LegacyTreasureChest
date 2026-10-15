@@ -934,6 +934,9 @@ _DISPOSITION_CACHE_TTL_SECONDS = 15 * 60
 # Partner types served from curated lists, never from Places.
 _CURATED_PARTNER_TYPES = {"luxury_hub_mailin"}
 
+# App 1.1 hardcodes this point (downtown Boise) in every Local Help request.
+_LEGACY_APP_DEFAULT_CENTER = (43.6150, -116.2023)
+
 # Shared rate-limiter key for the per-instance daily Places call budget.
 _PLACES_GLOBAL_BUDGET_KEY = "__all_devices__"
 
@@ -1675,6 +1678,14 @@ async def disposition_partners_search(
     center_lng = _as_float(_safe_getattr(payload.location, "longitude", None))
     if center_lat is None or center_lng is None:
         # Never pair one real coordinate with a missing one.
+        center_lat = center_lng = None
+    elif (
+        abs(center_lat - _LEGACY_APP_DEFAULT_CENTER[0]) < 1e-6
+        and abs(center_lng - _LEGACY_APP_DEFAULT_CENTER[1]) < 1e-6
+        and _norm(payload.location.city) != "boise"
+    ):
+        # App 1.1 sends this fixed Boise point no matter which city the user
+        # typed. For any other city it is not the user's location.
         center_lat = center_lng = None
 
     # ---- Local (Places) discovery availability, decided once per request ----

@@ -275,6 +275,16 @@ class LocalHelpRouteTests(_RouteTestBase):
         self.assertTrue(data["results"])
         self.assertTrue(all(x["distanceMiles"] is None for x in data["results"]))
 
+    def test_legacy_app_boise_point_is_ignored_for_other_cities(self):
+        self.fake.default = []
+        self.post(_request("Other", coords=(43.6150, -116.2023), city="Denver", region="CO"))
+        self.assertNotIn("locationBias", self.fake.requests[0]["body"])
+
+    def test_legacy_app_boise_point_is_used_for_boise(self):
+        self.fake.default = []
+        self.post(_request("Other", coords=(43.6150, -116.2023), city="Boise", region="ID"))
+        self.assertIn("locationBias", self.fake.requests[0]["body"])
+
     def test_half_coordinate_is_ignored(self):
         body = _request("Other")
         del body["location"]["longitude"]
