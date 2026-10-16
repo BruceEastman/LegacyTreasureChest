@@ -1,0 +1,300 @@
+{
+  "schemaVersion": 1,
+  "description": "Curated national specialty providers. Selective, maintained by hand; every entry must be checked against the provider's own published services and given a verifiedAt date. Entries with intentEligible false are kept only for the legacy luxury clothing results.",
+  "providers": [
+    {
+      "id": "curated:luxury:therealreal",
+      "name": "The RealReal",
+      "website": "https://www.therealreal.com/",
+      "serviceTypes": [
+        "consignment"
+      ],
+      "strategies": [
+        "consignment",
+        "maximizePrice"
+      ],
+      "matchTerms": [
+        "designer",
+        "luxury",
+        "handbag",
+        "purse",
+        "designer clothing",
+        "fine jewelry",
+        "jewelry",
+        "luxury watch",
+        "watch",
+        "designer shoes",
+        "art",
+        "home decor",
+        "collectible"
+      ],
+      "serviceArea": "Nationwide, US",
+      "intakeModel": "mail_in_or_in_person",
+      "notes": "Consigns authenticated luxury goods across fashion, jewelry, watches, art, and home. Commission is tiered; confirm current terms and what they accept before sending anything.",
+      "questionsToAsk": [
+        "Do you accept this item and brand right now?",
+        "What commission applies to this category and price?",
+        "How long is the consignment period, and what happens if it does not sell?"
+      ],
+      "verifiedAt": "2026-10-16",
+      "verificationSource": "Public seller guidance and reporting reviewed 2026-10-16 (consignment model; mail-in, pickup, and drop-off intake).",
+      "reviewStatus": "engineering_review",
+      "intentEligible": true,
+      "legacyLuxuryHub": {
+        "order": 0,
+        "website_snippet": "Luxury consignment channel with mail-in / concierge-style intake options; authentication-oriented workflow (verify current programs).",
+        "place_details": "Hub/national channel. Often a better fit than local consignment for Remembered/Luxury brands in secondary markets."
+      }
+    },
+    {
+      "id": "curated:luxury:vestiaire",
+      "name": "Vestiaire Collective",
+      "website": "https://www.vestiairecollective.com/",
+      "serviceTypes": [
+        "marketplace"
+      ],
+      "strategies": [
+        "maximizePrice"
+      ],
+      "matchTerms": [
+        "designer",
+        "luxury",
+        "designer clothing",
+        "handbag"
+      ],
+      "serviceArea": "Online marketplace",
+      "intakeModel": "online_listing",
+      "notes": "Carried over from the luxury clothing list. Not yet re-verified, so it is not offered in specialty searches.",
+      "questionsToAsk": [],
+      "verifiedAt": null,
+      "verificationSource": null,
+      "reviewStatus": "carried_over_unverified",
+      "intentEligible": false,
+      "legacyLuxuryHub": {
+        "order": 1,
+        "website_snippet": "Designer fashion resale marketplace; authentication pathways are part of the model (verify process for your item type and region).",
+        "place_details": "Hub/online channel. Shipping is often easier than driving, even in major cities."
+      }
+    },
+    {
+      "id": "curated:luxury:grailed",
+      "name": "Grailed (Menswear)",
+      "website": "https://www.grailed.com/",
+      "serviceTypes": [
+        "marketplace"
+      ],
+      "strategies": [
+        "maximizePrice"
+      ],
+      "matchTerms": [
+        "menswear",
+        "designer clothing"
+      ],
+      "serviceArea": "Online marketplace",
+      "intakeModel": "online_listing",
+      "notes": "Carried over from the luxury clothing list. Not yet re-verified, so it is not offered in specialty searches.",
+      "questionsToAsk": [],
+      "verifiedAt": null,
+      "verificationSource": null,
+      "reviewStatus": "carried_over_unverified",
+      "intentEligible": false,
+      "legacyLuxuryHub": {
+        "order": 2,
+        "website_snippet": "Menswear-focused resale marketplace; best for specific menswear brands/styles (verify selling workflow and fees).",
+        "place_details": "Online channel; useful when local luxury demand is weak or inconsistent."
+      }
+    },
+    {
+      "id": "directory:fashionphile",
+      "name": "Fashionphile",
+      "website": "https://www.fashionphile.com/",
+      "serviceTypes": [
+        "buys_outright",
+        "consignment"
+      ],
+      "strategies": [
+        "consignment",
+        "maximizePrice",
+        "quickSale"
+      ],
+      "matchTerms": [
+        "handbag",
+        "designer handbag",
+        "purse",
+        "luxury bag",
+        "designer bag",
+        "luxury handbag",
+        "fine jewelry",
+        "designer jewelry",
+        "luxury watch",
+        "louis vuitton",
+        "chanel",
+        "hermes",
+        "gucci"
+      ],
+      "serviceArea": "Nationwide (mail-in), US; selling studios in some cities",
+      "intakeModel": "mail_in_or_in_person",
+      "notes": "Offers an outright quote or consignment for designer bags and accessories. Authentication happens after the item arrives.",
+      "questionsToAsk": [
+        "Is an outright offer or consignment better for this item?",
+        "Do you accept it in its current condition?",
+        "When and how is payment made?"
+      ],
+      "verifiedAt": "2026-10-16",
+      "verificationSource": "Fashionphile selling and consignment pages reviewed 2026-10-16 (online quote with prepaid shipping or UPS pickup; consignment option).",
+      "reviewStatus": "engineering_review",
+      "intentEligible": true
+    },
+    {
+      "id": "directory:keh",
+      "name": "KEH Camera",
+      "website": "https://www.keh.com/",
+      "serviceTypes": [
+        "buys_outright"
+      ],
+      "strategies": [
+        "quickSale",
+        "maximizePrice"
+      ],
+      "matchTerms": [
+        "camera",
+        "film camera",
+        "rangefinder",
+        "lens",
+        "camera lens",
+        "photography",
+        "photographic",
+        "slr",
+        "dslr",
+        "mirrorless",
+        "leica",
+        "hasselblad",
+        "nikon",
+        "canon"
+      ],
+      "serviceArea": "Nationwide (mail-in), US",
+      "intakeModel": "mail_in",
+      "notes": "Buys used cameras and lenses outright after an online quote; ships with a prepaid label. Gear is inspected and graded on arrival, which can change the offer. Not a consignor.",
+      "questionsToAsk": [
+        "What is your quote for this body and lens?",
+        "How could your inspection grade change the offer?",
+        "Is free pickup available for this order?"
+      ],
+      "verifiedAt": "2026-10-16",
+      "verificationSource": "KEH selling guidance and independent reviews checked 2026-10-16 (quote, prepaid FedEx label, inspection and grading).",
+      "reviewStatus": "engineering_review",
+      "intentEligible": true
+    },
+    {
+      "id": "directory:mpb",
+      "name": "MPB",
+      "website": "https://www.mpb.com/en-us/sell",
+      "serviceTypes": [
+        "buys_outright"
+      ],
+      "strategies": [
+        "quickSale",
+        "maximizePrice"
+      ],
+      "matchTerms": [
+        "camera",
+        "film camera",
+        "lens",
+        "camera lens",
+        "photography",
+        "photographic",
+        "video camera",
+        "dslr",
+        "mirrorless",
+        "nikon",
+        "canon",
+        "sony",
+        "fujifilm",
+        "leica"
+      ],
+      "serviceArea": "Nationwide (mail-in), US",
+      "intakeModel": "mail_in",
+      "notes": "Buys or trades in used cameras, lenses, and video gear; free insured FedEx shipping. The quote can change after inspection. Not a consignor.",
+      "questionsToAsk": [
+        "What is your quote for this gear?",
+        "How could inspection change the quote?",
+        "How quickly is payment made after you receive it?"
+      ],
+      "verifiedAt": "2026-10-16",
+      "verificationSource": "MPB selling page reviewed 2026-10-16 (paid or trade-in, free insured FedEx shipping, quote adjusted after inspection).",
+      "reviewStatus": "engineering_review",
+      "intentEligible": true
+    },
+    {
+      "id": "directory:worthy",
+      "name": "Worthy",
+      "website": "https://www.worthy.com/",
+      "serviceTypes": [
+        "auction"
+      ],
+      "strategies": [
+        "maximizePrice",
+        "consignment"
+      ],
+      "matchTerms": [
+        "diamond",
+        "engagement ring",
+        "fine jewelry",
+        "jewelry",
+        "diamond ring",
+        "luxury watch",
+        "watch",
+        "rolex",
+        "cartier"
+      ],
+      "serviceArea": "Nationwide (mail-in), US",
+      "intakeModel": "mail_in",
+      "notes": "Runs online auctions to professional buyers for diamonds, fine jewelry, and luxury watches. Fees are a percentage of a completed sale; you can decline if bids fall short of your reserve.",
+      "questionsToAsk": [
+        "Does this piece qualify for your auctions?",
+        "What fee applies at the expected price?",
+        "How is the item insured in transit and returned if it does not sell?"
+      ],
+      "verifiedAt": "2026-10-16",
+      "verificationSource": "Worthy home page reviewed 2026-10-16 (auction to professional buyers, tiered fees on completed sales, insured mail-in and return).",
+      "reviewStatus": "engineering_review",
+      "intentEligible": true
+    },
+    {
+      "id": "directory:reverb",
+      "name": "Reverb",
+      "website": "https://reverb.com/selling",
+      "serviceTypes": [
+        "marketplace"
+      ],
+      "strategies": [
+        "maximizePrice"
+      ],
+      "matchTerms": [
+        "guitar",
+        "electric guitar",
+        "acoustic guitar",
+        "bass guitar",
+        "amplifier",
+        "amp",
+        "synthesizer",
+        "keyboard",
+        "drum",
+        "musical instrument",
+        "instrument",
+        "effects pedal",
+        "pedal",
+        "gibson",
+        "fender"
+      ],
+      "serviceArea": "Online marketplace, US",
+      "intakeModel": "online_listing",
+      "notes": "A marketplace for music gear: you list, sell, and ship the item yourself. A selling fee and payment processing fee apply when it sells. Not a consignor or buyer.",
+      "questionsToAsk": [],
+      "verifiedAt": "2026-10-16",
+      "verificationSource": "Reverb selling and fee pages reviewed 2026-10-16 (free listing; selling fee plus payment processing on sale).",
+      "reviewStatus": "engineering_review",
+      "intentEligible": true
+    }
+  ]
+}

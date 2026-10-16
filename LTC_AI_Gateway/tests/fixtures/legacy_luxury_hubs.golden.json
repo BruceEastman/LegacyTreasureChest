@@ -1,0 +1,234 @@
+{
+  "brand_hints": {
+    "disclaimer": "Local business details come from Google Maps and may change. Verify services, fees, and terms directly with each business. For curated hub channels, verify current fees, intake rules, and authentication steps directly.",
+    "localDiscoveryStatus": "not_applicable",
+    "notice": null,
+    "partnerTypes": [
+      "luxury_hub_mailin"
+    ],
+    "results": [
+      {
+        "contact": {
+          "address": null,
+          "city": null,
+          "email": null,
+          "phone": null,
+          "region": null,
+          "website": "https://www.therealreal.com/"
+        },
+        "distanceMiles": null,
+        "name": "The RealReal",
+        "partnerId": "curated:luxury:therealreal",
+        "partnerType": "luxury_hub_mailin",
+        "questionsToAsk": [
+          "Do you provide receipts or itemized records suitable for estate accounting?",
+          "What is your typical timeline and next step to get started?"
+        ],
+        "ranking": {
+          "reasons": [
+            "Matches: luxury hub mailin for Clothing",
+            "Business type is a likely match (verify on their listing/site)",
+            "Potential match; expect to verify details directly"
+          ],
+          "score": 0.635
+        },
+        "rating": null,
+        "trust": {
+          "claimLevel": "curated",
+          "gates": [],
+          "signals": [],
+          "trustScore": 0.6
+        },
+        "userRatingsTotal": null,
+        "whyRecommended": "Matches: luxury hub mailin for Clothing ; Business type is a likely match (verify on their listing/site)"
+      },
+      {
+        "contact": {
+          "address": null,
+          "city": null,
+          "email": null,
+          "phone": null,
+          "region": null,
+          "website": "https://www.vestiairecollective.com/"
+        },
+        "distanceMiles": null,
+        "name": "Vestiaire Collective",
+        "partnerId": "curated:luxury:vestiaire",
+        "partnerType": "luxury_hub_mailin",
+        "questionsToAsk": [
+          "Do you provide receipts or itemized records suitable for estate accounting?",
+          "What is your typical timeline and next step to get started?"
+        ],
+        "ranking": {
+          "reasons": [
+            "Matches: luxury hub mailin for Clothing",
+            "Business type is a likely match (verify on their listing/site)",
+            "Potential match; expect to verify details directly"
+          ],
+          "score": 0.601
+        },
+        "rating": null,
+        "trust": {
+          "claimLevel": "curated",
+          "gates": [],
+          "signals": [],
+          "trustScore": 0.6
+        },
+        "userRatingsTotal": null,
+        "whyRecommended": "Matches: luxury hub mailin for Clothing ; Business type is a likely match (verify on their listing/site)"
+      },
+      {
+        "contact": {
+          "address": null,
+          "city": null,
+          "email": null,
+          "phone": null,
+          "region": null,
+          "website": "https://www.grailed.com/"
+        },
+        "distanceMiles": null,
+        "name": "Grailed (Menswear)",
+        "partnerId": "curated:luxury:grailed",
+        "partnerType": "luxury_hub_mailin",
+        "questionsToAsk": [
+          "Do you provide receipts or itemized records suitable for estate accounting?",
+          "What is your typical timeline and next step to get started?"
+        ],
+        "ranking": {
+          "reasons": [
+            "Matches: luxury hub mailin for Clothing",
+            "Business type is a likely match (verify on their listing/site)",
+            "Potential match; expect to verify details directly"
+          ],
+          "score": 0.601
+        },
+        "rating": null,
+        "trust": {
+          "claimLevel": "curated",
+          "gates": [],
+          "signals": [],
+          "trustScore": 0.6
+        },
+        "userRatingsTotal": null,
+        "whyRecommended": "Matches: luxury hub mailin for Clothing ; Business type is a likely match (verify on their listing/site)"
+      }
+    ],
+    "scenarioId": "clothing_luxury_med_high_value"
+  },
+  "no_hints": {
+    "disclaimer": "Local business details come from Google Maps and may change. Verify services, fees, and terms directly with each business. For curated hub channels, verify current fees, intake rules, and authentication steps directly.",
+    "localDiscoveryStatus": "not_applicable",
+    "notice": null,
+    "partnerTypes": [
+      "luxury_hub_mailin"
+    ],
+    "results": [
+      {
+        "contact": {
+          "address": null,
+          "city": null,
+          "email": null,
+          "phone": null,
+          "region": null,
+          "website": "https://www.therealreal.com/"
+        },
+        "distanceMiles": null,
+        "name": "The RealReal",
+        "partnerId": "curated:luxury:therealreal",
+        "partnerType": "luxury_hub_mailin",
+        "questionsToAsk": [
+          "Do you provide receipts or itemized records suitable for estate accounting?",
+          "What is your typical timeline and next step to get started?"
+        ],
+        "ranking": {
+          "reasons": [
+            "Matches: luxury hub mailin for Clothing",
+            "Business type is a likely match (verify on their listing/site)",
+            "Potential match; expect to verify details directly"
+          ],
+          "score": 0.635
+        },
+        "rating": null,
+        "trust": {
+          "claimLevel": "curated",
+          "gates": [],
+          "signals": [],
+          "trustScore": 0.6
+        },
+        "userRatingsTotal": null,
+        "whyRecommended": "Matches: luxury hub mailin for Clothing ; Business type is a likely match (verify on their listing/site)"
+      },
+      {
+        "contact": {
+          "address": null,
+          "city": null,
+          "email": null,
+          "phone": null,
+          "region": null,
+          "website": "https://www.vestiairecollective.com/"
+        },
+        "distanceMiles": null,
+        "name": "Vestiaire Collective",
+        "partnerId": "curated:luxury:vestiaire",
+        "partnerType": "luxury_hub_mailin",
+        "questionsToAsk": [
+          "Do you provide receipts or itemized records suitable for estate accounting?",
+          "What is your typical timeline and next step to get started?"
+        ],
+        "ranking": {
+          "reasons": [
+            "Matches: luxury hub mailin for Clothing",
+            "Business type is a likely match (verify on their listing/site)",
+            "Potential match; expect to verify details directly"
+          ],
+          "score": 0.601
+        },
+        "rating": null,
+        "trust": {
+          "claimLevel": "curated",
+          "gates": [],
+          "signals": [],
+          "trustScore": 0.6
+        },
+        "userRatingsTotal": null,
+        "whyRecommended": "Matches: luxury hub mailin for Clothing ; Business type is a likely match (verify on their listing/site)"
+      },
+      {
+        "contact": {
+          "address": null,
+          "city": null,
+          "email": null,
+          "phone": null,
+          "region": null,
+          "website": "https://www.grailed.com/"
+        },
+        "distanceMiles": null,
+        "name": "Grailed (Menswear)",
+        "partnerId": "curated:luxury:grailed",
+        "partnerType": "luxury_hub_mailin",
+        "questionsToAsk": [
+          "Do you provide receipts or itemized records suitable for estate accounting?",
+          "What is your typical timeline and next step to get started?"
+        ],
+        "ranking": {
+          "reasons": [
+            "Matches: luxury hub mailin for Clothing",
+            "Business type is a likely match (verify on their listing/site)",
+            "Potential match; expect to verify details directly"
+          ],
+          "score": 0.601
+        },
+        "rating": null,
+        "trust": {
+          "claimLevel": "curated",
+          "gates": [],
+          "signals": [],
+          "trustScore": 0.6
+        },
+        "userRatingsTotal": null,
+        "whyRecommended": "Matches: luxury hub mailin for Clothing ; Business type is a likely match (verify on their listing/site)"
+      }
+    ],
+    "scenarioId": "clothing_luxury_med_high_value"
+  }
+}

@@ -40,6 +40,9 @@ class PartnerDiscoveryQuery:
     center_lng: Optional[float] = None
     language_code: str = "en"
     region_code: str = "US"
+    # False for regional searches: the center is still used for distances, but
+    # the query text alone names the area (a 50 km bias would skew a state).
+    use_location_bias: bool = True
 
 
 class PartnerDiscoveryProvider(Protocol):
@@ -174,7 +177,7 @@ class GooglePlacesNewProvider:
             "maxResultCount": 20,
         }
 
-        if q.center_lat is not None and q.center_lng is not None:
+        if q.use_location_bias and q.center_lat is not None and q.center_lng is not None:
             body["locationBias"] = {
                 "circle": {
                     "center": {"latitude": q.center_lat, "longitude": q.center_lng},
@@ -293,6 +296,12 @@ class GooglePlacesNewProvider:
             "rating": rating,
             "userRatingsTotal": user_ratings_total,
             "providerRank": rank,
+            # Kept apart for intent results: the business's own site, its Google
+            # Maps listing, and the storable place ID. (contact.website keeps the
+            # legacy "site, else Maps listing" fallback for older app versions.)
+            "placeId": place_id,
+            "websiteUri": pl.get("websiteUri"),
+            "googleMapsUri": pl.get("googleMapsUri"),
             "sources": {
                 "website_snippet": website_snippet,
                 "place_details": place_details,

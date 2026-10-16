@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -54,6 +54,21 @@ class DispositionHintsDTO(BaseModel):
     notes: Optional[str] = None
 
 
+class DispositionSearchIntentDTO(BaseModel):
+    """
+    B1: a homeowner-reviewed specialty search. When present, the Gateway uses
+    intent-based discovery instead of the legacy scenario matrix. Validated
+    again server-side (see partner_discovery/intent.py); only these fields are
+    used, never item names, notes, or identifiers.
+    """
+    schemaVersion: int = 1
+    strategy: str  # maximizePrice | consignment | quickSale | donation
+    phrase: str  # short, item-specific wording the homeowner reviewed
+    detailTerms: List[str] = Field(default_factory=list)  # optional identifying terms (ranking only)
+    geoScope: str = "local"  # local | regional | national
+    valueBand: Optional[str] = None  # LOW|MED|HIGH, only when the homeowner opts in
+
+
 class DispositionPartnersSearchRequest(BaseModel):
     schemaVersion: int = 1
     scope: str = "item"  # item|set (set not used in v1)
@@ -63,6 +78,8 @@ class DispositionPartnersSearchRequest(BaseModel):
     scenario: DispositionScenarioDTO
     location: DispositionLocationDTO
     hints: Optional[DispositionHintsDTO] = None
+    # B1 (optional): app 1.2 never sends it, and its absence keeps legacy behavior.
+    searchIntent: Optional[DispositionSearchIntentDTO] = None
 
 
 class DispositionPartnerContactDTO(BaseModel):
@@ -111,6 +128,24 @@ class DispositionPartnerResultDTO(BaseModel):
     whyRecommended: str
     questionsToAsk: List[str] = Field(default_factory=list)
 
+    # B1 (optional; set only on intent-based results)
+    source: Optional[str] = None  # google_places | ltc_directory
+    placeId: Optional[str] = None  # Google place ID (storable)
+    directoryId: Optional[str] = None
+    googleMapsUri: Optional[str] = None  # the Google Maps listing, distinct from the business website
+    # What the business's own Google name/type text says, never inferred acceptance:
+    # {"consignment"|"buysOutright"|"auction"|"donations"|"marketplace": "mentioned"|"not_mentioned"|"offered"}
+    serviceEvidence: Optional[Dict[str, str]] = None
+    evidenceSource: Optional[str] = None  # google_places_name_and_type | ltc_directory_review
+    relevance: Optional[Dict[str, Any]] = None  # {"level": "specialist"|"general", "matchedTerms": [...]}
+    geoScope: Optional[str] = None  # local | regional | national
+    areaMatch: Optional[str] = None  # in_area | outside_area | unknown
+    serviceArea: Optional[str] = None  # directory entries, e.g. "Nationwide (mail-in), US"
+    intakeModel: Optional[str] = None  # directory entries: mail_in | in_person | mail_in_or_in_person | online_listing
+    verifiedAt: Optional[str] = None  # directory entries: date the entry was last checked
+    acceptanceStatus: Optional[str] = None  # always "unknown": acceptance is confirmed only by the business
+    attribution: Optional[str] = None  # "google_maps" when the data comes from Google Places
+
 
 class DispositionPartnersSearchResponse(BaseModel):
     schemaVersion: int = 1
@@ -126,6 +161,10 @@ class DispositionPartnersSearchResponse(BaseModel):
     # ok | no_results | unavailable | disabled | limited | not_applicable
     localDiscoveryStatus: str = "ok"
     notice: Optional[str] = None
+
+    # B1 (optional; intent searches only)
+    searchScope: Optional[str] = None  # local | regional | national
+    directoryStatus: Optional[str] = None  # ok | no_match | not_applicable
 
 
 # -----------------------------

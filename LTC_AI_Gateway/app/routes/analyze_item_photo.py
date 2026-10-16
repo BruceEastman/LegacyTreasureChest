@@ -1254,13 +1254,6 @@ def _build_liquidation_brief_repair_prompt(*, original_prompt: str, raw_json: st
 
 _DISPOSITION_MATRIX_PATH = Path(__file__).resolve().parents[1] / "config" / "disposition_matrix.v1.json"
 
-# Simple in-memory cache (v1)
-# key -> (created_at_utc_epoch_seconds, response_dict)
-_DISPOSITION_CACHE: dict[str, tuple[float, dict]] = {}
-# Short on purpose: it only absorbs repeat taps. Google Places content is not
-# meant to be stored, and businesses change.
-_DISPOSITION_CACHE_TTL_SECONDS = 15 * 60
-
 # Partner types served from curated lists, never from Places.
 _CURATED_PARTNER_TYPES = {"luxury_hub_mailin"}
 
@@ -1403,40 +1396,6 @@ def _pick_scenario(matrix: dict, req: DispositionPartnersSearchRequest) -> dict:
 
     # last-resort fallback: first scenario or empty
     return scenarios_sorted[0] if scenarios_sorted else {"id": "default_any", "partnerTypes": []}
-
-
-def _cache_get(key: str) -> Optional[dict]:
-    import time
-    now = time.time()
-    v = _DISPOSITION_CACHE.get(key)
-    if not v:
-        return None
-    created, payload = v
-    if now - created > _DISPOSITION_CACHE_TTL_SECONDS:
-        _DISPOSITION_CACHE.pop(key, None)
-        return None
-    return payload
-
-
-def _cache_set(key: str, payload: dict) -> None:
-    import time
-    _DISPOSITION_CACHE[key] = (time.time(), payload)
-
-
-def _mk_cache_key(
-    *,
-    provider_name: str,
-    partner_type: str,
-    query: str,
-    center_lat: Optional[float],
-    center_lng: Optional[float],
-    radius: int,
-) -> str:
-    # Provider results depend only on the query text, the bias center, and
-    # the bias radius. Center is rounded to ~1 km so nearby repeats share.
-    center = "none" if center_lat is None or center_lng is None else f"{center_lat:.2f},{center_lng:.2f}"
-    parts = ["v2", provider_name, partner_type, _norm(query), center, str(radius)]
-    return "||".join(parts)
 
 
 def _negated(text: str, keyword: str) -> bool:
@@ -1820,6 +1779,233 @@ def _apply_required_gates(gates: list[dict]) -> bool:
             return False
     return True
 
+_INTENT_DISCLAIMER = (
+    "Business details come from Google Maps or LTC's reviewed list and may change. "
+    "Appearing here does not mean a business will accept your item; confirm directly before sending anything."
+)
+# Enough specialist matches from the first query that a second query adds little.
+_INTENT_ENOUGH_SPECIALISTS = 5
+_INTENT_MAX_RESULTS = 10
+_DIRECTORY_EVIDENCE_KEYS = {
+    "consignment": "consignment",
+    "buys_outright": "buysOutright",
+    "auction": "auction",
+    "marketplace": "marketplace",
+    "donations": "donations",
+}
+
+
+def _evidence_partner_type(evidence: Dict[str, str]) -> str:
+    """Badge text from what the listing itself says, never from the query that found it."""
+    for key, ptype in (("consignment", "consignment"), ("auction", "auction"),
+                       ("donations", "donation"), ("buysOutright", "buyer")):
+        if evidence.get(key) == "mentioned":
+            return ptype
+    return "business"
+
+
+def _intent_partner_search(payload: DispositionPartnersSearchRequest, request: Request) -> DispositionPartnersSearchResponse:
+    """
+    B1 specialty discovery for a homeowner-reviewed Search Intent.
+    - local/regional: at most two Google Places text queries naming the place
+    - national: LTC's curated directory only (no Places calls)
+    Results come only from those two sources. Nothing about acceptance is
+    inferred; the query text and item details are never logged.
+    """
+    from app.services.partner_discovery import intent as intent_mod
+    from app.services.partner_discovery.directory import match_directory
+    from app.services.partner_discovery.factory import (
+        PartnerDiscoveryConfigError,
+        get_partner_discovery_provider,
+        running_on_cloud_run,
+    )
+    from app.services.partner_discovery.providers import PartnerDiscoveryQuery, PartnerDiscoveryUnavailable
+
+    loc = payload.location
+    try:
+        intent = intent_mod.validate_intent(
+            payload.searchIntent, city=loc.city, region=loc.region, country_code=loc.countryCode
+        )
+    except intent_mod.IntentValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    radius = int(loc.radiusMiles or 25)
+    results: list[dict] = []
+    discovery_status: Optional[str] = None
+    places_calls = 0
+
+    # ---- Google Places (local / regional) ----
+    queries = intent_mod.build_queries(intent)
+    if queries:
+        center_lat = loc.latitude
+        center_lng = loc.longitude
+        if center_lat is None or center_lng is None:
+            center_lat = center_lng = None
+        elif (abs(center_lat - _LEGACY_APP_DEFAULT_CENTER[0]) < 1e-6
+              and abs(center_lng - _LEGACY_APP_DEFAULT_CENTER[1]) < 1e-6
+              and _norm(loc.city) != "boise"):
+            center_lat = center_lng = None
+
+        provider = None
+        if ltc_config.DISABLE_PLACES:
+            discovery_status = "disabled"
+        else:
+            try:
+                provider = get_partner_discovery_provider(stub_fn=_stub_places_search)
+            except PartnerDiscoveryConfigError as exc:
+                logger.error("Partner discovery not configured: %s", exc)
+                discovery_status = "unavailable"
+        if provider is not None:
+            device_id = getattr(request.state, "device_id", None) or "unknown"
+            allowed, _retry = rate_limiter.check_daily(
+                device_id=device_id, scope="places-search",
+                limit=ltc_config.PLACES_SEARCHES_PER_DEVICE_DAY_LIMIT,
+            )
+            if not allowed:
+                provider, discovery_status = None, "limited"
+
+        pool: dict[str, dict] = {}
+        for q in queries if provider is not None else []:
+            if not provider.is_stub:
+                allowed, _retry = rate_limiter.check_daily(
+                    device_id=_PLACES_GLOBAL_BUDGET_KEY, scope="places-calls",
+                    limit=ltc_config.PLACES_PER_DAY_LIMIT,
+                )
+                if not allowed:
+                    discovery_status = "limited"
+                    break
+            try:
+                places_calls += 1
+                candidates = provider.search(PartnerDiscoveryQuery(
+                    query=q.text,
+                    city=intent.city,
+                    region=intent.region_code,
+                    radius_miles=radius,
+                    partner_type=q.partner_type,
+                    center_lat=center_lat,
+                    center_lng=center_lng,
+                    language_code="en",
+                    region_code="US",
+                    use_location_bias=intent.geo_scope == "local",
+                ))
+            except PartnerDiscoveryUnavailable as exc:
+                logger.error("Intent discovery unavailable reason=%s", exc.reason)
+                discovery_status = "limited" if exc.reason == "upstream_quota" else "unavailable"
+                break
+            for c in candidates:
+                pid = c.get("partnerId")
+                if pid and pid not in pool and not intent_mod.is_excluded(c):
+                    pool[pid] = c
+            specialists = sum(
+                1 for c in pool.values()
+                if intent_mod.relevance(c, intent)["level"] == "specialist"
+                and intent_mod.area_match(c, intent, radius) != "outside_area"
+            )
+            if specialists >= _INTENT_ENOUGH_SPECIALISTS:
+                break
+
+        for c in pool.values():
+            if running_on_cloud_run() and str(c.get("partnerId", "")).startswith("stub:"):
+                continue
+            evidence = intent_mod.service_evidence(c)
+            rel = intent_mod.relevance(c, intent)
+            area = intent_mod.area_match(c, intent, radius)
+            score = intent_mod.rank_score(
+                provider_rank=c.get("providerRank"), rel=rel, distance=c.get("distanceMiles"),
+                radius_miles=radius, area=area,
+            )
+            why = intent_mod.why_text(rel, area, intent)
+            contact = dict(c.get("contact") or {})
+            contact["website"] = c.get("websiteUri")  # the business's own site only
+            results.append({
+                "partnerId": c.get("partnerId"),
+                "name": c.get("name"),
+                "partnerType": _evidence_partner_type(evidence),
+                "contact": contact,
+                "distanceMiles": c.get("distanceMiles"),
+                "rating": c.get("rating"),
+                "userRatingsTotal": c.get("userRatingsTotal"),
+                "trust": {"trustScore": score, "claimLevel": "listing", "gates": [], "signals": []},
+                "ranking": {"score": score, "reasons": [why]},
+                "whyRecommended": why,
+                "questionsToAsk": intent_mod.questions_for(intent.strategy),
+                "source": "google_places",
+                "placeId": c.get("placeId"),
+                "googleMapsUri": c.get("googleMapsUri"),
+                "serviceEvidence": evidence,
+                "evidenceSource": "google_places_name_and_type",
+                "relevance": rel,
+                "geoScope": intent.geo_scope,
+                "areaMatch": area,
+                "acceptanceStatus": "unknown",
+                "attribution": "google_maps",
+            })
+        results.sort(key=lambda r: r["ranking"]["score"], reverse=True)
+        results = results[:_INTENT_MAX_RESULTS]
+
+    # ---- Curated directory (national) ----
+    directory_status = "not_applicable"
+    if intent.geo_scope == "national":
+        matches = match_directory(strategy=intent.strategy, phrase=intent.phrase, detail_terms=list(intent.detail_terms))
+        directory_status = "ok" if matches else "no_match"
+        for m in matches:
+            e, matched = m["entry"], m["matchedTerms"]
+            evidence = {_DIRECTORY_EVIDENCE_KEYS[t]: "offered" for t in e["serviceTypes"]}
+            why = f"In LTC's reviewed list for {', '.join(matched[:3])}. Confirm they accept your item."
+            first_type = e["serviceTypes"][0]
+            results.append({
+                "partnerId": e["id"],
+                "name": e["name"],
+                "partnerType": {"buys_outright": "buyer", "donations": "donation"}.get(first_type, first_type),
+                "contact": {"phone": None, "website": e["website"], "email": None,
+                            "address": None, "city": None, "region": None},
+                "distanceMiles": None,
+                "rating": None,
+                "userRatingsTotal": None,
+                "trust": {"trustScore": 1.0, "claimLevel": "curated", "gates": [], "signals": []},
+                "ranking": {"score": 1.0, "reasons": [why]},
+                "whyRecommended": why,
+                "questionsToAsk": e.get("questionsToAsk") or intent_mod.questions_for(intent.strategy),
+                "source": "ltc_directory",
+                "directoryId": e["id"],
+                "serviceEvidence": evidence,
+                "evidenceSource": "ltc_directory_review",
+                "relevance": {"level": "specialist", "matchedTerms": matched},
+                "geoScope": "national",
+                "serviceArea": e.get("serviceArea"),
+                "intakeModel": e.get("intakeModel"),
+                "verifiedAt": e.get("verifiedAt"),
+                "acceptanceStatus": "unknown",
+            })
+
+    if not queries:
+        local_status = "not_applicable"
+    elif discovery_status:
+        local_status = discovery_status
+    elif not any(r["source"] == "google_places" for r in results):
+        local_status = "no_results"
+    else:
+        local_status = "ok"
+
+    # Counts only: never the phrase, location, or businesses.
+    logger.info(
+        "intent_search strategy=%s scope=%s places_calls=%s results=%s local_status=%s directory_status=%s",
+        intent.strategy, intent.geo_scope, places_calls, len(results), local_status, directory_status,
+    )
+
+    return DispositionPartnersSearchResponse(
+        schemaVersion=1,
+        generatedAt=_utcnow(),
+        scenarioId=f"intent.{intent.strategy}.{intent.geo_scope}",
+        partnerTypes=sorted({r["partnerType"] for r in results}),
+        results=results,
+        disclaimer=_INTENT_DISCLAIMER,
+        localDiscoveryStatus=local_status,
+        notice=_LOCAL_DISCOVERY_NOTICES.get(local_status),
+        searchScope=intent.geo_scope,
+        directoryStatus=directory_status,
+    )
+
 @router.post("/disposition/partners/search", response_model=DispositionPartnersSearchResponse)
 async def disposition_partners_search(
     payload: DispositionPartnersSearchRequest,
@@ -1846,6 +2032,12 @@ async def disposition_partners_search(
         running_on_cloud_run,
     )
     from app.services.partner_discovery.providers import PartnerDiscoveryQuery, PartnerDiscoveryUnavailable
+    from app.services.partner_discovery.directory import legacy_luxury_hub_candidates
+
+    # B1: a reviewed Search Intent uses specialty discovery; without one the
+    # legacy (app 1.2) scenario-matrix behavior below is unchanged.
+    if payload.searchIntent is not None:
+        return _intent_partner_search(payload, request)
 
     def _safe_getattr(obj, name: str, default=None):
         try:
@@ -1902,90 +2094,8 @@ async def disposition_partners_search(
         if brand_hints:
             hints_txt = f" (brand hints: {', '.join(brand_hints[:3])})"
 
-        curated = [
-            {
-                "partnerId": "curated:luxury:therealreal",
-                "name": "The RealReal",
-                "partnerType": "luxury_hub_mailin",
-                "contact": {
-                    "phone": None,
-                    "website": "https://www.therealreal.com/",
-                    "email": None,
-                    "address": None,
-                    "city": None,
-                    "region": None,
-                },
-                "distanceMiles": None,
-                "rating": None,
-                "userRatingsTotal": None,
-                "sources": {
-                    "website_snippet": (
-                        "Luxury consignment channel with mail-in / concierge-style intake options; "
-                        "authentication-oriented workflow (verify current programs)."
-                    ),
-                    "place_details": (
-                        "Hub/national channel. Often a better fit than local consignment for Remembered/Luxury brands "
-                        "in secondary markets."
-                        + hints_txt
-                    ),
-                    "reviews_snippet": "",
-                },
-            },
-            {
-                "partnerId": "curated:luxury:vestiaire",
-                "name": "Vestiaire Collective",
-                "partnerType": "luxury_hub_mailin",
-                "contact": {
-                    "phone": None,
-                    "website": "https://www.vestiairecollective.com/",
-                    "email": None,
-                    "address": None,
-                    "city": None,
-                    "region": None,
-                },
-                "distanceMiles": None,
-                "rating": None,
-                "userRatingsTotal": None,
-                "sources": {
-                    "website_snippet": (
-                        "Designer fashion resale marketplace; authentication pathways are part of the model "
-                        "(verify process for your item type and region)."
-                    ),
-                    "place_details": (
-                        "Hub/online channel. Shipping is often easier than driving, even in major cities."
-                        + hints_txt
-                    ),
-                    "reviews_snippet": "",
-                },
-            },
-            {
-                "partnerId": "curated:luxury:grailed",
-                "name": "Grailed (Menswear)",
-                "partnerType": "luxury_hub_mailin",
-                "contact": {
-                    "phone": None,
-                    "website": "https://www.grailed.com/",
-                    "email": None,
-                    "address": None,
-                    "city": None,
-                    "region": None,
-                },
-                "distanceMiles": None,
-                "rating": None,
-                "userRatingsTotal": None,
-                "sources": {
-                    "website_snippet": (
-                        "Menswear-focused resale marketplace; best for specific menswear brands/styles "
-                        "(verify selling workflow and fees)."
-                    ),
-                    "place_details": (
-                        "Online channel; useful when local luxury demand is weak or inconsistent."
-                        + hints_txt
-                    ),
-                    "reviews_snippet": "",
-                },
-            },
-        ]
+        # Entries live in the curated specialty directory; output is unchanged.
+        curated = legacy_luxury_hub_candidates(hints_txt)
 
         return curated
 
@@ -2048,21 +2158,10 @@ async def disposition_partners_search(
 
     def _discover(query_str: str, partner_type: str) -> list[dict]:
         """
-        One provider call per distinct query (short-lived cache). Raises
+        One provider call per query. Google Places business details are not
+        cached or stored (Places policy allows storing only place IDs). Raises
         PartnerDiscoveryUnavailable or _PlacesBudgetExhausted.
         """
-        cache_key = _mk_cache_key(
-            provider_name=provider.name,
-            partner_type=partner_type,
-            query=query_str,
-            center_lat=center_lat,
-            center_lng=center_lng,
-            radius=base_radius,
-        )
-        cached = _cache_get(cache_key)
-        if cached is not None:
-            return cached.get("candidates", [])
-
         if not provider.is_stub:
             allowed, _retry = rate_limiter.check_daily(
                 device_id=_PLACES_GLOBAL_BUDGET_KEY,
@@ -2085,7 +2184,6 @@ async def disposition_partners_search(
                 region_code=(payload.location.countryCode or "US").strip().upper() or "US",
             )
         )
-        _cache_set(cache_key, {"candidates": candidates})
         return candidates
 
     def _radius_tier_filter(pool: list[dict]) -> list[dict]:

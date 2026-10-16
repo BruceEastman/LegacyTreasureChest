@@ -106,7 +106,6 @@ class _RouteTestBase(unittest.TestCase):
     def setUp(self):
         rate_limiter._daily.clear()
         rate_limiter._store.clear()
-        route._DISPOSITION_CACHE.clear()
         self.client = TestClient(main.app)
         self.fake = _FakePlaces()
         self._patches = [
@@ -392,12 +391,15 @@ class CostAndSafetyControlTests(_RouteTestBase):
         # 2 partner types x LTC_PLACES_MAX_QUERIES_PER_TYPE (2)
         self.assertEqual(len(self.fake.requests), 4)
 
-    def test_repeat_search_uses_short_cache(self):
+    def test_repeat_search_does_not_reuse_stored_places_details(self):
+        # Places policy: business details are not cached or stored (B1 removed
+        # the 15-minute cache); per-device and daily limits still apply.
         self.fake.default = [_place(f"c{i}", f"Consignment {i}", 43.62, -116.21) for i in range(6)]
         self.post(_request("Other"))
         n = len(self.fake.requests)
         self.post(_request("Other"))
-        self.assertEqual(len(self.fake.requests), n)
+        self.assertEqual(len(self.fake.requests), 2 * n)
+        self.assertFalse(hasattr(route, "_DISPOSITION_CACHE"))
 
 
 class ProductionStubGuardTests(_RouteTestBase):

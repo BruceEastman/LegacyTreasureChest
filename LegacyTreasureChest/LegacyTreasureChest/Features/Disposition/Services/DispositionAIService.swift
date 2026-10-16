@@ -80,6 +80,43 @@ final class DispositionAIService {
         return response
     }
 
+    // MARK: - Specialty search (B1; called by B2 only after homeowner review)
+
+    /// Sends a reviewed Search Intent. The request carries only the intent and
+    /// location: no item name, notes, keywords, identifiers, or value (unless the
+    /// homeowner opted in through intent.valueBand). Results are not cached here:
+    /// Google Places business details are kept only for the screen showing them.
+    func searchPartners(
+        intent: DispositionSearchIntentDTO,
+        location: DispositionLocationDTO
+    ) async throws -> DispositionPartnersSearchResponse {
+        let request = try Self.buildIntentRequest(intent: intent, location: location)
+        return try await backend.dispositionPartnersSearch(request: request)
+    }
+
+    nonisolated static func buildIntentRequest(
+        intent: DispositionSearchIntentDTO,
+        location: DispositionLocationDTO
+    ) throws -> DispositionPartnersSearchRequest {
+        let validated = try SearchIntentValidator.validated(intent)
+        let valueBand = validated.valueBand.flatMap(DispositionValueBand.init(rawValue:)) ?? .UNKNOWN
+        return DispositionPartnersSearchRequest(
+            schemaVersion: 1,
+            scope: .item,
+            chosenPath: nil,
+            scenario: DispositionScenarioDTO(
+                category: "",
+                valueBand: valueBand,
+                bulky: false,
+                goal: .balanced,
+                constraints: nil
+            ),
+            location: location,
+            hints: nil,
+            searchIntent: validated
+        )
+    }
+
     // MARK: - Mapping (item)
 
     func buildSearchRequest(

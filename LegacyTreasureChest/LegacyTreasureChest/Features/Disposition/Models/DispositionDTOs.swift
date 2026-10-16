@@ -17,6 +17,25 @@ struct DispositionPartnersSearchRequest: Codable {
     var scenario: DispositionScenarioDTO
     var location: DispositionLocationDTO
     var hints: DispositionHintsDTO?
+    /// B1: a homeowner-reviewed specialty search. When present the Gateway uses
+    /// intent-based discovery; app 1.2 never sends it.
+    var searchIntent: DispositionSearchIntentDTO? = nil
+}
+
+/// What a specialty search looks for. Built by SearchIntentBuilder, shown to the
+/// homeowner for review (B2), and sent only after that review.
+struct DispositionSearchIntentDTO: Codable, Equatable, Sendable {
+    var schemaVersion: Int = 1
+    /// maximizePrice | consignment | quickSale | donation (DispositionSearchStrategy)
+    var strategy: String
+    /// Short, item-specific wording, e.g. "film camera".
+    var phrase: String
+    /// Optional identifying terms, e.g. brand and model (used for ranking).
+    var detailTerms: [String] = []
+    /// local | regional | national (DispositionGeoScope)
+    var geoScope: String
+    /// LOW | MED | HIGH, only when the homeowner opts in. Omitted by default.
+    var valueBand: String? = nil
 }
 
 enum DispositionScope: String, Codable {
@@ -85,6 +104,10 @@ struct DispositionPartnersSearchResponse: Codable {
     var localDiscoveryStatus: String? = nil
     /// User-facing explanation when local results are missing for a reason.
     var notice: String? = nil
+    /// B1 (intent searches): local | regional | national
+    var searchScope: String? = nil
+    /// B1 (intent searches): ok | no_match | not_applicable
+    var directoryStatus: String? = nil
 
     /// True when any result came from Google Places (attribution required).
     var hasGooglePlacesResults: Bool {
@@ -105,7 +128,39 @@ struct DispositionPartnerResult: Codable, Identifiable {
     var whyRecommended: String?
     var questionsToAsk: [String]?
 
+    // B1 (optional; intent searches only)
+
+    /// google_places | ltc_directory
+    var source: String? = nil
+    /// Google place ID (the only Places field that may be stored).
+    var placeId: String? = nil
+    var directoryId: String? = nil
+    /// The Google Maps listing, distinct from the business's own website.
+    var googleMapsUri: String? = nil
+    /// What the listing or directory says the business does, e.g.
+    /// ["consignment": "mentioned"]. Never proof it accepts a particular item.
+    var serviceEvidence: [String: String]? = nil
+    var evidenceSource: String? = nil
+    var relevance: DispositionRelevance? = nil
+    var geoScope: String? = nil
+    /// in_area | outside_area | unknown
+    var areaMatch: String? = nil
+    var serviceArea: String? = nil
+    var intakeModel: String? = nil
+    /// Directory entries: date last checked (yyyy-MM-dd).
+    var verifiedAt: String? = nil
+    /// Always "unknown": only the business can confirm it accepts an item.
+    var acceptanceStatus: String? = nil
+    /// "google_maps" when the data comes from Google Places.
+    var attribution: String? = nil
+
     var id: String { partnerId }
+}
+
+struct DispositionRelevance: Codable, Equatable {
+    /// specialist | general
+    var level: String
+    var matchedTerms: [String]
 }
 
 struct DispositionPartnerContact: Codable {
