@@ -75,49 +75,27 @@ struct LiquidationAIService {
         return try await generateBriefBackendFirst(from: req)
     }
 
-    // MARK: - Plan (Item) — UI-friendly overload
+    // MARK: - Plan (Item)
 
-    /// ✅ This is the method your LiquidationSectionView is calling.
-    /// It bridges your app’s LiquidationPath -> DTO expected by the backend.
+    /// Plan for the approach the homeowner chose. More Information Needed is a
+    /// Brief state, never a chosen approach, so it is rejected here.
     func generatePlanChecklistDTO(
         for item: LTCItem,
         chosenPath: LiquidationPath,
         briefDTO: LiquidationBriefDTO
     ) async throws -> LiquidationPlanChecklistDTO {
-
-        let dtoPath = chosenPath.briefPath
-
-        let req = LiquidationPlanRequest(
-            schemaVersion: 1,
-            scope: .item,
-            chosenPath: dtoPath,
-            brief: briefDTO,
-            title: item.name,
-            category: item.category
-        )
-
+        let req = try LiquidationRequestBuilder.buildPlanRequest(for: item, chosenPath: chosenPath, brief: briefDTO)
         return try await generatePlanBackendFirst(from: req)
     }
 
-    // MARK: - Plan (Set) — NEW (LTCItemSet)
+    // MARK: - Plan (Set)
 
     func generatePlanChecklistDTO(
         for itemSet: LTCItemSet,
         chosenPath: LiquidationPath,
         briefDTO: LiquidationBriefDTO
     ) async throws -> LiquidationPlanChecklistDTO {
-
-        let dtoPath = chosenPath.briefPath
-
-        let req = LiquidationPlanRequest(
-            schemaVersion: 1,
-            scope: .set,
-            chosenPath: dtoPath,
-            brief: briefDTO,
-            title: itemSet.name,
-            category: itemSet.setType.rawValue
-        )
-
+        let req = try LiquidationRequestBuilder.buildPlanRequest(for: itemSet, chosenPath: chosenPath, brief: briefDTO)
         return try await generatePlanBackendFirst(from: req)
     }
 
@@ -163,27 +141,47 @@ struct LiquidationAIService {
 
     // MARK: - Backend-first with fallback (Plan)
 
+    /// The basic offline Plan covers only connectivity and temporary service
+    /// problems. Schema, decoding, and request errors are surfaced, never
+    /// masked by a generic checklist.
     private func generatePlanBackendFirst(from req: LiquidationPlanRequest) async throws -> LiquidationPlanChecklistDTO {
 
-        let shouldTryBackend = flags.enableMarketAI
-
-        if shouldTryBackend {
-            do {
-                let dto = try await backend.generateLiquidationPlan(request: req)
-
-                if dto.schemaVersion != req.schemaVersion {
-                    debugLog("⚠️ Liquidation plan schemaVersion mismatch. req=\(req.schemaVersion) resp=\(dto.schemaVersion)")
-                }
-
-                return dto
-            } catch {
-                debugLog("⚠️ Backend liquidation plan failed; using local fallback. Error: \(error)")
-            }
-        } else {
-            debugLog("ℹ️ Backend liquidation plan skipped (FeatureFlags.enableMarketAI == false). Using local.")
+        guard flags.enableMarketAI else {
+            debugLog("ℹ️ Backend liquidation plan skipped (FeatureFlags.enableMarketAI == false). Using basic plan.")
+            return localPlan.generate(from: req)
         }
 
-        return localPlan.generate(from: req)
+        do {
+            let dto = try await backend.generateLiquidationPlan(request: req)
+
+            if dto.schemaVersion != req.schemaVersion {
+                debugLog("⚠️ Liquidation plan schemaVersion mismatch. req=\(req.schemaVersion) resp=\(dto.schemaVersion)")
+            }
+
+            return dto
+        } catch {
+            guard Self.allowsBasicPlanFallback(for: error) else {
+                debugLog("❌ Backend liquidation plan failed; NOT falling back. Error: \(error)")
+                throw error
+            }
+            debugLog("⚠️ Backend liquidation plan unavailable; using basic plan. Error: \(error)")
+            return localPlan.generate(from: req)
+        }
+    }
+
+    /// Offline, timeouts, and temporary server unavailability (including an AI
+    /// provider failure reported as 5xx) allow the basic Plan.
+    static func allowsBasicPlanFallback(for error: Error) -> Bool {
+        if let ai = error as? AIError {
+            switch ai {
+            case .offline, .timeout, .temporarilyUnavailable, .serviceUnavailable:
+                return true
+            default:
+                return false
+            }
+        }
+        if error is URLError { return true }
+        return (error as NSError).domain == NSURLErrorDomain
     }
 
     private func debugLog(_ message: String) {
@@ -262,10 +260,7 @@ enum LiquidationRequestBuilder {
         // A user edit makes the stored range obsolete. Compare in whole dollars, the
         // precision the value field edits in.
         let unitValue = item.estimatedUnitValue
-        let aiRangeIsCurrent: Bool = {
-            guard let likely = valuation?.estimatedValue, let unitValue else { return false }
-            return likely.rounded() == unitValue.rounded()
-        }()
+        let aiRangeIsCurrent = aiValuationRangeIsCurrent(for: item)
 
         return LiquidationBriefRequest(
             schemaVersion: 1,
@@ -443,6 +438,97 @@ enum LiquidationRequestBuilder {
                 }
             ),
             inputs: LiquidationInputsDTO(goal: goal, constraints: constraints, locationHint: locationHint)
+        )
+    }
+
+    /// Whether the stored AI range still describes the item's current Estimated
+    /// Unit Value. A user edit makes it obsolete. Compared in whole dollars, the
+    /// precision the value field edits in.
+    static func aiValuationRangeIsCurrent(for item: LTCItem) -> Bool {
+        guard let likely = item.valuation?.estimatedValue, let unit = item.estimatedUnitValue else { return false }
+        return likely.rounded() == unit.rounded()
+    }
+
+    // MARK: - Plan v2 requests
+
+    enum PlanRequestError: LocalizedError {
+        case noApproachChosen
+
+        var errorDescription: String? {
+            "Choose Maximize Price, Consignment, Quick Sale, or Donation to create a Plan."
+        }
+    }
+
+    /// The chosen approach as sent to the Gateway. More Information Needed is never one.
+    static func planPath(_ chosenPath: LiquidationPath) throws -> LiquidationPathDTO {
+        guard chosenPath != .needsInfo else { throw PlanRequestError.noApproachChosen }
+        return chosenPath.briefPath
+    }
+
+    /// Plan v2 request for an item: the chosen Brief option plus what LTC already
+    /// knows (metadata only: photo/document counts and types, never the files).
+    static func buildPlanRequest(
+        for item: LTCItem,
+        chosenPath: LiquidationPath,
+        brief: LiquidationBriefDTO
+    ) throws -> LiquidationPlanRequest {
+        let path = try planPath(chosenPath)
+        let valuation = item.valuation
+        let rangeIsCurrent = aiValuationRangeIsCurrent(for: item)
+
+        let description = item.itemDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        let notes = valuation?.aiNotes?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let documentTypes = Set(item.documents.map {
+            $0.documentType.trimmingCharacters(in: .whitespacesAndNewlines)
+        }.filter { !$0.isEmpty })
+
+        let context = LiquidationPlanItemContextDTO(
+            description: description.isEmpty ? nil : description,
+            quantity: max(item.quantity, 1),
+            unitValue: item.estimatedUnitValue,
+            currencyCode: valuation?.currencyCode ?? "USD",
+            valuationLow: rangeIsCurrent ? valuation?.valueLow : nil,
+            valuationHigh: rangeIsCurrent ? valuation?.valueHigh : nil,
+            valuationNotes: (rangeIsCurrent && !notes.isEmpty) ? notes : nil,
+            photoCount: item.images.count,
+            documentCount: item.documents.count,
+            documentTypes: documentTypes.sorted(),
+            hasAudioStory: !item.audioRecordings.isEmpty
+        )
+
+        return LiquidationPlanRequest(
+            schemaVersion: 2,
+            scope: .item,
+            chosenPath: path,
+            brief: brief,
+            title: item.name,
+            category: item.category,
+            selectedOption: brief.pathOptions.first(where: { $0.path == path }),
+            isRecommended: brief.recommendedPath == path,
+            itemContext: context
+        )
+    }
+
+    /// Plan v2 request for a Set, with the same Set context the Brief used
+    /// (member summaries, completeness, sell-together preference, closet-lot details).
+    static func buildPlanRequest(
+        for itemSet: LTCItemSet,
+        chosenPath: LiquidationPath,
+        brief: LiquidationBriefDTO
+    ) throws -> LiquidationPlanRequest {
+        let path = try planPath(chosenPath)
+        let setContext = buildRequest(for: itemSet, goal: .balanced, constraints: nil, locationHint: nil).setContext
+
+        return LiquidationPlanRequest(
+            schemaVersion: 2,
+            scope: .set,
+            chosenPath: path,
+            brief: brief,
+            title: itemSet.name,
+            category: itemSet.setType.rawValue,
+            selectedOption: brief.pathOptions.first(where: { $0.path == path }),
+            isRecommended: brief.recommendedPath == path,
+            setContext: setContext
         )
     }
 }
@@ -660,69 +746,65 @@ struct LocalLiquidationBriefGenerator {
     }
 }
 
-// MARK: - Local Plan Fallback (minimal)
+// MARK: - Basic Plan (offline fallback)
 
+/// A short, honest checklist for the chosen approach when online Plan
+/// generation is unavailable. The Plan screen labels it as basic.
 struct LocalLiquidationPlanGenerator {
 
+    static let providerName = "local"
+    static let modelName = "basic-plan-v2"
+
     func generate(from req: LiquidationPlanRequest) -> LiquidationPlanChecklistDTO {
+        let terms = UserFacingTerms.Liquidation.self
+        let option = req.selectedOption ?? req.brief.pathOptions.first(where: { $0.path == req.chosenPath })
+        let name = terms.approachName(req.chosenPath)
+        let specific: String? = option.map { terms.customerLabel($0.label) }
+            .flatMap { $0.isEmpty || $0.caseInsensitiveCompare(name) == .orderedSame ? nil : $0 }
+        let helpAction = (req.brief.specialty?.isSpecialistItem == true) ? "findSpecialtyHelp" : "findHelp"
+        let hasEstimate = option?.netProceeds.map { $0.low != nil || $0.high != nil || $0.likely != nil } ?? false
+        let priceDetail = hasEstimate ? "Use the Brief's estimate as a rough guide, not a set price." : nil
 
-        let title = req.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let category = req.category.trimmingCharacters(in: .whitespacesAndNewlines)
-        let safeTitle = title.isEmpty ? "this item" : title
-        let safeCategory = category.isEmpty ? "Uncategorized" : category
+        var steps: [LiquidationChecklistItemDTO] = []
+        func add(_ text: String, detail: String? = nil, action: String? = nil) {
+            steps.append(.init(order: steps.count + 1, text: text, detail: detail, action: action))
+        }
 
-        var steps: [String] = [
-            "Confirm details for “\(safeTitle)” (\(safeCategory)) — condition, measurements, maker marks.",
-            "Review the liquidation brief and note any missing details."
-        ]
+        // A provisional Plan starts with the fact the Brief could not confirm.
+        if req.brief.recommendedPath == .needsInfo,
+           let missing = req.brief.missingDetails.first.map(terms.customerText), !missing.isEmpty {
+            add("Confirm the key missing detail: \(missing)",
+                detail: "The Brief could not recommend an approach without it.")
+        }
 
         switch req.chosenPath {
         case .pathA_maximizePrice:
-            steps += [
-                "Take 10–14 high-quality photos (front/back/detail/flaws).",
-                "Research 3–5 SOLD comps (not asking prices).",
-                "Draft a clear listing description with measurements and condition.",
-                "Choose an appropriate selling venue for \(safeCategory).",
-                "List at a realistic price with a small negotiation buffer.",
-                "Review after 7–10 days and adjust if needed."
-            ]
+            add("Choose where buyers for this kind of item look", detail: specific)
+            add("List it with your saved photos and description", detail: priceDetail)
+            add("Compare offers, then arrange safe payment and delivery")
         case .pathB_delegateConsign:
-            steps += [
-                "Identify 1–3 consignors/dealers that handle \(safeCategory).",
-                "Prepare intake packet (photos, measurements, condition notes).",
-                "Ask about commission %, payout timing, and insurance/liability.",
-                "Confirm logistics and document the agreement.",
-                "Schedule a follow-up date."
-            ]
+            add("Find a consignor or dealer who handles this kind of item",
+                detail: specific.map { "The Brief suggests: \($0)." }, action: helpAction)
+            add("Confirm they will accept it, and compare commission and payout timing")
+            add("Hand it over and keep the signed agreement")
         case .pathC_quickExit:
-            steps += [
-                "Take 6–10 clear photos (include flaws).",
-                "Write a short, factual description.",
-                "Set a fast-sale price and decide your minimum acceptable offer.",
-                "Post locally (Facebook Marketplace / Nextdoor / Craigslist).",
-                "Use safe pickup practices (daytime, confirm payment method, no holds).",
-                "Close sale and record final net proceeds."
-            ]
+            add("Post it locally with your saved photos and an honest description")
+            add("Set an asking price and decide your lowest acceptable offer", detail: priceDetail)
+            add("Meet buyers safely and accept only secure payment")
         case .donate:
-            steps += [
-                "Choose donation destination (Goodwill, Habitat Restore, specialty charity).",
-                "Drop off and request a receipt if useful for taxes.",
-                "Record donation details and mark complete."
-            ]
+            add("Find a charity or donation center that accepts this kind of item", action: "findHelp")
+            add("Confirm they will take it, then drop it off or schedule pickup")
+            add("Ask for a receipt if it is useful for taxes")
         case .needsInfo:
-            steps += [
-                "Collect missing details noted in the brief (maker marks, measurements, condition).",
-                "Regenerate the brief.",
-                "Choose an approach and regenerate the plan."
-            ]
+            add("Add the missing details from the Brief, then create the Plan again")
         }
 
-        steps.append("AI brief recommended: \(req.brief.recommendedPath.displayName). Adjust if your situation differs.")
-
-        let items = steps.enumerated().map { idx, text in
-            LiquidationChecklistItemDTO(order: idx + 1, text: text)
-        }
-
-        return LiquidationPlanChecklistDTO(schemaVersion: req.schemaVersion, createdAt: .now, items: items)
+        return LiquidationPlanChecklistDTO(
+            schemaVersion: req.schemaVersion,
+            createdAt: .now,
+            items: steps,
+            aiProvider: Self.providerName,
+            aiModel: Self.modelName
+        )
     }
 }

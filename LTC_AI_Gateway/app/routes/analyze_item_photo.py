@@ -20,6 +20,7 @@ from app.models_liquidation import (
     LiquidationBriefDTO,
     LiquidationBriefRequest,
     LiquidationMemberSummary,
+    LiquidationPathOptionDTO,
     LiquidationPlanChecklistDTO,
     LiquidationPlanRequest,
 )
@@ -669,10 +670,53 @@ def _normalize_liquidation_brief_obj(*, raw_json: str, request: LiquidationBrief
 
 
 
+_PLAN_ACTIONS = {"findHelp", "findSpecialtyHelp"}
+_PLAN_GROUPS = {"luxury", "contemporary", "donate", "discard", "other"}
+# Safety bound against runaway output, not a target: prompts ask for 3 to 6 steps
+# (5 to 9 for a closet lot).
+_PLAN_MAX_STEPS = 12
+# Internal partner-type codes the earlier Clothing prompt asked Gemini to cite.
+_PARTNER_TYPE_NOTE_RE = re.compile(r"\s*\(?\s*partnerType\s*:\s*[A-Za-z_]+\s*\)?")
+_LUXURY_HUB_CODE_RE = re.compile(r"\bluxury_hub_mailin\b")
+
+
+def _plan_text(value: Any, max_len: int) -> Optional[str]:
+    """Homeowner-facing Plan text without identifiers or internal codes."""
+    if not isinstance(value, str):
+        return None
+    s = _customer_text(value)
+    s = _PARTNER_TYPE_NOTE_RE.sub("", s)
+    s = _LUXURY_HUB_CODE_RE.sub("luxury mail-in consignment", s)
+    s = " ".join(s.split()).strip()
+    return s[:max_len].rstrip() if s else None
+
+
+def _step_tokens(text: str) -> set:
+    return set(re.findall(r"[a-z0-9]+", text.lower()))
+
+
+def _is_repeated_step(tokens: set, earlier: List[set]) -> bool:
+    """
+    Exact repeats, or near-identical wording (85%+ shared words). Deliberately
+    conservative: steps that differ in what or who they concern are kept.
+    """
+    for prev in earlier:
+        if tokens == prev:
+            return True
+        if len(tokens) >= 4 and len(prev) >= 4:
+            if len(tokens & prev) / len(tokens | prev) >= 0.85:
+                return True
+    return False
+
+
 def _normalize_liquidation_plan_obj(*, raw_json: str, request: LiquidationPlanRequest) -> Dict[str, Any]:
     """
-    Tolerate wrapper keys and minor drift for plan.
-    If createdAt missing, stamp it pre-validation.
+    Tolerate wrapper keys and minor drift, then clean the checklist:
+    - steps given as strings or with alternate text keys
+    - identifiers and internal codes removed from text and detail
+    - unknown action/group values dropped (group only for closet lots)
+    - repeated steps removed, order renumbered, new steps unchecked
+    Raises ValueError when no usable step remains, so the caller can repair or fail.
     """
     obj_any = _parse_llm_json_obj(raw_json)
     obj_any = _unwrap_singleton_wrapper(obj_any)
@@ -682,13 +726,56 @@ def _normalize_liquidation_plan_obj(*, raw_json: str, request: LiquidationPlanRe
 
     obj: Dict[str, Any] = dict(obj_any)
 
-    obj.setdefault("schemaVersion", request.schemaVersion)
+    sv = obj.get("schemaVersion")
+    if not isinstance(sv, int) or isinstance(sv, bool):
+        obj["schemaVersion"] = request.schemaVersion
     if "createdAt" not in obj or obj.get("createdAt") in (None, ""):
         obj["createdAt"] = datetime.now(timezone.utc).isoformat()
 
-    # Ensure items is a list
-    if obj.get("items") is None:
-        obj["items"] = []
+    closet_lot = _plan_is_closet_lot(request)
+    raw_items = obj.get("items")
+    if not isinstance(raw_items, list):
+        raw_items = []
+
+    steps: List[Dict[str, Any]] = []
+    seen: List[set] = []
+    for raw in raw_items:
+        if isinstance(raw, str):
+            raw = {"text": raw}
+        if not isinstance(raw, dict):
+            continue
+        text = _plan_text(raw.get("text") or raw.get("step") or raw.get("title") or raw.get("description"), 240)
+        if not text:
+            continue
+        tokens = _step_tokens(text)
+        if not tokens or _is_repeated_step(tokens, seen):
+            continue
+        seen.append(tokens)
+
+        detail = _plan_text(raw.get("detail"), 300)
+        if detail and _step_tokens(detail) == tokens:
+            detail = None
+        action = raw.get("action") if raw.get("action") in _PLAN_ACTIONS else None
+        group = raw.get("group") if closet_lot and raw.get("group") in _PLAN_GROUPS else None
+
+        steps.append({
+            "order": len(steps) + 1,
+            "text": text,
+            "detail": detail,
+            "action": action,
+            "group": group,
+            "isCompleted": False,
+            "completedAt": None,
+            "userNotes": None,
+        })
+        if len(steps) == _PLAN_MAX_STEPS:
+            break
+
+    if not steps:
+        raise ValueError("Liquidation plan contained no usable steps.")
+
+    obj["items"] = steps
+    obj["focus"] = _plan_text(obj.get("focus"), 240)
     return obj
 
 
@@ -811,6 +898,7 @@ Rules:
   reasoning, label, risks, and logisticsNotes: never write an identifier or "Path A/B/C" there.
   Refer to approaches as Maximize Price, Consignment, Quick Sale, or Donation.
 - reasoning: two or three plain sentences on why the recommended approach fits this item.
+- When recommendedPath is needsInfo, missingDetails MUST list the specific facts needed.
 
 PATH OPTIONS (pathOptions array):
 - Include exactly one option for EACH of pathA_maximizePrice, pathB_delegateConsign, and
@@ -855,157 +943,267 @@ SPECIALTY (optional "specialty" object; describes the item, it is not a recommen
 - Never include business names, prices, or people's names. If unsure, set "specialty" to null.
 """
 
-def _build_liquidation_plan_prompt(req: LiquidationPlanRequest) -> str:
-    safe_title = req.title or "Untitled"
-    safe_category = req.category or "Uncategorized"
+# Plan v2 strategy guidance: what a good checklist covers for each chosen approach.
+_PLAN_STRATEGY_GUIDANCE = {
+    "pathA_maximizePrice": (
+        "The owner sells the item themselves for the best price. Cover the most promising selling "
+        "channel for THIS item, the preparation buyers in that channel actually expect, how to judge "
+        "offers against the Brief's estimate, and safe payment and shipping or pickup."
+    ),
+    "pathB_delegateConsign": (
+        "A business sells the item for the owner. Cover finding consignors or specialist dealers suited "
+        "to THIS item, confirming they will accept it before handing it over, comparing commission, "
+        "payout timing, and pricing control, preparing the handoff, and keeping the written agreement."
+    ),
+    "pathC_quickExit": (
+        "The owner wants the item gone soon with little effort. Cover a practical channel, a realistic "
+        "asking price informed by the Brief's estimate, transaction safety, and finishing promptly."
+    ),
+    "donate": (
+        "The owner gives the item away. Cover choosing a recipient that takes this kind of item, "
+        "confirming they will accept it, arranging drop-off or pickup, and getting a receipt when useful."
+    ),
+}
 
-    brief = req.brief
-    recommended = brief.recommendedPath
-    reasoning = brief.reasoning
-    action_steps = brief.actionSteps or []
-    missing = brief.missingDetails or []
+# Brief assumptions that describe how the Brief was made, not the item.
+_NON_ITEM_ASSUMPTION_PREFIXES = ("local fallback", "backend error", "value not estimated")
 
-    chosen = req.chosenPath
 
-    steps_block = "\n".join(f"- {s}" for s in action_steps[:20]) if action_steps else "(none)"
-    missing_block = "\n".join(f"- {m}" for m in missing[:20]) if missing else "(none)"
+def _plan_selected_option(req: LiquidationPlanRequest) -> Optional[LiquidationPathOptionDTO]:
+    """The option the owner chose: sent explicitly by Plan v2 clients, else found in the Brief."""
+    if req.selectedOption is not None and req.selectedOption.path == req.chosenPath:
+        return req.selectedOption
+    return next((o for o in req.brief.pathOptions if o.path == req.chosenPath), None)
 
-    # Determine if this is the Clothing closetLot set case.
-    # We only have the Brief + optional title/category in the plan request.
-    # In v1, we infer clothing + closetLot by checking the text (title/category/reasoning) and chosenPath pattern.
-    # Primary trigger is that iOS will send category="Clothing" for this Plan request.
-    is_clothing = (safe_category or "").strip().lower() == "clothing"
 
-    if not is_clothing:
-        # Default / existing behavior (unchanged)
-        return f"""You are an expert estate liquidation assistant.
+def _plan_is_closet_lot(req: LiquidationPlanRequest) -> bool:
+    """Pile-by-pile clothing semantics apply to clothing SETS (closet lots), never to a single garment."""
+    if req.scope != "set":
+        return False
+    names = {_norm(req.category or "")}
+    if req.setContext is not None:
+        names.add(_norm(req.setContext.setType or ""))
+    return bool(names & {"clothing", "closet lot"})
 
-Your job: generate an OPERATIONAL checklist plan for the user to execute.
 
-Return STRICT JSON ONLY that matches LiquidationPlanChecklistDTO:
-{{
-  "schemaVersion": 1,
+def _plan_money(value: Optional[float], currency: str) -> str:
+    return f"{value:,.0f} {currency}" if value is not None else "not estimated"
+
+
+def _plan_option_block(opt: Optional[LiquidationPathOptionDTO], currency: str) -> str:
+    if opt is None:
+        return "- (The Brief has no details for this approach.)\n"
+    lines = []
+    label = _customer_label(opt.label)
+    if label:
+        lines.append(f"- Specific recommendation: {label}")
+    np_ = opt.netProceeds
+    if np_ is not None and (np_.low is not None or np_.high is not None):
+        lines.append(
+            f"- Brief's rough net estimate (advisory, not a price): "
+            f"{_plan_money(np_.low, currency)} to {_plan_money(np_.high, currency)}"
+        )
+    lines.append(f"- Effort: {opt.effort}")
+    if opt.timeEstimate:
+        lines.append(f"- Time: {_customer_text(opt.timeEstimate)}")
+    if opt.risks:
+        lines.append("- Risks: " + "; ".join(_customer_text(r) for r in opt.risks[:6]))
+    if opt.logisticsNotes:
+        lines.append(f"- Logistics: {_customer_text(opt.logisticsNotes)}")
+    return "\n".join(lines) + "\n"
+
+
+def _plan_known_block(req: LiquidationPlanRequest, currency: str) -> str:
+    """What LTC already has, so the checklist does not ask the owner to recreate it."""
+    lines: List[str] = [f"- Name: {req.title or 'Untitled'}", f"- Category: {req.category or 'Uncategorized'}"]
+    ic = req.itemContext
+    if ic is not None:
+        if ic.description and ic.description.strip():
+            lines.append(f"- Saved description: {' '.join(ic.description.split())[:1200]}")
+        if ic.quantity:
+            lines.append(f"- Quantity: {ic.quantity}")
+        if ic.valuationLow is not None or ic.valuationHigh is not None:
+            lines.append(
+                f"- Preliminary AI value range per unit (advisory): "
+                f"{_plan_money(ic.valuationLow, currency)} to {_plan_money(ic.valuationHigh, currency)}"
+            )
+        elif ic.unitValue is not None:
+            lines.append(f"- Estimated value per unit (advisory): {_plan_money(ic.unitValue, currency)}")
+        else:
+            lines.append("- Value: not estimated")
+        if ic.valuationNotes and ic.valuationNotes.strip():
+            lines.append(f"- Valuation notes: {' '.join(ic.valuationNotes.split())[:400]}")
+        if ic.photoCount is not None:
+            lines.append(f"- Photos already saved in LTC: {ic.photoCount}")
+        if ic.documentCount:
+            types = ", ".join(t for t in ic.documentTypes[:6] if t) or "unspecified"
+            lines.append(f"- Supporting documents already saved: {ic.documentCount} ({types})")
+        if ic.hasAudioStory:
+            lines.append("- An audio story about the item is saved in LTC")
+
+    sc = req.setContext
+    if sc is not None:
+        lines.append(f"- Set type: {sc.setType or 'unspecified'}")
+        if sc.sellTogetherPreference:
+            lines.append(f"- Sell-together preference: {sc.sellTogetherPreference}")
+        if sc.completeness:
+            lines.append(f"- Completeness: {sc.completeness}")
+        if sc.story and sc.story.strip():
+            lines.append(f"- Set notes: {' '.join(sc.story.split())[:800]}")
+        if sc.memberSummaries:
+            lines.append(f"- Members already listed in LTC ({len(sc.memberSummaries)}):")
+            for m in sc.memberSummaries[:30]:
+                lines.append(
+                    f"  - {m.title or 'Untitled'} | {m.category or 'Uncategorized'} | qty {m.quantity or 1}"
+                    f" | value each {_plan_money(m.unitValue, currency)}"
+                )
+
+    sp = req.brief.specialty
+    if sp is not None:
+        if sp.itemKind:
+            lines.append(f"- Kind of item: {sp.itemKind}")
+        if sp.brand:
+            lines.append(f"- Brand or maker: {sp.brand}")
+        if sp.model:
+            lines.append(f"- Model: {sp.model}")
+        if sp.detailTerms:
+            lines.append(f"- Identifying details: {', '.join(sp.detailTerms)}")
+        if sp.isSpecialistItem:
+            lines.append("- Specialist dealers or consignors exist for this kind of item")
+    return "\n".join(lines) + "\n"
+
+
+def _plan_unconfirmed_block(req: LiquidationPlanRequest) -> str:
+    facts = [_customer_text(m) for m in (req.brief.missingDetails or []) if m and m.strip()]
+    facts += [
+        _customer_text(a) for a in (req.brief.assumptions or [])
+        if a and a.strip() and not a.strip().lower().startswith(_NON_ITEM_ASSUMPTION_PREFIXES)
+    ]
+    return "\n".join(f"- {f}" for f in facts[:12]) + "\n" if facts else "- (none recorded)\n"
+
+
+_PLAN_OUTPUT_SCHEMA = """Return STRICT JSON ONLY (no markdown, no wrapper key):
+{
+  "schemaVersion": 2,
   "createdAt": "ISO-8601 datetime",
+  "focus": "<one plain sentence: how this plan carries out the chosen approach for this item>",
   "items": [
-    {{
-      "order": 1,
-      "text": "step text",
-      "isCompleted": false,
-      "completedAt": null,
-      "userNotes": null
-    }}
+    {"order": 1, "text": "<step>", "detail": "<one short sentence>" or null,
+     "action": "findHelp" | "findSpecialtyHelp" | null,%s
+     "isCompleted": false, "completedAt": null, "userNotes": null}
   ]
-}}
+}"""
 
-IMPORTANT:
-- Return a FLAT JSON object (no wrapper key like "LiquidationPlanChecklistDTO").
-- Do NOT nest the response under any extra keys.
 
-Context:
-- Scope: {req.scope}
-- Title: {safe_title}
-- Category: {safe_category}
-- ChosenPath: {chosen}
+def _build_liquidation_plan_prompt(req: LiquidationPlanRequest) -> str:
+    """
+    Plan v2: a short, item-specific checklist for the approach the owner chose.
+    Works with app 1.2 requests too (no selectedOption/itemContext): the chosen
+    option is then found in the Brief and only title/category are known.
+    """
+    brief = req.brief
+    chosen = req.chosenPath
+    currency = (req.itemContext.currencyCode if req.itemContext and req.itemContext.currencyCode else None) \
+        or next((o.netProceeds.currencyCode for o in brief.pathOptions if o.netProceeds), None) or "USD"
 
-Brief context:
-- recommendedPath: {recommended}
-- reasoning: {reasoning}
+    chosen_name = _APPROACH_NAMES.get(chosen, "the chosen approach")
+    recommended_name = _APPROACH_NAMES.get(brief.recommendedPath, "")
+    is_recommended = req.isRecommended if req.isRecommended is not None else (brief.recommendedPath == chosen)
+    provisional = brief.recommendedPath == "needsInfo"
+    closet_lot = _plan_is_closet_lot(req)
 
-Brief actionSteps (context only):
-{steps_block}
+    if provisional:
+        choice_line = (
+            f"The owner chose {chosen_name}. The Brief could not recommend an approach yet because key facts "
+            "are missing (see UNCONFIRMED), so this plan is PROVISIONAL."
+        )
+    elif is_recommended:
+        choice_line = f"The owner chose {chosen_name}, which the Brief recommended."
+    else:
+        choice_line = (
+            f"The owner chose {chosen_name}. The Brief recommended {recommended_name}, but the owner's choice "
+            f"governs: plan ONLY for {chosen_name} and do not steer back to {recommended_name}."
+        )
 
-Missing details (ask user to collect early if relevant):
-{missing_block}
+    guidance = _PLAN_STRATEGY_GUIDANCE.get(chosen, "Plan the next practical steps for the chosen approach.")
 
-Rules:
-- Generate 10–16 steps.
-- Steps must be specific, short, and sequential.
-- Steps must reflect the chosenPath:
-  - pathA_maximizePrice: comps, photos, listing quality, shipping/pickup decision, pricing strategy, relist cadence.
-  - pathB_delegateConsign: shortlist consignors/dealers, intake packet, commission terms, agreement tracking, follow-ups.
-  - pathC_quickExit: quick photos, honest description, fast pricing, safe local pickup rules.
-  - donate: pick destination, receipt, record donation details.
-  - needsInfo: gather missing details first, then regenerate brief.
-- Do NOT include markdown. Do NOT include commentary.
-Return JSON only.
+    provisional_rules = ""
+    if provisional:
+        provisional_rules = """
+PROVISIONAL PLAN:
+- Make the first step resolve the most important UNCONFIRMED fact in the way this approach needs it.
+- Word later steps so they still hold if that fact turns out differently.
 """
 
-    # Clothing lot plan (spec v1): Blocks A–E, lot-level, hub-first for luxury
-    # We express luxury hub mail-in execution via explicit steps referencing partnerType 'luxury_hub_mailin'
-    # when chosenPath is delegate-consign (hub-first specialist flow).
-    hub_line = ""
-    if chosen == "pathB_delegateConsign":
-        hub_line = "If the luxury/designer pile is present, use the curated hub mail-in channel (partnerType: luxury_hub_mailin)."
+    set_rules = ""
+    if req.scope == "set" and not closet_lot:
+        set_rules = """
+SET:
+- Members are already listed in LTC; do not ask the owner to inventory them again.
+- Early on, settle whether the set sells together or in parts, guided by the sell-together
+  preference and completeness. A set may need a few more steps than a single item.
+"""
 
-    return f"""You are an expert CLOTHING liquidation assistant for estate cleanouts.
+    closet_rules = ""
+    group_field = ""
+    if closet_lot:
+        group_field = '\n     "group": "luxury" | "contemporary" | "donate" | "discard" | "other",'
+        closet_rules = """
+CLOSET LOT (a clothing set):
+- Work pile by pile; never itemize individual garments.
+- Begin by splitting the lot: luxury/designer, better contemporary, everyday, worn or damaged, plus a
+  small "check the label" pile for anything uncertain.
+- Luxury/designer pieces usually do best with a specialist luxury consignor that accepts items by mail.
+  Do not donate or quick-sell anything until designer pieces have been ruled out.
+- Better contemporary pieces: resale apps or local consignment. Everyday pieces: donation or thrift.
+  Worn or damaged pieces: textile recycling or discard.
+- Shape the piles' channels to the chosen approach.
+- Give EVERY step a "group" naming its pile: luxury, contemporary, donate, discard, or other.
+- A lot usually needs 5 to 9 steps.
+"""
 
-Your job: generate an OPERATIONAL checklist plan for a CLOSET LOT (set). Do NOT itemize each garment.
+    return f"""You are an expert estate liquidation assistant writing a homeowner's checklist.
 
-Return STRICT JSON ONLY that matches LiquidationPlanChecklistDTO:
-{{
-  "schemaVersion": 1,
-  "createdAt": "ISO-8601 datetime",
-  "items": [
-    {{
-      "order": 1,
-      "text": "step text",
-      "isCompleted": false,
-      "completedAt": null,
-      "userNotes": null
-    }}
-  ]
-}}
+{_PLAN_OUTPUT_SCHEMA % group_field}
 
-IMPORTANT:
-- Return a FLAT JSON object (no wrapper key like "LiquidationPlanChecklistDTO").
-- Do NOT nest the response under any extra keys.
+CHOSEN APPROACH:
+{choice_line}
+What a good {chosen_name} plan covers: {guidance}
 
-Governed by: "LTC Category Disposition Spec — Clothing (v1)".
-Apply these rails:
-- Avoid false local optimism for luxury clothing; default to hub specialists.
-- Do not donate until luxury potential is ruled out.
+THE CHOSEN OPTION (from the Brief):
+{_plan_option_block(_plan_selected_option(req), currency)}
+BRIEF REASONING (context only):
+{_customer_text(brief.reasoning)}
 
-Context:
-- Scope: {req.scope}
-- Title: {safe_title}
-- Category: Clothing
-- ChosenPath: {chosen}
-
-Brief context:
-- recommendedPath: {recommended}
-- reasoning: {reasoning}
-
-Brief actionSteps (context only):
-{steps_block}
-
-Missing details (collect early if relevant):
-{missing_block}
-
-Rules:
-- Generate 12–18 steps.
-- Steps must be specific, short, sequential, and lot-oriented.
-- The checklist MUST include Blocks A–E (in order), adapted to the chosenPath.
-
-Checklist blocks (must be represented):
-A) Split the lot (mandatory): Luxury/Designer, Better contemporary, Mainstream/Donate, plus a "maybe" hold pile for labels.
-B) Create a simple manifest: counts by pile, top brands per pile, condition notes.
-C) Photo package: overview + label collage + hero examples; add close-ups for any Tier 1 items.
-D) Choose channel:
-   - Luxury pile → curated hub mail-in (partnerType MUST be exactly: luxury_hub_mailin)
-   - Better contemporary → mail-in/aggregator or selective local only if user insists
-   - Mainstream → donation/local thrift; local resale only if LikeNew and user wants the effort
-E) Execute submission/outreach:
-   - Use Disposition Engine "Execute Plan" for the luxury pile (partnerType: luxury_hub_mailin) and track status
-   - Follow intake instructions
-   - Track status: NotStarted → InProgress → Completed
-
-ChosenPath mapping:
-- pathB_delegateConsign = delegate to specialists (this is the hub-first luxury mail-in flow when Tier 1 is present). {hub_line}
-- pathC_quickExit = convenience-first exit (donation/local thrift), after ruling out luxury.
-- donate = donation workflow, after ruling out luxury.
-- needsInfo = gather missing details first (labels/brands/condition/count), then regenerate brief.
-
-Return JSON only.
+KNOWN (already recorded in LTC; do not ask the owner to recreate any of this):
+{_plan_known_block(req, currency)}
+UNCONFIRMED (facts the Brief could not verify; anything the saved description or notes call untested,
+unknown, or not recorded is unconfirmed too):
+{_plan_unconfirmed_block(req)}{provisional_rules}{set_rules}{closet_rules}
+STEP RULES:
+- Usually 3 to 6 steps. Use fewer when fewer are enough; never pad to reach a count.
+- Every step must resolve an uncertainty that matters for this approach, or move the item closer to
+  being sold, consigned, or donated.
+- "text": one short imperative sentence (aim for under 20 words) that produces a concrete result.
+- "detail": one short sentence with the specific why or how, or null when there is nothing useful to add.
+- Draw on the item's own description and kind; knowledge specific to this kind of item belongs in the steps.
+- Do not ask the owner to photograph, describe, measure, inventory, identify, or research anything listed
+  under KNOWN. Ask for a specific missing photo or fact only when it changes what a buyer, consignor, or
+  recipient will do, and only once, in the step where it matters.
+- Treat value figures as rough advisory ranges. Suggest independent verification (such as an appraisal or
+  authentication) only when the value is high or uncertain enough to change the outcome.
+- Never name a specific business, consignor, dealer, auction house, or resale website. Describe the kind of
+  business instead (LTC's Find Help locates real ones). Widely used public marketplaces may be named as
+  selling channels.
+- Do not invent appraisals, authentication results, acceptance, prices, commissions, deadlines, price
+  floors, or guaranteed proceeds. Mention price only as the Brief's estimate range for this approach,
+  called an estimate, and never add precision it does not have.
+- Combine small related actions into one step. No filler: no "review the brief", "confirm item details",
+  "mark complete", or "record the outcome" steps.
+- "action": "findHelp" when the step means finding a local business or organization (consignor, dealer,
+  buyer, donation center, estate service); "findSpecialtyHelp" when it needs a specialist in this kind of
+  item; otherwise null.
+- Write for the homeowner. Never write path identifiers, field names, or internal codes.
 """
 
 
@@ -2532,11 +2730,11 @@ async def generate_liquidation_plan(payload: LiquidationPlanRequest) -> Liquidat
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    # First pass normalize + validate
+    # First pass normalize + validate. No usable steps counts as invalid (repair once).
     try:
         obj = _normalize_liquidation_plan_obj(raw_json=raw_json, request=payload)
         plan = LiquidationPlanChecklistDTO.model_validate(obj)
-    except ValidationError as ve:
+    except (ValidationError, ValueError) as ve:
         # One repair attempt with explicit error context
         try:
             repair_prompt = _build_liquidation_plan_repair_prompt(
@@ -2561,6 +2759,8 @@ async def generate_liquidation_plan(payload: LiquidationPlanRequest) -> Liquidat
     # Server-side stamps / normalization
     if getattr(plan, "createdAt", None) is None:
         plan.createdAt = datetime.now(timezone.utc)
+    plan.aiProvider = "gemini"
+    plan.aiModel = GEMINI_MODEL
 
     # Ensure sequential order
     if plan.items:

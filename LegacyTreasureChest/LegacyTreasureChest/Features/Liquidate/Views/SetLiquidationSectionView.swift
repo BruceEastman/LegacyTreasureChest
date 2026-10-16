@@ -20,6 +20,8 @@ struct SetLiquidationSectionView: View {
     @State private var errorMessage: String?
     @State private var isGeneratingBrief: Bool = false
     @State private var isGeneratingPlan: Bool = false
+    /// The homeowner chose to plan before the Brief's missing details are confirmed.
+    @State private var isCreatingPlanAnyway: Bool = false
 
     @StateObject private var consentGate = AIConsentGate()
 
@@ -60,8 +62,20 @@ struct SetLiquidationSectionView: View {
 
                     Divider().padding(.vertical, 4)
 
-                    if shouldBlockPlanCreation(from: brief) {
+                    if briefNeedsMoreInformation(brief) {
                         needsInfoCard(from: brief)
+                        if isCreatingPlanAnyway {
+                            Text(UserFacingTerms.Liquidation.createPlanAnywayExplanation)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                            pathButtonsRow(itemSet: itemSet, briefRecord: brief)
+                        } else {
+                            Button(UserFacingTerms.Liquidation.createPlanAnyway) {
+                                isCreatingPlanAnyway = true
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(isGeneratingBrief || isGeneratingPlan)
+                        }
                     } else {
                         pathButtonsRow(itemSet: itemSet, briefRecord: brief)
                     }
@@ -225,6 +239,7 @@ struct SetLiquidationSectionView: View {
             itemSet.updatedAt = .now
 
             try modelContext.save()
+            isCreatingPlanAnyway = false
             message = "Brief updated."
         } catch {
             errorMessage = "Brief failed: \(error.localizedDescription)"
@@ -250,20 +265,20 @@ struct SetLiquidationSectionView: View {
         }
     }
     
-    private func shouldBlockPlanCreation(from briefRecord: LiquidationBriefRecord) -> Bool {
-        guard let dto = LiquidationJSONCoding.tryDecode(LiquidationBriefDTO.self, from: briefRecord.payloadJSON) else {
-            return true
-        }
-        return dto.recommendedPath == .needsInfo
+    /// More Information Needed no longer blocks a Plan; it asks for an explicit
+    /// "Create a Plan Anyway" before the four approaches are offered.
+    private func briefNeedsMoreInformation(_ briefRecord: LiquidationBriefRecord) -> Bool {
+        LiquidationJSONCoding.tryDecode(LiquidationBriefDTO.self, from: briefRecord.payloadJSON)?
+            .recommendedPath == .needsInfo
     }
 
     @ViewBuilder
     private func needsInfoCard(from briefRecord: LiquidationBriefRecord) -> some View {
         if let dto = LiquidationJSONCoding.tryDecode(LiquidationBriefDTO.self, from: briefRecord.payloadJSON) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("More information is needed before creating a Plan.")
+                Text("The Brief needs more information before it can recommend an approach.")
                     .font(.subheadline.weight(.semibold))
-                Text("Add the missing details below to the set or its items, then update the Brief.")
+                Text("Add the missing details below to the set or its items, then update the Brief, or create a Plan anyway.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
@@ -308,10 +323,17 @@ struct SetLiquidationSectionView: View {
                 )
             }
 
-            let checklist = try await liquidationAI.generatePlanChecklistDTO(
+            // Backend-first; the service uses the basic Plan only when offline or unavailable.
+            let generated = try await liquidationAI.generatePlanChecklistDTO(
                 for: itemSet,
                 chosenPath: chosen,
                 briefDTO: briefDTO
+            )
+            let checklist = LiquidationPlanAssembler.withContext(
+                generated,
+                chosenPath: chosen,
+                brief: briefDTO,
+                briefRecordId: briefRecord.briefRecordId
             )
 
             let checklistData = try LiquidationJSONCoding.encode(checklist)
@@ -325,7 +347,10 @@ struct SetLiquidationSectionView: View {
                 isActive: true,
                 chosenPath: chosen,
                 status: .notStarted,
-                payloadVersion: "plan.v1",
+                payloadVersion: LiquidationPlanAssembler.payloadVersion,
+                aiProvider: checklist.aiProvider,
+                aiModel: checklist.aiModel,
+                derivedFromBriefRecordId: briefRecord.briefRecordId,
                 payloadJSON: checklistData
             )
             planRecord.state = state
@@ -338,6 +363,7 @@ struct SetLiquidationSectionView: View {
             itemSet.updatedAt = .now
 
             try modelContext.save()
+            isCreatingPlanAnyway = false
             message = "Created your \(UserFacingTerms.Liquidation.planTitle(chosen))."
         } catch {
             errorMessage = "Plan failed: \(error.localizedDescription)"
@@ -352,14 +378,11 @@ struct SetLiquidationSectionView: View {
     private func planChecklistEditor(planRecord: LiquidationPlanRecord, itemSet: LTCItemSet) -> some View {
         if let checklist = LiquidationJSONCoding.tryDecode(LiquidationPlanChecklistDTO.self, from: planRecord.payloadJSON) {
             VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text(UserFacingTerms.Liquidation.planTitle(planRecord.chosenPath))
-                        .font(.headline)
-                    Spacer()
-                    Text(UserFacingTerms.Liquidation.statusName(planRecord.status))
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
+                LiquidationPlanContextHeader(
+                    chosenPath: planRecord.chosenPath,
+                    status: planRecord.status,
+                    checklist: checklist
+                )
 
                 ForEach(checklist.items.sorted(by: { $0.order < $1.order })) { checklistItem in
                     Toggle(isOn: Binding(
@@ -373,8 +396,7 @@ struct SetLiquidationSectionView: View {
                             )
                         }
                     )) {
-                        Text("\(checklistItem.order). \(checklistItem.text)")
-                            .font(.subheadline)
+                        LiquidationChecklistStepLabel(item: checklistItem)
                     }
                 }
 

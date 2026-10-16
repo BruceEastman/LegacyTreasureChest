@@ -108,6 +108,15 @@ enum UserFacingTerms {
 
         static let estimatesDisclaimer = "Estimates are approximate and not guaranteed."
 
+        // Plans
+        static let createPlanAnyway = "Create a Plan Anyway"
+        static let createPlanAnywayExplanation =
+            "You can still choose an approach now. The Plan will start with the missing details, and its steps may change once they are confirmed."
+        static let provisionalPlanNotice =
+            "Provisional: created before the Brief could confirm key details."
+        static let basicPlanNotice =
+            "Basic plan: online Plan generation was unavailable. Choose the approach again when connected for steps specific to this item."
+
         /// Replaces internal path identifiers that older Briefs may contain in
         /// homeowner-facing text ("pathB_delegateConsign", "Path B", "needsInfo").
         static func customerText(_ text: String) -> String {

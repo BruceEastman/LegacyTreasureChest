@@ -653,8 +653,7 @@ private struct SetExecutePlanView: View {
                             )
                         }
                     )) {
-                        Text("\(item.order). \(item.text)")
-                            .font(.subheadline)
+                        LiquidationChecklistStepLabel(item: item)
                     }
                 }
             }
@@ -1056,6 +1055,16 @@ private struct SetExecutePlanView: View {
         setType: SetType
     ) -> [BlockID: [Int]] {
         let indices = Array(checklist.items.indices)
+
+        // Plan v2 steps name their pile explicitly; older Plans keep keyword grouping.
+        if checklist.items.contains(where: { $0.group != nil }) {
+            var dict: [BlockID: [Int]] = [:]
+            for i in indices {
+                let bid = checklist.items[i].group.flatMap(BlockID.init(rawValue:)) ?? .other
+                dict[bid, default: []].append(i)
+            }
+            return dict
+        }
 
         guard setType == .closetLot else {
             return [.other: indices]

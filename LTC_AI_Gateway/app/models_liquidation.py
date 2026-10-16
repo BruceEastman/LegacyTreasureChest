@@ -139,11 +139,41 @@ class LiquidationChecklistItemDTO(BaseModel):
     completedAt: Optional[datetime] = None
     userNotes: Optional[str] = None
 
+    # Plan v2 (optional): one short "why/how" line, a hook for opening Find Help
+    # (findHelp | findSpecialtyHelp), and the closet-lot pile a step belongs to
+    # (luxury | contemporary | donate | discard | other).
+    detail: Optional[str] = None
+    action: Optional[str] = None
+    group: Optional[str] = None
+
 
 class LiquidationPlanChecklistDTO(BaseModel):
     schemaVersion: int = 1
     createdAt: datetime = Field(default_factory=_utcnow)
     items: List[LiquidationChecklistItemDTO] = Field(default_factory=list)
+
+    # Plan v2 (optional)
+    focus: Optional[str] = None  # one sentence: the strategy in plain words
+    aiProvider: Optional[str] = None
+    aiModel: Optional[str] = None
+
+
+class LiquidationPlanItemContext(BaseModel):
+    """
+    Plan v2: what LTC already knows about a single item. Metadata only: counts
+    and document types, never photos, files, or audio.
+    """
+    description: Optional[str] = None
+    quantity: Optional[int] = None
+    unitValue: Optional[float] = None
+    currencyCode: Optional[str] = None
+    valuationLow: Optional[float] = None
+    valuationHigh: Optional[float] = None
+    valuationNotes: Optional[str] = None
+    photoCount: Optional[int] = None
+    documentCount: Optional[int] = None
+    documentTypes: List[str] = Field(default_factory=list)
+    hasAudioStory: Optional[bool] = None
 
 
 class LiquidationPlanRequest(BaseModel):
@@ -157,3 +187,9 @@ class LiquidationPlanRequest(BaseModel):
     # Optional extra grounding (nice-to-have; iOS can omit)
     title: Optional[str] = None
     category: Optional[str] = None
+
+    # Plan v2 (optional; app 1.2 omits all of these)
+    selectedOption: Optional[LiquidationPathOptionDTO] = None  # the Brief option the owner chose
+    isRecommended: Optional[bool] = None  # whether that option was the Brief's recommendation
+    itemContext: Optional[LiquidationPlanItemContext] = None
+    setContext: Optional[LiquidationSetContext] = None
