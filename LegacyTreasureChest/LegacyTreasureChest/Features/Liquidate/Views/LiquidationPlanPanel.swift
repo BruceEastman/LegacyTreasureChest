@@ -55,28 +55,46 @@ struct LiquidationPlanPanel: View {
 
             Divider()
 
-            HStack(spacing: 10) {
-                Button("Change Approach…", action: onChangeApproach)
-                    .buttonStyle(.bordered)
-                if planRecord.chosenPath != .needsInfo {
-                    Button("Regenerate Plan…", action: onRegenerate)
-                        .buttonStyle(.bordered)
-                }
+            // Side by side when they fit; stacked at large text sizes.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) { planControls }
+                VStack(alignment: .leading, spacing: 8) { planControls }
             }
             .disabled(isBusy)
         }
         .padding(.vertical, 6)
     }
 
+    @ViewBuilder
+    private var planControls: some View {
+        Button("Change Approach…", action: onChangeApproach)
+            .buttonStyle(.bordered)
+            .fixedSize()
+        if planRecord.chosenPath != .needsInfo {
+            Button("Regenerate Plan…", action: onRegenerate)
+                .buttonStyle(.bordered)
+                .fixedSize()
+        }
+    }
+
+    @ViewBuilder
+    private var keepOrReplaceControls: some View {
+        Button("Keep This Plan", action: onKeepPlan)
+            .buttonStyle(.bordered)
+            .fixedSize()
+        Button("Create a New Plan", action: onCreateNewPlan)
+            .buttonStyle(.bordered)
+            .fixedSize()
+    }
+
     private func earlierBriefNotice(_ date: Date) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("This Plan is based on an earlier Brief from \(date.formatted(date: .abbreviated, time: .shortened)). Your progress is unchanged.")
                 .font(.footnote)
-            HStack(spacing: 10) {
-                Button("Keep This Plan", action: onKeepPlan)
-                    .buttonStyle(.bordered)
-                Button("Create a New Plan", action: onCreateNewPlan)
-                    .buttonStyle(.bordered)
+                .fixedSize(horizontal: false, vertical: true)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) { keepOrReplaceControls }
+                VStack(alignment: .leading, spacing: 8) { keepOrReplaceControls }
             }
             .disabled(isBusy)
         }
@@ -103,6 +121,7 @@ struct LiquidationPlanProgressView: View {
             if progress.allDone && checklist.outcome == nil && checklist.context != nil {
                 Text("All steps are done. Record the outcome to finish this Plan.")
                     .font(.footnote.weight(.semibold))
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -149,10 +168,12 @@ struct LiquidationOutcomeRow: View {
             if let outcome {
                 Text("Outcome: \(outcome.result.displayName)")
                     .font(.subheadline.weight(.semibold))
+                    .fixedSize(horizontal: false, vertical: true)
                 ForEach(Self.detailLines(outcome), id: \.self) { line in
                     Text(line)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Button("Edit Outcome", action: onRecord)
                     .buttonStyle(.bordered)
@@ -161,6 +182,7 @@ struct LiquidationOutcomeRow: View {
                 Text("When it is sold, donated, or otherwise settled, record what actually happened.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 Button {
                     onRecord()
                 } label: {

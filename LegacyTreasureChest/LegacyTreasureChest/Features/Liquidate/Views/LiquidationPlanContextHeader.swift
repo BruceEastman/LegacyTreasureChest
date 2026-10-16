@@ -31,24 +31,28 @@ struct LiquidationPlanContextHeader: View {
                 Text(specific)
                     .font(.subheadline)
                     .foregroundStyle(Theme.accent)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if let note = Self.choiceNote(context) {
                 Text(note)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if let focus = checklist.focus, !focus.isEmpty {
                 Text(focus)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if checklist.isBasicPlan {
                 Text(UserFacingTerms.Liquidation.basicPlanNotice)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -74,10 +78,12 @@ struct LiquidationChecklistStepLabel: View {
         VStack(alignment: .leading, spacing: 2) {
             Text("\(item.order). \(item.text)")
                 .font(.subheadline)
+                .fixedSize(horizontal: false, vertical: true)
             if let detail = item.detail, !detail.isEmpty {
                 Text(detail)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
