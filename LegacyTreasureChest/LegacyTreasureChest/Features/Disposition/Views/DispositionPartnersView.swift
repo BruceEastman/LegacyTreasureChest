@@ -104,14 +104,7 @@ struct DispositionPartnersView: View {
         }()
 
         guard let path = chosen else { return "Not selected yet" }
-
-        switch path {
-        case .pathA: return "Maximize Price"
-        case .pathB: return "Delegate / Consign"
-        case .pathC: return "Quick Exit"
-        case .donate: return "Donate"
-        case .needsInfo: return "Needs Info"
-        }
+        return path.displayName
     }
 
     private var totalValueDisplay: String {

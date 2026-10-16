@@ -37,6 +37,9 @@ public struct LiquidationBriefDTO: Codable, Sendable {
     /// Echo of the user's request context, for transparency/auditing
     public var inputs: LiquidationInputsDTO?
 
+    /// Optional item description for later specialist searches (absent in older Briefs).
+    public var specialty: LiquidationSpecialtyDTO?
+
     public init(
         schemaVersion: Int = 1,
         scope: LiquidationScopeDTO,
@@ -50,7 +53,8 @@ public struct LiquidationBriefDTO: Codable, Sendable {
         missingDetails: [String] = [],
         assumptions: [String] = [],
         confidence: Double? = nil,
-        inputs: LiquidationInputsDTO? = nil
+        inputs: LiquidationInputsDTO? = nil,
+        specialty: LiquidationSpecialtyDTO? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.scope = scope
@@ -65,6 +69,7 @@ public struct LiquidationBriefDTO: Codable, Sendable {
         self.assumptions = assumptions
         self.confidence = confidence
         self.inputs = inputs
+        self.specialty = specialty
     }
 }
 
@@ -80,23 +85,87 @@ public enum LiquidationPathDTO: String, Codable, Sendable {
     case donate
     case needsInfo
 
-    public var displayName: String {
+    /// Customer-facing name (see UserFacingTerms.Liquidation).
+    nonisolated public var displayName: String {
+        UserFacingTerms.Liquidation.approachName(self)
+    }
+
+    /// The persisted app path for this Brief path.
+    nonisolated public var appPath: LiquidationPath {
         switch self {
-        case .pathA_maximizePrice:
-            return "Maximize Value"
-
-        case .pathB_delegateConsign:
-            return "Consignment"
-
-        case .pathC_quickExit:
-            return "Quick Sale"
-
-        case .donate:
-            return "Donation"
-
-        case .needsInfo:
-            return "More Information Needed"
+        case .pathA_maximizePrice: return .pathA
+        case .pathB_delegateConsign: return .pathB
+        case .pathC_quickExit: return .pathC
+        case .donate: return .donate
+        case .needsInfo: return .needsInfo
         }
+    }
+}
+
+extension LiquidationPath {
+    /// The Brief/Gateway path for this persisted app path.
+    nonisolated public var briefPath: LiquidationPathDTO {
+        switch self {
+        case .pathA: return .pathA_maximizePrice
+        case .pathB: return .pathB_delegateConsign
+        case .pathC: return .pathC_quickExit
+        case .donate: return .donate
+        case .needsInfo: return .needsInfo
+        }
+    }
+
+    /// Customer-facing name (see UserFacingTerms.Liquidation).
+    nonisolated public var displayName: String {
+        UserFacingTerms.Liquidation.approachName(self)
+    }
+}
+
+/// Optional description of what kind of item a Brief covers, for later
+/// specialist searches. Metadata only; Briefs created before it existed
+/// simply have none.
+public struct LiquidationSpecialtyDTO: Codable, Sendable, Equatable {
+    public var itemKind: String?
+    public var detailTerms: [String]
+    public var brand: String?
+    public var model: String?
+    public var isSpecialistItem: Bool
+
+    public init(
+        itemKind: String? = nil,
+        detailTerms: [String] = [],
+        brand: String? = nil,
+        model: String? = nil,
+        isSpecialistItem: Bool = false
+    ) {
+        self.itemKind = itemKind
+        self.detailTerms = detailTerms
+        self.brand = brand
+        self.model = model
+        self.isSpecialistItem = isSpecialistItem
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case itemKind, detailTerms, brand, model, isSpecialistItem
+    }
+
+    /// Never fails: a malformed block decodes as empty instead of making the
+    /// whole Brief unreadable.
+    public init(from decoder: Decoder) throws {
+        guard let c = try? decoder.container(keyedBy: CodingKeys.self) else {
+            self.init()
+            return
+        }
+        self.init(
+            itemKind: (try? c.decodeIfPresent(String.self, forKey: .itemKind)) ?? nil,
+            detailTerms: ((try? c.decodeIfPresent([String].self, forKey: .detailTerms)) ?? nil) ?? [],
+            brand: (try? c.decodeIfPresent(String.self, forKey: .brand)) ?? nil,
+            model: (try? c.decodeIfPresent(String.self, forKey: .model)) ?? nil,
+            isSpecialistItem: ((try? c.decodeIfPresent(Bool.self, forKey: .isSpecialistItem)) ?? nil) ?? false
+        )
+    }
+
+    public var isEmpty: Bool {
+        (itemKind ?? "").isEmpty && detailTerms.isEmpty && brand == nil && model == nil
     }
 }
 

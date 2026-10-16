@@ -512,7 +512,7 @@ class LiquidationBriefOptionTests(unittest.TestCase):
         body = self._post(self.VALUED_ITEM, _brief_json("pathA_maximizePrice", options))
         self.assertEqual(self._paths(body), ["pathA_maximizePrice", "pathB_delegateConsign", "pathC_quickExit"])
         self.assertEqual(body["pathOptions"][1]["netProceeds"], _money(60.0, None, 90.0))
-        self.assertEqual(body["pathOptions"][0]["label"], "Maximize Price (DIY or multi-step)")
+        self.assertEqual(body["pathOptions"][0]["label"], "Maximize Price")
 
     def test_B_unidentifiable_option_is_dropped_not_copied(self):
         body = self._post(self.VALUED_ITEM, _brief_json("pathB_delegateConsign", [

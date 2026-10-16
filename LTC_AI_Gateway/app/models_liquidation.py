@@ -89,6 +89,19 @@ class LiquidationPathOptionDTO(BaseModel):
     logisticsNotes: Optional[str] = None
 
 
+class LiquidationSpecialtyDTO(BaseModel):
+    """
+    Optional description of what kind of item this is, for later specialist
+    searches. Metadata only: derived from the request's own item text, never
+    a business name. Every field is optional so older Briefs stay valid.
+    """
+    itemKind: Optional[str] = None  # short generic noun phrase, e.g. "film camera"
+    detailTerms: List[str] = Field(default_factory=list)  # up to 4 identifying terms
+    brand: Optional[str] = None  # only when stated in the item text
+    model: Optional[str] = None  # only when stated in the item text
+    isSpecialistItem: bool = False
+
+
 class LiquidationBriefDTO(BaseModel):
     schemaVersion: int = 1
     scope: str  # item | set
@@ -108,6 +121,9 @@ class LiquidationBriefDTO(BaseModel):
     confidence: Optional[float] = None
 
     inputs: Optional[LiquidationInputsDTO] = None
+
+    # Optional; absent in Briefs created before it existed.
+    specialty: Optional[LiquidationSpecialtyDTO] = None
 
 
 # -----------------------------

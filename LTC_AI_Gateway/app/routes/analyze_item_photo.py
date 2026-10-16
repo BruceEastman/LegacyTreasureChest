@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -290,6 +291,106 @@ _PATH_KEYWORDS = (
 )
 
 
+# Customer-facing approach names. Must match the app's UserFacingTerms.Liquidation.
+_APPROACH_NAMES = {
+    "pathA_maximizePrice": "Maximize Price",
+    "pathB_delegateConsign": "Consignment",
+    "pathC_quickExit": "Quick Sale",
+    "donate": "Donation",
+    "needsInfo": "More Information Needed",
+}
+_APPROACH_NAME_BY_LETTER = {"A": "Maximize Price", "B": "Consignment", "C": "Quick Sale"}
+# "pathB_delegateConsign", "PathB_DelegateConsign", "path_b_delegate_consign"
+_RAW_PATH_ID_RE = re.compile(r"\b[Pp]ath[ _-]?([ABCabc])_[A-Za-z_]+\b")
+# "Path B", "PathB" (capital letter only, so ordinary prose like "a path a buyer" is untouched)
+_PATH_LETTER_RE = re.compile(r"\b[Pp]ath ?([ABC])\b")
+_NEEDS_INFO_RE = re.compile(r"\bneedsInfo\b")
+# Leading "Path A — " style prefix on an option label.
+_LABEL_PATH_PREFIX_RE = re.compile(r"^\s*[Pp]ath ?[ABC]\s*[—–:\-]\s*")
+
+
+def _customer_text(value: Any) -> Any:
+    """Replace internal path identifiers in text a homeowner will read."""
+    if not isinstance(value, str):
+        return value
+    s = _RAW_PATH_ID_RE.sub(lambda m: _APPROACH_NAME_BY_LETTER[m.group(1).upper()], value)
+    s = _PATH_LETTER_RE.sub(lambda m: _APPROACH_NAME_BY_LETTER[m.group(1)], s)
+    return _NEEDS_INFO_RE.sub(_APPROACH_NAMES["needsInfo"], s)
+
+
+def _customer_label(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    return _customer_text(_LABEL_PATH_PREFIX_RE.sub("", value)).strip()
+
+
+def _specialty_source_text(request: LiquidationBriefRequest) -> str:
+    """The item text a specialty block may draw brand/model from."""
+    parts: List[str] = [request.title or "", request.description or "", request.category or ""]
+    ctx = request.setContext
+    if ctx:
+        parts += [ctx.setName or "", ctx.setType or "", ctx.story or ""]
+        for m in ctx.memberSummaries:
+            parts += [m.title or "", m.category or ""]
+    return " ".join(parts).lower()
+
+
+def _normalize_specialty(value: Any, request: LiquidationBriefRequest) -> Optional[Dict[str, Any]]:
+    """
+    Keep a well-formed optional specialty block; drop anything malformed rather
+    than failing the Brief. Brand and model survive only when the item text
+    actually contains them.
+    """
+    if not isinstance(value, dict):
+        return None
+
+    def _clean(v: Any, max_len: int) -> Optional[str]:
+        if not isinstance(v, str):
+            return None
+        s = " ".join(v.split())
+        if not s or s.lower() in {"null", "none", "n/a", "na", "unknown"}:
+            return None
+        return s[:max_len].strip()
+
+    item_kind = _clean(value.get("itemKind"), 60)
+
+    raw_terms = value.get("detailTerms")
+    if isinstance(raw_terms, str):
+        raw_terms = [raw_terms]
+    terms: List[str] = []
+    seen: set = set()
+    for t in raw_terms if isinstance(raw_terms, list) else []:
+        term = _clean(t, 40)
+        if term and term.lower() not in seen:
+            seen.add(term.lower())
+            terms.append(term)
+        if len(terms) == 4:
+            break
+
+    source = _specialty_source_text(request)
+    brand = _clean(value.get("brand"), 60)
+    if brand and brand.lower() not in source:
+        brand = None
+    model = _clean(value.get("model"), 60)
+    if model and model.lower() not in source:
+        model = None
+
+    flag = value.get("isSpecialistItem")
+    if isinstance(flag, str):
+        flag = flag.strip().lower() in {"true", "yes", "1"}
+    is_specialist = flag if isinstance(flag, bool) else False
+
+    if not (item_kind or terms or brand or model):
+        return None
+    return {
+        "itemKind": item_kind,
+        "detailTerms": terms,
+        "brand": brand,
+        "model": model,
+        "isSpecialistItem": is_specialist,
+    }
+
+
 def _path_from_text(text: Any) -> Optional[str]:
     """Path named by free text, using the earliest keyword: 'Quick Exit (Bulk Buyer/Donation)' -> pathC."""
     if not isinstance(text, str):
@@ -429,13 +530,7 @@ def _normalize_liquidation_brief_obj(*, raw_json: str, request: LiquidationBrief
 
     currency = request.currencyCode or "USD"
 
-    label_by_path = {
-        "pathA_maximizePrice": "Maximize Price (DIY or multi-step)",
-        "pathB_delegateConsign": "Delegate to Specialists (Consign / Hub Mail-In)",
-        "pathC_quickExit": "Quick Exit (Fast, lower return)",
-        "donate": "Donate / Discard",
-        "needsInfo": "Needs More Info (Collect details first)",
-    }
+    label_by_path = _APPROACH_NAMES
 
     def _parse_money_range(s: str) -> dict:
         txt = (s or "").strip()
@@ -552,6 +647,23 @@ def _normalize_liquidation_brief_obj(*, raw_json: str, request: LiquidationBrief
         obj["missingDetails"] = []
     if obj.get("assumptions") is None:
         obj["assumptions"] = []
+
+    # Homeowner-facing text never shows internal path identifiers.
+    obj["reasoning"] = _customer_text(obj.get("reasoning"))
+    for key in ("actionSteps", "missingDetails", "assumptions"):
+        if isinstance(obj.get(key), list):
+            obj[key] = [_customer_text(s) for s in obj[key]]
+    for opt in obj["pathOptions"]:
+        if not isinstance(opt, dict):
+            continue
+        opt["label"] = _customer_label(opt.get("label")) or label_by_path.get(opt.get("path"), opt.get("label"))
+        for key in ("timeEstimate", "logisticsNotes"):
+            opt[key] = _customer_text(opt.get(key))
+        if isinstance(opt.get("risks"), list):
+            opt["risks"] = [_customer_text(r) for r in opt["risks"]]
+
+    # Optional metadata: malformed values are dropped, never fatal.
+    obj["specialty"] = _normalize_specialty(obj.get("specialty"), request)
 
     return obj
 
@@ -695,6 +807,10 @@ Rules:
 - Always include: schemaVersion, scope, generatedAt, recommendedPath, reasoning, pathOptions, actionSteps.
 - recommendedPath MUST be one of:
   pathA_maximizePrice | pathB_delegateConsign | pathC_quickExit | donate | needsInfo
+- Path identifiers belong ONLY in recommendedPath and pathOptions[].path. The homeowner reads
+  reasoning, label, risks, and logisticsNotes: never write an identifier or "Path A/B/C" there.
+  Refer to approaches as Maximize Price, Consignment, Quick Sale, or Donation.
+- reasoning: two or three plain sentences on why the recommended approach fits this item.
 
 PATH OPTIONS (pathOptions array):
 - Include exactly one option for EACH of pathA_maximizePrice, pathB_delegateConsign, and
@@ -704,7 +820,7 @@ PATH OPTIONS (pathOptions array):
 - Every option MUST use exactly these field names:
   {{"id": "<UUID string>",
     "path": "pathA_maximizePrice | pathB_delegateConsign | pathC_quickExit | donate",
-    "label": "<short name>",
+    "label": "<2 to 5 words: how to pursue this approach for THIS item, e.g. Specialist camera consignment>",
     "netProceeds": {{"currencyCode": "{currency}", "low": <number or null>, "likely": <number or null>, "high": <number or null>}} or null,
     "effort": "low | medium | high | veryHigh",
     "timeEstimate": "<string>" or null,
@@ -725,6 +841,18 @@ NET PROCEEDS:
   and recommend needsInfo unless the item clearly has no resale market.
 - If a set total is INCOMPLETE, base proceeds only on the known subtotal, say it is partial,
   and do not recommend donate solely because the known subtotal is low.
+
+SPECIALTY (optional "specialty" object; describes the item, it is not a recommendation):
+  {{"itemKind": "<generic noun phrase of at most 6 words, e.g. film camera, designer handbag, oil painting>",
+    "detailTerms": ["<up to 4 short identifying terms>"],
+    "brand": "<brand or maker>" or null,
+    "model": "<model name or number>" or null,
+    "isSpecialistItem": true | false}}
+- Use ONLY the title, description, category, and set details above. Never guess.
+- brand and model: only when they appear in that text; otherwise null.
+- isSpecialistItem: true when dealers or consignors who specialize in this kind of item exist
+  and would likely serve the owner better than general resale.
+- Never include business names, prices, or people's names. If unsure, set "specialty" to null.
 """
 
 def _build_liquidation_plan_prompt(req: LiquidationPlanRequest) -> str:

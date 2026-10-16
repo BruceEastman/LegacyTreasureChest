@@ -166,7 +166,7 @@ struct SetDetailView: View {
                                 .font(Theme.bodyFont.weight(.semibold))
                                 .foregroundStyle(Theme.text)
 
-                            Text("Generate a brief, choose a path, and create a checklist plan.")
+                            Text("Generate a Brief, choose an approach, and create a checklist Plan.")
                                 .font(Theme.secondaryFont)
                                 .foregroundStyle(Theme.textSecondary)
                         }

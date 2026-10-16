@@ -115,7 +115,7 @@ struct LiquidationSectionView: View {
                         .padding(.top, 6)
                     }
                 } else {
-                    Text("No plan yet. Generate a brief, then choose a path.")
+                    Text("No Plan yet. Generate a Brief, then choose an approach.")
                         .foregroundStyle(.secondary)
                 }
 
@@ -135,7 +135,7 @@ struct LiquidationSectionView: View {
                 Text("Liquidation")
                     .ltcSectionHeaderStyle()
             } footer: {
-                Text("Liquidation is a workflow: generate a brief, choose a path, then execute a checklist plan.")
+                Text("Liquidation is a workflow: generate a Brief, choose an approach, then work through a checklist Plan.")
                     .font(Theme.secondaryFont)
                     .foregroundStyle(Theme.textSecondary)
             }
@@ -161,13 +161,13 @@ struct LiquidationSectionView: View {
             Text("Status:")
                 .foregroundStyle(.secondary)
 
-            Text(item.liquidationStatus.rawValue)
+            Text(UserFacingTerms.Liquidation.statusName(item.liquidationStatus))
                 .font(.subheadline.weight(.semibold))
 
             Spacer()
 
             if let chosen = item.selectedLiquidationPath {
-                Text("Path: \(chosen.rawValue)")
+                Text("Approach: \(chosen.displayName)")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -283,38 +283,10 @@ struct LiquidationSectionView: View {
     @ViewBuilder
     private func briefSummaryCard(briefRecord: LiquidationBriefRecord) -> some View {
         if let dto = LiquidationJSONCoding.tryDecode(LiquidationBriefDTO.self, from: briefRecord.payloadJSON) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Latest Brief")
-                        .font(.headline)
-                    Spacer()
-                    Text(briefRecord.createdAt, style: .time)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-
-                Text(
-                    "Recommended: \(dto.pathOptions.first(where: { $0.path == dto.recommendedPath })?.label ?? dto.recommendedPath.displayName)")
-                    .font(.subheadline)
-                    .bold()
-
-                Text(dto.reasoning)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(6)
-
-                if !dto.missingDetails.isEmpty {
-                    Divider()
-                    Text("Missing details:")
-                        .font(.footnote.weight(.semibold))
-                    ForEach(dto.missingDetails.prefix(6), id: \.self) { s in
-                        Text("• \(s)")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-            .padding(.vertical, 6)
+            LiquidationBriefSummaryView(
+                presentation: LiquidationBriefPresentation(dto: dto),
+                createdAt: briefRecord.createdAt
+            )
         } else {
             Text("Could not decode brief payload JSON.")
                 .foregroundStyle(.red)
@@ -333,13 +305,13 @@ struct LiquidationSectionView: View {
     private func needsInfoCard(from briefRecord: LiquidationBriefRecord) -> some View {
         if let dto = LiquidationJSONCoding.tryDecode(LiquidationBriefDTO.self, from: briefRecord.payloadJSON) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("More info needed before creating a plan.")
+                Text("More information is needed before creating a Plan.")
                     .font(.subheadline.weight(.semibold))
-                Text("Update the item with the missing details below, then regenerate the brief.")
+                Text("Add the missing details below to the item, then update the Brief.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
-                ForEach(dto.missingDetails.prefix(8), id: \.self) { s in
+                ForEach(dto.missingDetails.prefix(8).map(UserFacingTerms.Liquidation.customerText), id: \.self) { s in
                     Text("• \(s)")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -351,20 +323,15 @@ struct LiquidationSectionView: View {
 
     // MARK: - Plan creation
 
+    @ViewBuilder
     private func pathButtonsRow(item: LTCItem, briefRecord: LiquidationBriefRecord) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Choose a path to create/replace the plan:")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-
-            HStack {
-                Button("Path A") { Task { await consentGate.perform { await createOrReplacePlan(item: item, briefRecord: briefRecord, chosen: .pathA) } } }
-                Button("Path B") { Task { await consentGate.perform { await createOrReplacePlan(item: item, briefRecord: briefRecord, chosen: .pathB) } } }
-                Button("Path C") { Task { await consentGate.perform { await createOrReplacePlan(item: item, briefRecord: briefRecord, chosen: .pathC) } } }
-                Button("Donate") { Task { await consentGate.perform { await createOrReplacePlan(item: item, briefRecord: briefRecord, chosen: .donate) } } }
+        if let dto = LiquidationJSONCoding.tryDecode(LiquidationBriefDTO.self, from: briefRecord.payloadJSON) {
+            LiquidationApproachPicker(
+                recommendedPath: dto.recommendedPath,
+                isDisabled: isGeneratingBrief || isGeneratingPlan
+            ) { chosen in
+                Task { await consentGate.perform { await createOrReplacePlan(item: item, briefRecord: briefRecord, chosen: chosen) } }
             }
-            .buttonStyle(.bordered)
-            .disabled(isGeneratingBrief || isGeneratingPlan)
         }
     }
 
@@ -421,7 +388,7 @@ struct LiquidationSectionView: View {
             state.updatedAt = .now
 
             try modelContext.save()
-            message = "Plan created for path: \(chosen.rawValue)"
+            message = "Created your \(UserFacingTerms.Liquidation.planTitle(chosen))."
         } catch {
             errorMessage = "Plan failed: \(error.localizedDescription)"
         }
@@ -436,10 +403,10 @@ struct LiquidationSectionView: View {
         if let checklist = LiquidationJSONCoding.tryDecode(LiquidationPlanChecklistDTO.self, from: planRecord.payloadJSON) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("Plan: \(planRecord.chosenPathRaw)")
+                    Text(UserFacingTerms.Liquidation.planTitle(planRecord.chosenPath))
                         .font(.headline)
                     Spacer()
-                    Text(planRecord.statusRaw)
+                    Text(UserFacingTerms.Liquidation.statusName(planRecord.status))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -575,11 +542,17 @@ private struct LiquidationBriefDetailSheet: View {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 14) {
                             HStack {
-                                Text("Recommended")
+                                Text(dto.recommendedPath == .needsInfo ? "Status" : "Recommended")
                                     .font(.headline)
                                 Spacer()
-                                Text(dto.recommendedPath.rawValue)
+                                Text(dto.recommendedPath.displayName)
                                     .font(.headline.weight(.semibold))
+                            }
+
+                            if let specific = LiquidationBriefPresentation(dto: dto).specificRecommendation {
+                                Text(specific)
+                                    .font(.subheadline)
+                                    .foregroundStyle(Theme.accent)
                             }
 
                             if let createdAt {
@@ -592,7 +565,7 @@ private struct LiquidationBriefDetailSheet: View {
 
                             Text("Reasoning")
                                 .font(.subheadline.weight(.semibold))
-                            Text(dto.reasoning)
+                            Text(UserFacingTerms.Liquidation.customerText(dto.reasoning))
                                 .font(.body)
                                 .textSelection(.enabled)
 
@@ -600,7 +573,7 @@ private struct LiquidationBriefDetailSheet: View {
                                 Divider()
                                 Text("Missing Details")
                                     .font(.subheadline.weight(.semibold))
-                                ForEach(dto.missingDetails, id: \.self) { s in
+                                ForEach(dto.missingDetails.map(UserFacingTerms.Liquidation.customerText), id: \.self) { s in
                                     Text("• \(s)")
                                         .foregroundStyle(.secondary)
                                         .textSelection(.enabled)

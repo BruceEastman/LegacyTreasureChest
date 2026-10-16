@@ -85,7 +85,7 @@ struct LiquidationAIService {
         briefDTO: LiquidationBriefDTO
     ) async throws -> LiquidationPlanChecklistDTO {
 
-        let dtoPath = chosenPath.asDTO
+        let dtoPath = chosenPath.briefPath
 
         let req = LiquidationPlanRequest(
             schemaVersion: 1,
@@ -107,7 +107,7 @@ struct LiquidationAIService {
         briefDTO: LiquidationBriefDTO
     ) async throws -> LiquidationPlanChecklistDTO {
 
-        let dtoPath = chosenPath.asDTO
+        let dtoPath = chosenPath.briefPath
 
         let req = LiquidationPlanRequest(
             schemaVersion: 1,
@@ -513,13 +513,13 @@ struct LocalLiquidationBriefGenerator {
         let isLuxuryHub = looksLikeLuxuryHubScenario(req)
 
         let options: [LiquidationPathOptionDTO] = [
-            .init(path: .pathA_maximizePrice, label: "Path A — Maximize Price",
+            .init(path: .pathA_maximizePrice, label: UserFacingTerms.Liquidation.maximizePrice,
                   netProceeds: .init(currencyCode: req.currencyCode ?? "USD", low: low * 0.70, likely: likelyTotal * 0.75, high: high * 0.80),
                   effort: .high, timeEstimate: "1–4 weeks",
                   risks: ["Returns", "Buyer disputes"], logisticsNotes: "More work, potentially higher net."),
             .init(
                 path: .pathB_delegateConsign,
-                label: isLuxuryHub ? "Path B — Luxury Mail-in Hub" : "Path B — Delegate / Consign",
+                label: isLuxuryHub ? "Luxury mail-in consignment" : UserFacingTerms.Liquidation.consignment,
                 netProceeds: .init(
                     currencyCode: req.currencyCode ?? "USD",
                     low: low * 0.55,
@@ -535,7 +535,7 @@ struct LocalLiquidationBriefGenerator {
                     ? "Mail-in hub / specialist channel. Authentication + condition standards matter; expect commissions and variable payout timing."
                     : "Less effort, less control."
             ),
-     .init(path: .pathC_quickExit, label: "Path C — Quick Exit",
+     .init(path: .pathC_quickExit, label: UserFacingTerms.Liquidation.quickSale,
                   netProceeds: .init(currencyCode: req.currencyCode ?? "USD", low: low * 0.65, likely: likelyTotal * 0.72, high: high * 0.78),
                   effort: .medium, timeEstimate: "1–10 days",
                   risks: ["No-shows", "Lowball offers"], logisticsNotes: "Fastest, simplest.")
@@ -587,7 +587,7 @@ struct LocalLiquidationBriefGenerator {
             aiProvider: "local",
             aiModel: "heuristic-min",
             recommendedPath: .needsInfo,
-            reasoning: "Local fallback brief for “\(title)” (\(category)). The resale value has not been estimated, so a selling path is not recommended yet.",
+            reasoning: "Local fallback brief for “\(title)” (\(category)). The resale value has not been estimated, so a selling approach is not recommended yet.",
             pathOptions: [],
             actionSteps: [
                 "Add identifying details or photos, then run Improve with AI.",
@@ -713,30 +713,16 @@ struct LocalLiquidationPlanGenerator {
             steps += [
                 "Collect missing details noted in the brief (maker marks, measurements, condition).",
                 "Regenerate the brief.",
-                "Choose a path and regenerate the plan."
+                "Choose an approach and regenerate the plan."
             ]
         }
 
-        steps.append("AI brief recommended: \(req.brief.recommendedPath.rawValue). Adjust if your situation differs.")
+        steps.append("AI brief recommended: \(req.brief.recommendedPath.displayName). Adjust if your situation differs.")
 
         let items = steps.enumerated().map { idx, text in
             LiquidationChecklistItemDTO(order: idx + 1, text: text)
         }
 
         return LiquidationPlanChecklistDTO(schemaVersion: req.schemaVersion, createdAt: .now, items: items)
-    }
-}
-
-// MARK: - Mapping: App Path -> DTO Path
-
-private extension LiquidationPath {
-    var asDTO: LiquidationPathDTO {
-        switch self {
-        case .pathA: return .pathA_maximizePrice
-        case .pathB: return .pathB_delegateConsign
-        case .pathC: return .pathC_quickExit
-        case .donate: return .donate
-        case .needsInfo: return .needsInfo
-        }
     }
 }
