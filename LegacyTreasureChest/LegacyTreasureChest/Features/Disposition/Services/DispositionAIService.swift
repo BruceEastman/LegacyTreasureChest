@@ -3,7 +3,8 @@
 //  LegacyTreasureChest
 //
 //  Builds Disposition Engine requests from item + set context and calls the backend.
-//  Includes simple in-memory caching (TTL) for fast iteration/testing.
+//  Google Places business details are not cached: they are kept only by the
+//  screen showing them (Places policy allows storing place IDs only).
 //
 
 import Foundation
@@ -12,15 +13,6 @@ import Foundation
 final class DispositionAIService {
 
     private let backend: BackendAIProvider
-
-    // Simple in-memory cache with TTL
-    private struct Cached {
-        let response: DispositionPartnersSearchResponse
-        let storedAt: Date
-    }
-
-    private var cache: [String: Cached] = [:]
-    private let ttlSeconds: TimeInterval = 10 * 60 // 10 minutes
 
     init(backend: BackendAIProvider? = nil) {
         self.backend = backend ?? BackendAIProvider()
@@ -35,15 +27,7 @@ final class DispositionAIService {
     ) async throws -> DispositionPartnersSearchResponse {
 
         let request = buildSearchRequest(item: item, location: location, radiusMiles: radiusMiles)
-        let key = cacheKey(for: request)
-
-        if let cached = cache[key], Date().timeIntervalSince(cached.storedAt) < ttlSeconds {
-            return cached.response
-        }
-
-        let response = try await backend.dispositionPartnersSearch(request: request)
-        cache[key] = Cached(response: response, storedAt: Date())
-        return response
+        return try await backend.dispositionPartnersSearch(request: request)
     }
 
     // MARK: - Set scope (new)
@@ -69,15 +53,13 @@ final class DispositionAIService {
             radiusMiles: radiusMiles
         )
 
-        let key = cacheKey(for: request)
+        return try await backend.dispositionPartnersSearch(request: request)
+    }
 
-        if let cached = cache[key], Date().timeIntervalSince(cached.storedAt) < ttlSeconds {
-            return cached.response
-        }
-
-        let response = try await backend.dispositionPartnersSearch(request: request)
-        cache[key] = Cached(response: response, storedAt: Date())
-        return response
+    /// B2: name, address, and Maps link for saved Google choices, fetched when
+    /// shown and not stored. Place IDs are the only Places data the app keeps.
+    func placeDetails(placeIds: [String]) async throws -> PlaceDetailsResponse {
+        try await backend.placeDetails(request: PlaceDetailsRequest(placeIds: placeIds))
     }
 
     // MARK: - Specialty search (B1; called by B2 only after homeowner review)
@@ -316,15 +298,5 @@ final class DispositionAIService {
 
         // de-dupe
         return Array(Set(out)).sorted()
-    }
-
-    // MARK: - Cache key
-
-    private func cacheKey(for req: DispositionPartnersSearchRequest) -> String {
-        // Stable-enough for v1: encode then hash
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        let data = (try? encoder.encode(req)) ?? Data()
-        return String(data: data, encoding: .utf8) ?? UUID().uuidString
     }
 }

@@ -241,6 +241,48 @@ class GooglePlacesNewProvider:
 
         raise PartnerDiscoveryUnavailable("upstream_unreachable")
 
+    # B2: refresh a saved provider by its place ID. Only the fields the app
+    # shows for a saved choice, all Place Details Pro (no phone, website,
+    # rating, or reviews, which would raise the request to Enterprise).
+    DETAILS_URL = "https://places.googleapis.com/v1/places/{place_id}"
+    DETAILS_FIELD_MASK = "id,displayName,formattedAddress,googleMapsUri,businessStatus"
+
+    def details(self, place_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Place Details for one saved place ID. Returns None when Google no longer
+        knows the place (404). Raises PartnerDiscoveryUnavailable otherwise.
+        Nothing is cached.
+        """
+        headers = {"X-Goog-Api-Key": self._api_key, "X-Goog-FieldMask": self.DETAILS_FIELD_MASK}
+        url = self.DETAILS_URL.format(place_id=place_id)
+        with httpx.Client(timeout=self._timeout, transport=self._transport) as client:
+            try:
+                resp = client.get(url, headers=headers)
+            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                logger.error("Place details upstream failure provider=google_places error=%s", type(exc).__name__)
+                raise PartnerDiscoveryUnavailable("upstream_unreachable") from exc
+        if resp.status_code == 200:
+            try:
+                pl = resp.json()
+            except ValueError as exc:
+                raise PartnerDiscoveryUnavailable("upstream_bad_response") from exc
+            name_obj = pl.get("displayName") or {}
+            return {
+                "placeId": pl.get("id") or place_id,
+                "name": name_obj.get("text") if isinstance(name_obj, dict) else None,
+                "address": pl.get("formattedAddress"),
+                "googleMapsUri": pl.get("googleMapsUri"),
+                "businessStatus": pl.get("businessStatus"),
+            }
+        if resp.status_code == 404:
+            return None
+        logger.error("Place details upstream error provider=google_places status=%s", resp.status_code)
+        if resp.status_code == 429:
+            raise PartnerDiscoveryUnavailable("upstream_quota")
+        if resp.status_code in (401, 403):
+            raise PartnerDiscoveryUnavailable("upstream_auth")
+        raise PartnerDiscoveryUnavailable(f"upstream_status_{resp.status_code}")
+
     def _to_candidate(self, pl: Dict[str, Any], q: PartnerDiscoveryQuery, rank: int) -> PartnerCandidate:
         place_id = pl.get("id") or "unknown"
         name_obj = pl.get("displayName") or {}

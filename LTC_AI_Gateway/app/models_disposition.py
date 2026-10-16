@@ -168,6 +168,30 @@ class DispositionPartnersSearchResponse(BaseModel):
 
 
 # -----------------------------
+# Saved-provider details (B2)
+# -----------------------------
+
+class PlaceDetailsRequest(BaseModel):
+    """Refresh up to five saved Google place IDs (the only Places data the app stores)."""
+    placeIds: List[str] = Field(default_factory=list)
+
+
+class PlaceDetailsDTO(BaseModel):
+    placeId: str
+    status: str  # ok | not_found | closed | unavailable
+    name: Optional[str] = None
+    address: Optional[str] = None
+    googleMapsUri: Optional[str] = None
+
+
+class PlaceDetailsResponse(BaseModel):
+    generatedAt: datetime
+    places: List[PlaceDetailsDTO] = Field(default_factory=list)
+    status: str = "ok"  # ok | unavailable | disabled | limited
+    attribution: str = "google_maps"
+
+
+# -----------------------------
 # Outreach composition
 # -----------------------------
 

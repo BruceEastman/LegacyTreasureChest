@@ -2,201 +2,216 @@
 //  DispositionPartnersView.swift
 //  LegacyTreasureChest
 //
-//  Disposition Engine UI (v1)
-//  - Item-scoped OR Set-scoped partner discovery (advisor mode)
-//  - Editable location + radius; "Use Current Location" (When In Use permission)
-//  - Coordinates resolved per search (see LocalHelpLocation.swift); never hardcoded
-//  - Calls backend: POST /ai/disposition/partners/search
+//  Find Help (B2): the one shared screen for finding businesses for an Item,
+//  a Set, or a Plan step.
+//  - Shows what LTC proposes to search for; the homeowner edits it and picks
+//    Local, Regional, or National. Nothing is sent until they tap Search.
+//  - A Plan's chosen approach decides the kind of help; without a Plan the
+//    homeowner chooses it.
+//  - Google Maps results and LTC's reviewed national list are separate.
+//  - Web search and a copyable prompt are always available.
+//  - "Choose for My Plan" saves only a place ID or LTC directory ID plus the
+//    homeowner's own words, then returns to the Plan.
+//  State and rules live in FindHelpModel.
 //
 
+import SwiftData
 import SwiftUI
-import UIKit
 
 struct DispositionPartnersView: View {
 
-    // MARK: - Scope
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
 
-    private enum Scope {
-        case item(LTCItem)
-        case itemSet(LTCItemSet)
-    }
+    private let owner: LiquidationOwner
 
-    private let scope: Scope
-
-    // Existing initializer (item)
-    init(item: LTCItem) {
-        self.scope = .item(item)
-    }
-
-    // New initializer (set)
-    init(itemSet: LTCItemSet) {
-        self.scope = .itemSet(itemSet)
-    }
-
-    // MARK: - Location + UI state
-
-    @State private var city: String = ""
-    @State private var region: String = ""
-    @State private var countryCode: String = Locale.current.region?.identifier ?? "US"
-    @State private var radiusMiles: Int = 25
-
+    @StateObject private var model: FindHelpModel
     @StateObject private var autofill = LTCLocationAutofill()
+    @StateObject private var consentGate = AIConsentGate()
 
     /// True when the user tapped "Use Current Location" (fields are replaced);
     /// false for the automatic lookup on open (fields are only filled if empty).
-    @State private var autofillWasExplicit: Bool = false
+    @State private var autofillWasExplicit = false
+    @State private var choosing: ChoiceTarget?
+    @State private var notice: String?
 
-    @State private var isSearching: Bool = false
-    @State private var errorMessage: String?
-
-    @StateObject private var consentGate = AIConsentGate()
-    @State private var response: DispositionPartnersSearchResponse?
-    @State private var expandedPartnerIds: Set<String> = []
-
-    private let service = DispositionAIService()
-
-    // MARK: - Derived display fields
-
-    private var titleName: String {
-        switch scope {
-        case .item(let item):
-            return item.name
-        case .itemSet(let set):
-            return set.name
-        }
+    private struct ChoiceTarget: Identifiable {
+        let id = UUID()
+        let result: DispositionPartnerResult?
     }
 
-    private var categoryDisplay: String {
-        switch scope {
-        case .item(let item):
-            return item.category.isEmpty ? "Uncategorized" : item.category
-        case .itemSet(let set):
-            return set.setType.rawValue
-        }
+    // MARK: - Entry points
+
+    /// From Item detail. Uses the Item's active Plan when there is one.
+    init(item: LTCItem) {
+        self.init(owner: .item(item), request: nil)
     }
 
-    private var quantityDisplay: String {
-        switch scope {
-        case .item(let item):
-            return "×\(max(item.quantity, 1))"
-        case .itemSet(let set):
-            return "\(set.memberships.count) items"
-        }
+    /// From Set detail. Uses the Set's active Plan when there is one.
+    init(itemSet: LTCItemSet) {
+        self.init(owner: .itemSet(itemSet), request: nil)
     }
 
-    private var currencyCode: String {
-        switch scope {
-        case .item(let item):
-            return item.valuation?.currencyCode ?? Locale.current.currency?.identifier ?? "USD"
-        case .itemSet:
-            return Locale.current.currency?.identifier ?? "USD"
-        }
+    /// From a Plan step or a Set pile (A3 LiquidationFindHelpRequest).
+    init(owner: LiquidationOwner, request: LiquidationFindHelpRequest?) {
+        self.owner = owner
+        let service = DispositionAIService()
+        _model = StateObject(wrappedValue: FindHelpModel.make(owner: owner, request: request) { intent, location in
+            try await service.searchPartners(intent: intent, location: location)
+        })
     }
 
-    private var chosenPathDisplay: String {
-        let chosen: LiquidationPath? = {
-            switch scope {
-            case .item(let item):
-                return item.liquidationState?.activePlan?.chosenPath
-            case .itemSet(let set):
-                return set.liquidationState?.activePlan?.chosenPath
-            }
-        }()
-
-        guard let path = chosen else { return "Not selected yet" }
-        return path.displayName
-    }
-
-    private var totalValueDisplay: String {
-        switch scope {
-        case .item(let item):
-            return CurrencyFormat.dollarsOrNotEstimated(item.estimatedTotalValue)
-        case .itemSet(let set):
-            let total = estimateSetTotalValue(set)
-            return CurrencyText.string(total)        }
-    }
-
-    // Mapping for set search request
-    private var setChosenPathForRequest: DispositionChosenPath? {
-        guard case .itemSet(let set) = scope else { return nil }
-        guard let path = set.liquidationState?.activePlan?.chosenPath else { return nil }
-
-        switch path {
-        case .pathA: return .A
-        case .pathB: return .B
-        case .pathC: return .C
-        case .donate: return .donate
-        case .needsInfo: return .needsInfo
-        }
-    }
+    // MARK: - Body
 
     var body: some View {
         Form {
-            // MARK: - Header
-            Section {
-                VStack(alignment: .leading, spacing: Theme.spacing.small) {
-                    Text("Local Help")
-                        .font(Theme.titleFont)
-                        .foregroundStyle(Theme.text)
+            headerSection
+            searchForSection
+            whereSection
+            searchButtonSection
 
-                    Text(headerSubtitle)
+            if let notice {
+                Section { Text(notice).font(.footnote) }
+            }
+            resultsSections
+            searchYourselfSection
+
+            if model.hasPlan {
+                Section {
+                    Button("Add a Business Yourself") { choosing = ChoiceTarget(result: nil) }
+                } footer: {
+                    Text("Already know who you want to work with? Add them to your Plan in your own words.")
+                }
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(Theme.background)
+        .navigationTitle(model.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .tint(Theme.accent)
+        .aiConsentSheet(consentGate)
+        .sheet(item: $choosing) { target in
+            ProviderChoiceSheet(businessName: target.result?.name) { label, notes in
+                choose(target.result, label: label, notes: notes)
+            }
+        }
+        .onAppear(perform: prefillLocation)
+        .onReceive(autofill.$deviceFix) { fix in
+            guard let fix else { return }
+            let cityIsEmpty = model.city.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            guard autofillWasExplicit || cityIsEmpty else { return }
+            model.city = fix.city
+            model.region = fix.region
+        }
+    }
+
+    // MARK: - Sections
+
+    private var plan: LiquidationPlanRecord? {
+        guard let id = model.request?.planRecordId else { return nil }
+        return owner.state?.plans.first(where: { $0.planRecordId == id })
+    }
+
+    @ViewBuilder
+    private var headerSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(model.title)
+                    .font(Theme.titleFont)
+                    .foregroundStyle(Theme.text)
+                if let plan, let checklist = LiquidationWorkflow.checklist(of: plan) {
+                    let specific = checklist.context?.specificRecommendation
+                    Text([UserFacingTerms.Liquidation.planTitle(plan.chosenPath), specific].compactMap { $0 }
+                        .joined(separator: " · "))
                         .font(Theme.secondaryFont)
                         .foregroundStyle(Theme.textSecondary)
-                }
-                .padding(.vertical, Theme.spacing.small)
-            }
-
-            // MARK: - Search Context Preview (Trust builder)
-            Section {
-                DisclosureGroup("Search context") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        contextRow(label: scopeLabel, value: titleName)
-                        contextRow(label: scopeCategoryLabel, value: categoryDisplay)
-                        contextRow(label: scopeQuantityLabel, value: quantityDisplay)
-                        contextRow(label: "Est. total value", value: totalValueDisplay)
-                        contextRow(label: "Chosen path", value: chosenPathDisplay)
-                        Divider().padding(.vertical, 4)
-                        contextRow(label: "Searching near", value: "\(city), \(region) (\(radiusMiles) miles)")
-                    }
-                    .font(Theme.secondaryFont)
-                    .foregroundStyle(Theme.textSecondary)
-                    .padding(.top, Theme.spacing.small)
-                }
-            } header: {
-                Text("Transparency")
-                    .ltcSectionHeaderStyle()
-            } footer: {
-                Text("This helps you verify the app is searching using the right context.")
-                    .font(Theme.secondaryFont)
-                    .foregroundStyle(Theme.textSecondary)
-            }
-
-            // MARK: - Location Inputs
-            Section {
-                TextField("City", text: $city)
-                    .textInputAutocapitalization(.words)
-
-                TextField("State / Region", text: $region)
-                    .textInputAutocapitalization(.characters)
-
-                TextField("Country Code", text: $countryCode)
-                    .textInputAutocapitalization(.characters)
-
-                Stepper(value: $radiusMiles, in: 5...100, step: 5) {
-                    HStack {
-                        Text("Radius")
-                        Spacer()
-                        Text("\(radiusMiles) miles")
+                    if let current = LiquidationWorkflow.selection(in: checklist, group: model.group) {
+                        Text("Currently chosen: \(SavedProviderRow.displayName(current))")
+                            .font(.footnote)
                             .foregroundStyle(Theme.textSecondary)
                     }
-                }
-
-                if let status = autofill.statusText {
-                    Text(status)
+                } else {
+                    Text("No Plan yet. You can still search; choose the kind of help below.")
                         .font(Theme.secondaryFont)
                         .foregroundStyle(Theme.textSecondary)
                 }
+                Text("LTC never contacts businesses for you.")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
 
+    @ViewBuilder
+    private var searchForSection: some View {
+        Section {
+            TextField("Search words", text: $model.phrase)
+                .textInputAutocapitalization(.never)
+                .accessibilityLabel("Search words")
+            if model.phrase != model.suggestedPhrase && !model.suggestedPhrase.isEmpty {
+                Button("Use suggested words (\(model.suggestedPhrase))") { model.phrase = model.suggestedPhrase }
+                    .font(.footnote)
+            }
+            if !model.detailTerms.isEmpty {
+                Toggle(isOn: $model.includeDetails) {
+                    Text("Also use: \(model.detailTerms.joined(separator: ", "))")
+                        .font(.footnote)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            if model.isStrategyFromPlan, let strategy = model.strategy {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Looking for: \(FindHelpModel.lookingFor(strategy))")
+                        .font(.subheadline)
+                    Text("Based on your \(FindHelpModel.strategyName(strategy)) Plan.")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Picker("Kind of help", selection: $model.strategy) {
+                    Text("Choose…").tag(DispositionSearchStrategy?.none)
+                    ForEach(DispositionSearchStrategy.allCases, id: \.self) { s in
+                        Text(FindHelpModel.strategyName(s)).tag(DispositionSearchStrategy?.some(s))
+                    }
+                }
+            }
+        } header: {
+            Text("What to search for")
+        } footer: {
+            Text("Keep it short and general, like \u{201C}film camera\u{201D}. You can change it before searching.")
+        }
+    }
+
+    @ViewBuilder
+    private var whereSection: some View {
+        Section {
+            Picker("Where", selection: $model.scope) {
+                Text("Local").tag(DispositionGeoScope.local)
+                Text("Regional").tag(DispositionGeoScope.regional)
+                Text("National").tag(DispositionGeoScope.national)
+            }
+            .pickerStyle(.segmented)
+
+            switch model.scope {
+            case .local:
+                TextField("City", text: $model.city)
+                    .textInputAutocapitalization(.words)
+                TextField("State", text: $model.region)
+                    .textInputAutocapitalization(.characters)
+                Stepper(value: $model.radiusMiles, in: 5...100, step: 5) {
+                    HStack {
+                        Text("Search near (miles)")
+                        Spacer()
+                        Text("\(model.radiusMiles)").foregroundStyle(Theme.textSecondary)
+                    }
+                }
+                if let status = autofill.statusText {
+                    Text(status).font(.footnote).foregroundStyle(Theme.textSecondary)
+                }
                 Button {
                     autofillWasExplicit = true
                     autofill.requestOnce()
@@ -204,449 +219,178 @@ struct DispositionPartnersView: View {
                     Label(autofill.isWorking ? "Locating…" : "Use Current Location", systemImage: "location.fill")
                 }
                 .disabled(autofill.isWorking)
-            } header: {
-                Text("Search near")
-                    .ltcSectionHeaderStyle()
+            case .regional:
+                TextField("State", text: $model.region)
+                    .textInputAutocapitalization(.characters)
+            case .national:
+                Text("Shows businesses from LTC's reviewed national list that work by mail or online. No location is used.")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-
-            // MARK: - Search Button
-            Section {
-                Button {
-                    Task { await consentGate.perform { await runSearch() } }
-                } label: {
-                    HStack(spacing: 10) {
-                        if isSearching {
-                            ProgressView()
-                        } else {
-                            Image(systemName: "magnifyingglass")
-                        }
-
-                        Text(isSearching ? "Searching…" : UserFacingTerms.Disposition.findLocalHelpCTA)
-                            .font(Theme.bodyFont.weight(.semibold))
-                    }
-                }
-                .disabled(isSearching || city.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        } header: {
+            Text("Where")
+        } footer: {
+            switch model.scope {
+            case .local: Text("Results favor businesses near this place; some may be farther away.")
+            case .regional: Text("Searches businesses in this US state.")
+            case .national: EmptyView()
             }
-
-            // MARK: - Error
-            if let errorMessage {
-                Section {
-                    Text(errorMessage)
-                        .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.destructive)
-                }
-            }
-
-            // MARK: - Results
-            if let response {
-                Section {
-                    if response.results.isEmpty {
-                        Text(response.notice ?? UserFacingTerms.Disposition.noLocalHelpFound)
-                            .font(Theme.secondaryFont)
-                            .foregroundStyle(Theme.textSecondary)
-                    } else {
-                        ForEach(response.results) { partner in
-                            partnerCard(partner)
-                        }
-                        if let notice = response.notice {
-                            Text(notice)
-                                .font(Theme.secondaryFont)
-                                .foregroundStyle(Theme.textSecondary)
-                        }
-                    }
-                } header: {
-                    HStack {
-                        Text(UserFacingTerms.Disposition.localHelpOptionsHeader)
-                            .ltcSectionHeaderStyle()
-                        Spacer()
-                        if !response.partnerTypes.isEmpty {
-                            Text(response.partnerTypes.joined(separator: ", "))
-                                .font(Theme.secondaryFont)
-                                .foregroundStyle(Theme.textSecondary)
-                        }
-                    }
-                } footer: {
-                    Text("Advisor mode: verify pickup, fees, timeline, and insurance before proceeding.")
-                        .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.textSecondary)
-                        .padding(.bottom, 4)
-
-                    if response.hasGooglePlacesResults {
-                        Text(UserFacingTerms.Disposition.googleMapsAttribution)
-                            .font(Theme.secondaryFont)
-                            .foregroundStyle(Theme.textSecondary)
-                            .padding(.bottom, 4)
-                    }
-
-                    Text("Last updated: \(response.generatedAt.formatted(date: .abbreviated, time: .shortened))")
-                        .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.textSecondary)
-                }
-            }
-        }
-        .scrollContentBackground(.hidden)
-        .background(Theme.background)
-        .navigationTitle(UserFacingTerms.Disposition.localHelpTitle)
-        .navigationBarTitleDisplayMode(.inline)
-        .aiConsentSheet(consentGate)
-        .tint(Theme.accent)
-        .onAppear {
-            // Last-used city/region (text only; coordinates are never saved).
-            let lastCity = UserDefaults.standard.string(forKey: LocalHelpLocationResolver.lastCityKey) ?? ""
-            let lastRegion = UserDefaults.standard.string(forKey: LocalHelpLocationResolver.lastRegionKey) ?? ""
-            if city.isEmpty { city = lastCity }
-            if region.isEmpty { region = lastRegion }
-
-            // Nothing saved: offer the current location (asks permission once).
-            if city.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                autofillWasExplicit = false
-                autofill.requestOnce()
-            }
-        }
-        .onReceive(autofill.$deviceFix) { fix in
-            guard let fix else { return }
-            // An explicit tap replaces the fields; the automatic lookup only
-            // fills them if the user hasn’t typed anything yet.
-            let cityIsEmpty = city.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            guard autofillWasExplicit || cityIsEmpty else { return }
-            city = fix.city
-            region = fix.region
-            if !fix.countryCode.isEmpty { countryCode = fix.countryCode }
-        }
-    }
-
-    // MARK: - Header copy labels
-
-    private var headerSubtitle: String {
-        switch scope {
-        case .item:
-            return "Find nearby services for this item. You choose what to do next — we don’t auto-contact anyone."
-        case .itemSet:
-            return "Find nearby services for this set. You choose what to do next — we don’t auto-contact anyone."
-        }
-    }
-
-    private var scopeLabel: String {
-        switch scope {
-        case .item: return "Item"
-        case .itemSet: return "Set"
-        }
-    }
-
-    private var scopeCategoryLabel: String {
-        switch scope {
-        case .item: return "Category"
-        case .itemSet: return "Set type"
-        }
-    }
-
-    private var scopeQuantityLabel: String {
-        switch scope {
-        case .item: return "Quantity"
-        case .itemSet: return "Members"
-        }
-    }
-
-    // MARK: - UI Pieces
-
-    private func contextRow(label: String, value: String) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Text(label)
-                .frame(width: 120, alignment: .leading)
-                .foregroundStyle(Theme.textSecondary)
-            Text(value)
-                .foregroundStyle(Theme.text)
-            Spacer(minLength: 0)
         }
     }
 
     @ViewBuilder
-    private func partnerCard(_ partner: DispositionPartnerResult) -> some View {
-        let isExpanded = expandedPartnerIds.contains(partner.partnerId)
-
-        VStack(alignment: .leading, spacing: 10) {
+    private var searchButtonSection: some View {
+        Section {
             Button {
-                withAnimation(.easeInOut(duration: 0.15)) {
-                    toggleExpanded(partner.partnerId)
-                }
+                Task { await consentGate.perform { await runSearch() } }
             } label: {
-                HStack(alignment: .top, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(alignment: .firstTextBaseline, spacing: 10) {
-                            Text(partner.name)
-                                .font(Theme.bodyFont.weight(.semibold))
-                                .foregroundStyle(Theme.text)
-                                .lineLimit(2)
-
-                            Spacer(minLength: 0)
-
-                            Text(partnerTypeLabel(partner.partnerType))
-                                .font(.caption.weight(.semibold))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Theme.accent.opacity(0.12))
-                                .foregroundStyle(Theme.text)
-                                .clipShape(Capsule())
-                        }
-
-                        HStack(spacing: 14) {
-                            if let dist = partner.distanceMiles {
-                                Label(String(format: "%.2f mi", dist), systemImage: "location.fill")
-                                    .labelStyle(.titleAndIcon)
-                            }
-
-                            if let rating = partner.rating {
-                                if let count = partner.userRatingsTotal {
-                                    Label("\(String(format: "%.1f", rating)) (\(count))", systemImage: "star.fill")
-                                        .labelStyle(.titleAndIcon)
-                                } else {
-                                    Label(String(format: "%.1f", rating), systemImage: "star.fill")
-                                        .labelStyle(.titleAndIcon)
-                                }
-                            }
-                        }
-                        .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.textSecondary)
-
-                        if let address = partner.contact.address, !address.isEmpty {
-                            Text(address)
-                                .font(Theme.secondaryFont)
-                                .foregroundStyle(Theme.textSecondary)
-                                .lineLimit(2)
-                        }
-
-                        if let why = cleanedWhyRecommended(partner.whyRecommended), !why.isEmpty {
-                            Text(why)
-                                .font(Theme.secondaryFont)
-                                .foregroundStyle(Theme.textSecondary)
-                                .lineLimit(1)
-                        }
-                    }
-
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .foregroundStyle(Theme.textSecondary)
-                        .padding(.top, 6)
+                HStack(spacing: 10) {
+                    if model.state == .searching { ProgressView() } else { Image(systemName: "magnifyingglass") }
+                    Text(model.state == .searching ? "Searching…" : "Search").font(Theme.bodyFont.weight(.semibold))
                 }
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .disabled(!model.canSearch)
+            if let reason = model.blockingReason {
+                Text(reason).font(.footnote).foregroundStyle(Theme.textSecondary)
+            }
+            if case .failed(let message) = model.state {
+                Text(message).font(.footnote).foregroundStyle(Theme.destructive)
+            }
+        } footer: {
+            Text(model.privacySummary(usesDeviceLocation: usesDeviceLocation))
+        }
+    }
 
-            if isExpanded {
-                if let questions = partner.questionsToAsk, !questions.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Questions to ask")
-                            .font(Theme.bodyFont.weight(.semibold))
-                            .foregroundStyle(Theme.text)
-
-                        ForEach(questions, id: \.self) { q in
-                            Text("• \(q)")
-                                .font(Theme.secondaryFont)
-                                .foregroundStyle(Theme.textSecondary)
-                        }
+    @ViewBuilder
+    private var resultsSections: some View {
+        if model.response != nil {
+            if let status = model.statusNotice {
+                Section { Text(status).font(.footnote) }
+            }
+            if !model.googleResults.isEmpty {
+                Section {
+                    ForEach(model.googleResults) { result in
+                        FindHelpGoogleResultCard(
+                            result: result,
+                            canChoose: model.hasPlan,
+                            onChoose: { choosing = ChoiceTarget(result: result) },
+                            onCopyMessage: { copyMessage(to: result) }
+                        )
+                    }
+                } header: {
+                    Text("Businesses on Google Maps")
+                } footer: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Google Maps")
+                            .font(.footnote)
+                            .accessibilityLabel("Business information from Google Maps")
+                        Text("Appearing here does not mean a business will accept your item.")
                     }
                 }
-
-                actionsRow(for: partner)
-
-                if FeatureFlags().showDebugInfo, let trust = partner.trust {
-                    DisclosureGroup("Trust details") {
-                        VStack(alignment: .leading, spacing: 6) {
-                            if let score = trust.trustScore {
-                                Text("trustScore: \(String(format: "%.2f", score))")
-                            }
-                            if let claim = trust.claimLevel {
-                                Text("claimLevel: \(claim)")
-                            }
-                            if let gates = trust.gates, !gates.isEmpty {
-                                Text("gates:")
-                                ForEach(gates) { g in
-                                    Text("• \(g.id) (\(g.mode)) = \(g.status)")
-                                }
-                            }
-                            if let signals = trust.signals, !signals.isEmpty {
-                                Text("signals:")
-                                ForEach(signals, id: \.self) { s in
-                                    Text("• \(s.label ?? s.type ?? "signal")")
-                                }
-                            }
-                        }
-                        .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.textSecondary)
-                        .padding(.top, 6)
+            }
+            if !model.directoryResults.isEmpty {
+                Section {
+                    ForEach(model.directoryResults) { result in
+                        FindHelpDirectoryResultCard(
+                            result: result,
+                            strategy: model.strategy,
+                            canChoose: model.hasPlan,
+                            onChoose: { choosing = ChoiceTarget(result: result) },
+                            onCopyMessage: { copyMessage(to: result) }
+                        )
                     }
-                    .padding(.top, 6)
+                } header: {
+                    Text("LTC's reviewed national list")
+                } footer: {
+                    Text("A short list LTC checks by hand. It is not complete; check terms with each business.")
                 }
             }
         }
-        .padding(.vertical, 6)
     }
 
-    private func partnerTypeLabel(_ raw: String) -> String {
-        let v = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        switch v {
-        case "estate_sale": return "Estate Sale"
-        case "consignment": return "Consignment"
-        case "donation": return "Donation"
-        case "junk_haul": return "Haul-away"
-        default:
-            return raw.replacingOccurrences(of: "_", with: " ").capitalized
+    @ViewBuilder
+    private var searchYourselfSection: some View {
+        Section {
+            if let url = model.webSearchURL {
+                Button { openURL(url) } label: { Label("Search the Web", systemImage: "safari") }
+            }
+            if let prompt = model.searchPrompt {
+                Button {
+                    FindHelpClipboard.copy(prompt)
+                    notice = "Search prompt copied. Paste it into the search or assistant app you use."
+                } label: { Label("Copy Search Prompt", systemImage: "doc.on.doc") }
+            }
+        } header: {
+            Text("Search further yourself")
+        } footer: {
+            Text("Uses your search words above. Web results are not checked by LTC.")
         }
     }
 
-    private func cleanedWhyRecommended(_ raw: String?) -> String? {
-        guard var s = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty else { return nil }
-        if s.lowercased().hasPrefix("matches:") {
-            s = s.dropFirst("matches:".count).trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        s = s.replacingOccurrences(of: " ;", with: ";")
-        s = s.replacingOccurrences(of: ";", with: " • ")
-        return s
+    // MARK: - Actions
+
+    private var usesDeviceLocation: Bool {
+        model.scope == .local && LocalHelpLocationResolver.deviceCoordinates(
+            city: model.city, region: model.region, countryCode: "US", fix: autofill.deviceFix) != nil
     }
 
-    private func actionsRow(for partner: DispositionPartnerResult) -> some View {
-        HStack(spacing: 12) {
-            if let phone = partner.contact.phone, !phone.isEmpty {
-                Button { callPhone(phone) } label: {
-                    Label("Call", systemImage: "phone.fill")
-                }
-                .buttonStyle(.bordered)
-            }
-
-            if let website = partner.contact.website, !website.isEmpty {
-                Button { openWebsite(website) } label: {
-                    Label("Website", systemImage: "safari")
-                }
-                .buttonStyle(.bordered)
-            }
-
-            Button { copyOutreachText(for: partner) } label: {
-                Label("Copy", systemImage: "doc.on.doc")
-            }
-            .buttonStyle(.bordered)
-        }
-        .padding(.top, 6)
+    private func prefillLocation() {
+        let lastCity = UserDefaults.standard.string(forKey: LocalHelpLocationResolver.lastCityKey) ?? ""
+        let lastRegion = UserDefaults.standard.string(forKey: LocalHelpLocationResolver.lastRegionKey) ?? ""
+        if model.city.isEmpty { model.city = lastCity }
+        if model.region.isEmpty { model.region = lastRegion }
     }
 
-    // MARK: - Search
-
+    /// Runs only from the Search button.
     private func runSearch() async {
-        errorMessage = nil
-        isSearching = true
-        defer { isSearching = false }
+        notice = nil
+        UserDefaults.standard.set(model.city, forKey: LocalHelpLocationResolver.lastCityKey)
+        UserDefaults.standard.set(model.region, forKey: LocalHelpLocationResolver.lastRegionKey)
 
-        UserDefaults.standard.set(city, forKey: LocalHelpLocationResolver.lastCityKey)
-        UserDefaults.standard.set(region, forKey: LocalHelpLocationResolver.lastRegionKey)
+        var coordinates: LocalHelpCoordinates?
+        if model.scope == .local {
+            coordinates = await LocalHelpLocationResolver.resolveCoordinates(
+                city: model.city, region: model.region, countryCode: "US", fix: autofill.deviceFix)
+        }
+        let location = LocalHelpLocationResolver.makeLocationDTO(
+            city: model.city, region: model.region, countryCode: "US",
+            radiusMiles: model.radiusMiles, coordinates: coordinates)
+        await model.search(location: location)
+    }
 
-        // Device coordinates only if the fields still show the device's place;
-        // otherwise the typed city's own coordinates; otherwise none.
-        let coordinates = await LocalHelpLocationResolver.resolveCoordinates(
-            city: city,
-            region: region,
-            countryCode: countryCode,
-            fix: autofill.deviceFix
-        )
-        let loc = LocalHelpLocationResolver.makeLocationDTO(
-            city: city,
-            region: region,
-            countryCode: countryCode,
-            radiusMiles: radiusMiles,
-            coordinates: coordinates
-        )
-
+    private func choose(_ result: DispositionPartnerResult?, label: String, notes: String) {
+        guard let plan, let selection = model.selection(for: result, label: label, notes: notes) else {
+            notice = "This business could not be saved to your Plan."
+            choosing = nil
+            return
+        }
         do {
-            switch scope {
-            case .item(let item):
-                let resp = try await service.searchPartners(
-                    item: item,
-                    location: loc,
-                    radiusMiles: radiusMiles
-                )
-                response = resp
-
-            case .itemSet(let set):
-                // v1: use contemporary/local search behavior for sets (local consignment/donation/estate sale).
-                // chosenPath is provided (if available) to allow backend tagging and ranking.
-                let resp = try await service.searchPartners(
-                    itemSet: set,
-                    block: .contemporary,
-                    chosenPath: setChosenPathForRequest,
-                    location: loc,
-                    radiusMiles: radiusMiles
-                )
-                response = resp
-            }
+            try LiquidationWorkflow.selectProvider(selection, in: plan, owner: owner, context: modelContext)
+            choosing = nil
+            dismiss()  // back to the Plan or Set pile it came from
         } catch {
-            response = nil
-            errorMessage = error.localizedDescription
+            notice = "Could not save your choice: \(error.localizedDescription)"
+            choosing = nil
         }
     }
 
-    // MARK: - Helpers
-
-    private func toggleExpanded(_ partnerId: String) {
-        if expandedPartnerIds.contains(partnerId) {
-            expandedPartnerIds.remove(partnerId)
-        } else {
-            expandedPartnerIds.insert(partnerId)
-        }
+    private func copyMessage(to result: DispositionPartnerResult) {
+        FindHelpClipboard.copy(Self.outreachMessage(businessName: result.name, phrase: model.phrase,
+                                                    questions: result.questionsToAsk ?? []))
+        notice = "Message copied. Paste it into an email or text to \(result.name)."
     }
 
-    private func callPhone(_ phone: String) {
-        let digits = phone.filter { $0.isNumber }
-        guard let url = URL(string: "tel:\(digits)") else { return }
-        UIApplication.shared.open(url)
-    }
-
-    private func openWebsite(_ urlString: String) {
-        guard let url = URL(string: urlString) else { return }
-        UIApplication.shared.open(url)
-    }
-
-    private func copyOutreachText(for partner: DispositionPartnerResult) {
-        var lines: [String] = []
-        lines.append("Hello \(partner.name),")
-        lines.append("")
-        lines.append("I’m looking for help selling:")
-
-        switch scope {
-        case .item(let item):
-            lines.append("• \(item.name)")
-            if !item.category.isEmpty { lines.append("• Category: \(item.category)") }
-            lines.append("• Quantity: ×\(max(item.quantity, 1))")
-            lines.append("• Est. total value: \(totalValueDisplay)")
-
-        case .itemSet(let set):
-            lines.append("• Set: \(set.name)")
-            lines.append("• Set type: \(set.setType.rawValue)")
-            lines.append("• Members: \(set.memberships.count) items")
-            lines.append("• Est. total value: \(totalValueDisplay)")
-        }
-
-        lines.append("")
-        lines.append("A few questions:")
-        if let qs = partner.questionsToAsk, !qs.isEmpty {
-            for q in qs.prefix(5) {
-                lines.append("• \(q)")
-            }
-        } else {
-            lines.append("• Do you offer pickup/handling (if needed)?")
-            lines.append("• What fees/commission should I expect?")
-            lines.append("• What’s the next step to get started?")
-        }
-        lines.append("")
-        lines.append("Thank you,")
-
-        UIPasteboard.general.string = lines.joined(separator: "\n")
-    }
-
-    private func estimateSetTotalValue(_ set: LTCItemSet) -> Double {
-        var total: Double = 0
-        for m in set.memberships {
-            guard let item = m.item else { continue }
-            let qty = Double(max(m.quantityInSet ?? item.quantity, 1))
-            total += max(item.value, 0) * qty
-        }
-        return total
+    /// A short message the homeowner can send. No value or private details.
+    static func outreachMessage(businessName: String, phrase: String, questions: [String]) -> String {
+        var lines = ["Hello \(businessName),", "",
+                     "I'm looking for help with a \(phrase.trimmingCharacters(in: .whitespacesAndNewlines)) and would like to know if you can help.",
+                     "", "A few questions:"]
+        let asks = questions.isEmpty
+            ? ["Do you accept items like this right now?", "What fees or commission apply?", "What is the next step?"]
+            : Array(questions.prefix(4))
+        lines += asks.map { "• \($0)" }
+        lines += ["", "Thank you,"]
+        return lines.joined(separator: "\n")
     }
 }
-

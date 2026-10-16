@@ -120,6 +120,17 @@ struct BackendAIProvider: AIProvider {
         return response
     }
 
+    /// B2: details for saved Google place IDs (fetched when shown, never stored).
+    func placeDetails(
+        request: PlaceDetailsRequest
+    ) async throws -> PlaceDetailsResponse {
+        let response: PlaceDetailsResponse = try await postJSON(
+            path: "/ai/disposition/places/details",
+            body: request
+        )
+        return response
+    }
+
     // MARK: - Audio Summary
 
     /// Summarize an owner-recorded audio story via the backend/Gemini.

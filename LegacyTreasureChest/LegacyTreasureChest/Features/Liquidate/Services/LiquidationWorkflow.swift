@@ -384,17 +384,158 @@ enum LiquidationWorkflow {
     static func findHelpRequest(
         plan: LiquidationPlanRecord,
         step: LiquidationChecklistItemDTO?,
-        action: LiquidationStepAction
+        action: LiquidationStepAction,
+        group: String? = nil
     ) -> LiquidationFindHelpRequest {
         let context = checklist(of: plan)?.context
         return LiquidationFindHelpRequest(
             planRecordId: plan.planRecordId,
             stepID: step?.id,
             wantsSpecialist: action == .findSpecialtyHelp,
-            group: step?.group,
+            group: group ?? step?.group,
             approach: context?.chosenPath ?? plan.chosenPath.briefPath,
             specificRecommendation: context?.specificRecommendation
         )
+    }
+
+    // MARK: - Providers
+
+    static func selection(in checklist: LiquidationPlanChecklistDTO?, group: String?) -> LiquidationProviderSelectionDTO? {
+        let g = group ?? LiquidationProviderSelectionDTO.mainGroup
+        return checklist?.selectedProviders?.first(where: { $0.group == g })
+    }
+
+    /// Chooses a business for one group of the Plan, replacing any earlier
+    /// choice for that group. Checklist progress, outcome, and status are not
+    /// touched, and no step is ticked.
+    @MainActor
+    static func selectProvider(
+        _ selection: LiquidationProviderSelectionDTO,
+        in plan: LiquidationPlanRecord,
+        owner: LiquidationOwner,
+        context: ModelContext
+    ) throws {
+        guard var checklist = checklist(of: plan) else { throw WorkflowError.unreadablePlan }
+        var providers = (checklist.selectedProviders ?? []).filter { $0.group != selection.group }
+        providers.append(selection)
+        checklist.selectedProviders = providers
+        // A new choice settles any choice from an earlier app version for this group.
+        var handled = Set(checklist.legacySelectionGroupsHandled ?? [])
+        handled.insert(selection.group)
+        checklist.legacySelectionGroupsHandled = handled.sorted()
+        try save(checklist, to: plan, owner: owner, context: context)
+    }
+
+    @MainActor
+    static func removeProvider(
+        group: String,
+        in plan: LiquidationPlanRecord,
+        owner: LiquidationOwner,
+        context: ModelContext
+    ) throws {
+        guard var checklist = checklist(of: plan) else { throw WorkflowError.unreadablePlan }
+        let remaining = (checklist.selectedProviders ?? []).filter { $0.group != group }
+        checklist.selectedProviders = remaining.isEmpty ? nil : remaining
+        try save(checklist, to: plan, owner: owner, context: context)
+    }
+
+    // MARK: - Provider choices saved by earlier app versions (Set piles)
+
+    /// A Set pile choice from an earlier version that cannot be turned into a
+    /// reliable reference. It stays where it was saved and is shown so the
+    /// homeowner can choose again; nothing is guessed from its name.
+    struct LegacyProviderChoice: Equatable {
+        let group: String
+        let savedName: String
+    }
+
+    /// The UserDefaults key earlier versions used for a Set pile's choice.
+    static func legacySelectionKey(planKey: String, group: String) -> String {
+        "ltc.set.execute.partner.\(planKey).\(group)"
+    }
+
+    /// LTC directory IDs for curated providers the earlier Set picker offered.
+    /// Only providers that exist in the Gateway directory are mapped.
+    private static let legacyCuratedDirectoryIds: [String: String] = [
+        "curated-fashionphile": "directory:fashionphile",
+        "curated-fashionphile-handbags": "directory:fashionphile",
+        "curated-fashionphile-jewelry": "directory:fashionphile",
+        "curated-realreal": "curated:luxury:therealreal",
+        "curated-realreal-handbags": "curated:luxury:therealreal",
+        "curated-realreal-jewelry": "curated:luxury:therealreal",
+        "curated-realreal-watches": "curated:luxury:therealreal",
+        "curated-vestiaire": "curated:luxury:vestiaire",
+        "curated-vestiaire-handbags": "curated:luxury:vestiaire",
+        "curated-vestiaire-jewelry": "curated:luxury:vestiaire",
+        "curated-worthydotcom": "directory:worthy",
+    ]
+
+    /// A reliable reference for an earlier saved choice, or nil when there is none.
+    static func legacyReference(partnerId: String) -> (LiquidationProviderSelectionDTO.Source, String)? {
+        if partnerId.hasPrefix("gplaces:") {
+            let placeId = String(partnerId.dropFirst("gplaces:".count))
+            return placeId.range(of: #"^[A-Za-z0-9_-]{10,300}$"#, options: .regularExpression) != nil
+                ? (.googlePlaces, placeId) : nil
+        }
+        if partnerId.hasPrefix("curated:luxury:") || partnerId.hasPrefix("directory:") {
+            return (.ltcDirectory, partnerId)
+        }
+        if let id = legacyCuratedDirectoryIds[partnerId] {
+            return (.ltcDirectory, id)
+        }
+        return nil
+    }
+
+    /// Imports earlier Set pile choices into the Plan where a reliable reference
+    /// exists (Google place ID or LTC directory ID), without overwriting a newer
+    /// choice. Google names, phones, and addresses are never copied into the
+    /// Plan. Earlier storage is left in place. Returns choices that could not be
+    /// imported, to show with a "choose again" prompt.
+    @MainActor
+    @discardableResult
+    static func importLegacySetChoices(
+        plan: LiquidationPlanRecord,
+        planKey: String,
+        groups: [String],
+        owner: LiquidationOwner,
+        context: ModelContext,
+        defaults: UserDefaults = .standard
+    ) throws -> [LegacyProviderChoice] {
+        guard var checklist = checklist(of: plan) else { return [] }
+        var handled = Set(checklist.legacySelectionGroupsHandled ?? [])
+        var providers = checklist.selectedProviders ?? []
+        var unresolved: [LegacyProviderChoice] = []
+        var changed = false
+
+        for group in groups where !handled.contains(group) {
+            guard let data = defaults.data(forKey: legacySelectionKey(planKey: planKey, group: group)),
+                  let saved = try? JSONDecoder().decode(LTCSavedSelectedPartner.self, from: data) else { continue }
+
+            if providers.contains(where: { $0.group == group }) {
+                handled.insert(group)
+                changed = true
+            } else if let (source, ref) = legacyReference(partnerId: saved.partnerId) {
+                providers.append(LiquidationProviderSelectionDTO(
+                    group: group,
+                    source: source,
+                    providerRef: ref,
+                    // LTC's own curated name and site; Google content is not copied.
+                    directoryName: source == .ltcDirectory ? saved.name : nil,
+                    directoryWebsite: source == .ltcDirectory ? saved.website : nil
+                ))
+                handled.insert(group)
+                changed = true
+            } else {
+                unresolved.append(LegacyProviderChoice(group: group, savedName: saved.name))
+            }
+        }
+
+        if changed {
+            checklist.selectedProviders = providers.isEmpty ? nil : providers
+            checklist.legacySelectionGroupsHandled = handled.sorted()
+            try save(checklist, to: plan, owner: owner, context: context)
+        }
+        return unresolved
     }
 
     // MARK: - Set execution groups

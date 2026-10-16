@@ -170,7 +170,9 @@ struct LiquidationSectionView: View {
             LiquidationOutcomeForm(
                 planTitle: UserFacingTerms.Liquidation.planTitle(plan.chosenPath),
                 existing: LiquidationWorkflow.checklist(of: plan)?.outcome,
-                currencyCode: item.valuation?.currencyCode ?? "USD"
+                currencyCode: item.valuation?.currencyCode ?? "USD",
+                suggestedCounterparty: LiquidationWorkflow.checklist(of: plan)?.selectedProviders?
+                    .compactMap(\.storedDisplayName).first
             ) { outcome in
                 saveOutcome(outcome, in: plan)
             }
@@ -435,7 +437,13 @@ struct LiquidationSectionView: View {
                 onKeepPlan: { keepPlan(plan) },
                 onCreateNewPlan: { isChoosingApproach = true },
                 onChangeApproach: { isChoosingApproach = true },
-                onRegenerate: { pendingChange = .regenerate(plan.chosenPath) }
+                onRegenerate: { pendingChange = .regenerate(plan.chosenPath) },
+                onChangeProvider: { group in
+                    findHelpRequest = LiquidationWorkflow.findHelpRequest(
+                        plan: plan, step: nil, action: .findHelp,
+                        group: group == LiquidationProviderSelectionDTO.mainGroup ? nil : group)
+                },
+                onRemoveProvider: { group in removeProvider(group, from: plan) }
             )
         } else {
             Text("Could not decode plan checklist JSON.")
@@ -477,6 +485,15 @@ struct LiquidationSectionView: View {
             message = "Outcome saved: \(outcome.result.displayName)."
         } catch {
             errorMessage = "Failed saving outcome: \(error.localizedDescription)"
+        }
+    }
+
+    @MainActor
+    private func removeProvider(_ group: String, from plan: LiquidationPlanRecord) {
+        do {
+            try LiquidationWorkflow.removeProvider(group: group, in: plan, owner: owner, context: modelContext)
+        } catch {
+            errorMessage = "Could not remove the business: \(error.localizedDescription)"
         }
     }
 

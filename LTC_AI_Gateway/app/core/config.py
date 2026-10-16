@@ -23,3 +23,5 @@ PLACES_PER_DAY_LIMIT = int(os.getenv("LTC_PLACES_PER_DAY_LIMIT", "30"))
 # PLACES_SEARCHES_PER_DEVICE_DAY_LIMIT counts Local Help searches per device.
 PLACES_SEARCHES_PER_DEVICE_DAY_LIMIT = int(os.getenv("LTC_PLACES_SEARCHES_PER_DEVICE_DAY_LIMIT", "20"))
 PLACES_MAX_QUERIES_PER_TYPE = int(os.getenv("LTC_PLACES_MAX_QUERIES_PER_TYPE", "2"))
+# Saved-provider refreshes (Place Details Pro) per device per day.
+PLACES_DETAILS_PER_DEVICE_DAY_LIMIT = int(os.getenv("LTC_PLACES_DETAILS_PER_DEVICE_DAY_LIMIT", "40"))

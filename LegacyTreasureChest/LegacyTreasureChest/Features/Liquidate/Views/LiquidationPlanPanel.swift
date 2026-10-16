@@ -23,6 +23,9 @@ struct LiquidationPlanPanel: View {
     let onCreateNewPlan: () -> Void
     let onChangeApproach: () -> Void
     let onRegenerate: () -> Void
+    /// Change or remove the business chosen for a group ("main", or a closet-lot pile).
+    var onChangeProvider: (String) -> Void = { _ in }
+    var onRemoveProvider: (String) -> Void = { _ in }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -47,6 +50,22 @@ struct LiquidationPlanPanel: View {
                 )
             }
 
+            ForEach(checklist.selectedProviders ?? [], id: \.group) { selection in
+                VStack(alignment: .leading, spacing: 2) {
+                    if selection.group != LiquidationProviderSelectionDTO.mainGroup {
+                        Text(Self.pileName(selection.group))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    SavedProviderRow(
+                        selection: selection,
+                        isDisabled: isBusy,
+                        onChange: { onChangeProvider(selection.group) },
+                        onRemove: { onRemoveProvider(selection.group) }
+                    )
+                }
+            }
+
             Divider()
 
             LiquidationOutcomeRow(outcome: checklist.outcome, isDisabled: isBusy) {
@@ -63,6 +82,16 @@ struct LiquidationPlanPanel: View {
             .disabled(isBusy)
         }
         .padding(.vertical, 6)
+    }
+
+    static func pileName(_ group: String) -> String {
+        switch group {
+        case "luxury": return "Luxury / designer pile"
+        case "contemporary": return "Contemporary pile"
+        case "donate": return "Donation pile"
+        case "discard": return "Discard / recycle pile"
+        default: return "Other steps"
+        }
     }
 
     @ViewBuilder
@@ -210,19 +239,14 @@ struct LiquidationOutcomeRow: View {
     }
 }
 
-/// Where a checklist's Find Help action leads. Today: the existing Item or Set
-/// Find Help. Initiative B can branch on `request` (specialist, pile, approach).
+/// Where a checklist's Find Help action leads: the shared Find Help screen,
+/// told which Plan, step, pile, and approach it serves.
 struct LiquidationFindHelpDestination: View {
     let owner: LiquidationOwner
     let request: LiquidationFindHelpRequest
 
     var body: some View {
-        switch owner {
-        case .item(let item):
-            DispositionPartnersView(item: item)
-        case .itemSet(let set):
-            DispositionPartnersView(itemSet: set)
-        }
+        DispositionPartnersView(owner: owner, request: request)
     }
 }
 

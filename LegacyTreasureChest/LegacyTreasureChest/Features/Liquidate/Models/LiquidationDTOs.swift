@@ -290,6 +290,12 @@ public struct LiquidationPlanChecklistDTO: Codable, Sendable {
     /// The newer Brief the homeowner chose to keep this Plan with, so the
     /// "based on an earlier Brief" notice is not shown again for it.
     public var keptWithBriefRecordId: UUID?
+    /// Businesses the homeowner chose for this Plan (one per group). References
+    /// only: Google place IDs or LTC directory IDs, plus homeowner-entered text.
+    public var selectedProviders: [LiquidationProviderSelectionDTO]?
+    /// Set groups whose provider choice from an earlier app version has been
+    /// imported or set aside, so it is not imported again after a removal.
+    public var legacySelectionGroupsHandled: [String]?
 
     public init(
         schemaVersion: Int = 1,
@@ -300,7 +306,9 @@ public struct LiquidationPlanChecklistDTO: Codable, Sendable {
         aiModel: String? = nil,
         context: LiquidationPlanContextDTO? = nil,
         outcome: LiquidationPlanOutcomeDTO? = nil,
-        keptWithBriefRecordId: UUID? = nil
+        keptWithBriefRecordId: UUID? = nil,
+        selectedProviders: [LiquidationProviderSelectionDTO]? = nil,
+        legacySelectionGroupsHandled: [String]? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.createdAt = createdAt
@@ -311,6 +319,8 @@ public struct LiquidationPlanChecklistDTO: Codable, Sendable {
         self.context = context
         self.outcome = outcome
         self.keptWithBriefRecordId = keptWithBriefRecordId
+        self.selectedProviders = selectedProviders
+        self.legacySelectionGroupsHandled = legacySelectionGroupsHandled
     }
 
     // Every stored field must be listed here AND in init(from:)/encode(to:),
@@ -318,6 +328,7 @@ public struct LiquidationPlanChecklistDTO: Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case schemaVersion, createdAt, items, focus, aiProvider, aiModel, context
         case outcome, keptWithBriefRecordId
+        case selectedProviders, legacySelectionGroupsHandled
     }
 
     // Optional v2 fields decode leniently: a bad value is dropped, never the Plan.
@@ -332,6 +343,8 @@ public struct LiquidationPlanChecklistDTO: Codable, Sendable {
         self.context = (try? c.decodeIfPresent(LiquidationPlanContextDTO.self, forKey: .context)) ?? nil
         self.outcome = (try? c.decodeIfPresent(LiquidationPlanOutcomeDTO.self, forKey: .outcome)) ?? nil
         self.keptWithBriefRecordId = (try? c.decodeIfPresent(UUID.self, forKey: .keptWithBriefRecordId)) ?? nil
+        self.selectedProviders = (try? c.decodeIfPresent([LiquidationProviderSelectionDTO].self, forKey: .selectedProviders)) ?? nil
+        self.legacySelectionGroupsHandled = (try? c.decodeIfPresent([String].self, forKey: .legacySelectionGroupsHandled)) ?? nil
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -345,6 +358,8 @@ public struct LiquidationPlanChecklistDTO: Codable, Sendable {
         try c.encodeIfPresent(context, forKey: .context)
         try c.encodeIfPresent(outcome, forKey: .outcome)
         try c.encodeIfPresent(keptWithBriefRecordId, forKey: .keptWithBriefRecordId)
+        try c.encodeIfPresent(selectedProviders, forKey: .selectedProviders)
+        try c.encodeIfPresent(legacySelectionGroupsHandled, forKey: .legacySelectionGroupsHandled)
     }
 
     /// True when the checklist came from the basic offline generator.
@@ -432,6 +447,64 @@ public struct LiquidationChecklistItemDTO: Codable, Sendable, Identifiable {
         try c.encodeIfPresent(detail, forKey: .detail)
         try c.encodeIfPresent(action, forKey: .action)
         try c.encodeIfPresent(group, forKey: .group)
+    }
+}
+
+/// A business the homeowner chose for a Plan. Google Places content is never
+/// stored: a Google choice keeps only its place ID (details are fetched when
+/// shown). LTC directory choices keep the directory ID plus LTC's own name and
+/// website. Labels and notes are the homeowner's own words.
+public struct LiquidationProviderSelectionDTO: Codable, Sendable, Equatable {
+    public enum Source: String, Codable, Sendable {
+        case googlePlaces = "google_places"
+        case ltcDirectory = "ltc_directory"
+        case homeowner
+    }
+
+    /// Plan-wide items use "main"; closet-lot piles use their pile name.
+    public var group: String
+    public var source: Source
+    /// Google place ID or LTC directory ID; nil for a homeowner-entered business.
+    public var providerRef: String?
+    /// LTC directory entries only (LTC's own data, safe to keep).
+    public var directoryName: String?
+    public var directoryWebsite: String?
+    /// The homeowner's own name for the business (required for homeowner entries).
+    public var homeownerLabel: String?
+    public var homeownerNotes: String?
+    /// The checklist step Find Help was opened from, if any.
+    public var stepId: UUID?
+    public var selectedAt: Date
+
+    public static let mainGroup = "main"
+
+    public init(
+        group: String = LiquidationProviderSelectionDTO.mainGroup,
+        source: Source,
+        providerRef: String? = nil,
+        directoryName: String? = nil,
+        directoryWebsite: String? = nil,
+        homeownerLabel: String? = nil,
+        homeownerNotes: String? = nil,
+        stepId: UUID? = nil,
+        selectedAt: Date = .now
+    ) {
+        self.group = group
+        self.source = source
+        self.providerRef = providerRef
+        self.directoryName = directoryName
+        self.directoryWebsite = directoryWebsite
+        self.homeownerLabel = homeownerLabel
+        self.homeownerNotes = homeownerNotes
+        self.stepId = stepId
+        self.selectedAt = selectedAt
+    }
+
+    /// Text the homeowner can safely see without a lookup: their own label,
+    /// else the LTC directory name. Nil for an unlabeled Google choice.
+    public var storedDisplayName: String? {
+        if let label = homeownerLabel?.trimmingCharacters(in: .whitespacesAndNewlines), !label.isEmpty { return label }
+        return directoryName
     }
 }
 

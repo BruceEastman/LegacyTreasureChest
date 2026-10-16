@@ -13,6 +13,8 @@ struct LiquidationOutcomeForm: View {
     let planTitle: String
     let existing: LiquidationPlanOutcomeDTO?
     let currencyCode: String
+    /// The business chosen for the Plan, offered (never filled in automatically).
+    var suggestedCounterparty: String? = nil
     let onSave: (LiquidationPlanOutcomeDTO) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -27,11 +29,13 @@ struct LiquidationOutcomeForm: View {
         planTitle: String,
         existing: LiquidationPlanOutcomeDTO?,
         currencyCode: String,
+        suggestedCounterparty: String? = nil,
         onSave: @escaping (LiquidationPlanOutcomeDTO) -> Void
     ) {
         self.planTitle = planTitle
         self.existing = existing
         self.currencyCode = currencyCode
+        self.suggestedCounterparty = suggestedCounterparty
         self.onSave = onSave
         _result = State(initialValue: existing?.result)
         _amount = State(initialValue: existing?.amountReceived)
@@ -80,6 +84,10 @@ struct LiquidationOutcomeForm: View {
                         Section(label) {
                             TextField("Business or person (optional)", text: $counterparty)
                                 .textInputAutocapitalization(.words)
+                            if let suggestion = Self.counterpartySuggestion(suggestedCounterparty, current: counterparty) {
+                                Button("Use \(suggestion)") { counterparty = suggestion }
+                                    .font(.footnote)
+                            }
                         }
                     }
 
@@ -117,6 +125,13 @@ struct LiquidationOutcomeForm: View {
                 }
             }
         }
+    }
+
+    /// Offered only while the field is empty, so typed text is never replaced.
+    static func counterpartySuggestion(_ suggestion: String?, current: String) -> String? {
+        guard current.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let s = suggestion?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty else { return nil }
+        return s
     }
 
     static func statusExplanation(_ result: LiquidationOutcomeResult) -> String {

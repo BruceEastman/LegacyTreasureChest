@@ -438,3 +438,108 @@ class DirectoryFileTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------------------
+# B2: saved-provider details by place ID
+# ---------------------------------------------------------------------------
+
+import httpx  # noqa: E402
+
+from app.services.partner_discovery import factory  # noqa: E402
+from app.services.partner_discovery.providers import GooglePlacesNewProvider  # noqa: E402
+
+DETAILS_URL = "/ai/disposition/places/details"
+PID = "ChIJabcdefghij123"
+
+
+class PlaceDetailsTests(unittest.TestCase):
+
+    def setUp(self):
+        from fastapi.testclient import TestClient
+
+        import main
+        from app.core.rate_limiter import rate_limiter
+
+        rate_limiter._daily.clear()
+        rate_limiter._store.clear()
+        self.client = TestClient(main.app)
+        self.calls: list[httpx.Request] = []
+        self.responses: dict[str, httpx.Response] = {}
+
+        def handler(req: httpx.Request) -> httpx.Response:
+            self.calls.append(req)
+            pid = req.url.path.rsplit("/", 1)[-1]
+            return self.responses.get(pid) or httpx.Response(200, json={
+                "id": pid, "displayName": {"text": "Boise Camera & Video"},
+                "formattedAddress": "1 Main St, Boise, ID 83702, USA",
+                "googleMapsUri": f"https://maps.google.com/?cid={pid}", "businessStatus": "OPERATIONAL"})
+
+        self._patches = [
+            mock.patch.object(factory, "GooglePlacesNewProvider",
+                              lambda api_key: GooglePlacesNewProvider(api_key, transport=httpx.MockTransport(handler))),
+            mock.patch.dict(os.environ, {"PARTNER_DISCOVERY_PROVIDER": "google", "GOOGLE_PLACES_API_KEY": "k"}),
+        ]
+        for p in self._patches:
+            p.start()
+
+    def tearDown(self):
+        for p in reversed(self._patches):
+            p.stop()
+
+    def post(self, ids, device="details-device"):
+        return self.client.post(DETAILS_URL, json={"placeIds": ids}, headers={"X-LTC-Device-ID": device})
+
+    def test_details_use_the_minimal_pro_field_mask_and_are_not_cached(self):
+        data = self.post([PID]).json()
+        self.assertEqual(data["status"], "ok")
+        self.assertEqual(data["attribution"], "google_maps")
+        self.assertEqual(data["places"], [{"placeId": PID, "status": "ok", "name": "Boise Camera & Video",
+                                           "address": "1 Main St, Boise, ID 83702, USA",
+                                           "googleMapsUri": f"https://maps.google.com/?cid={PID}"}])
+        req = self.calls[0]
+        self.assertEqual(req.method, "GET")
+        self.assertEqual(req.headers["X-Goog-FieldMask"],
+                         "id,displayName,formattedAddress,googleMapsUri,businessStatus")
+        for paid in ("websiteUri", "nationalPhoneNumber", "rating", "reviews", "photos"):
+            self.assertNotIn(paid, req.headers["X-Goog-FieldMask"])
+        self.post([PID])
+        self.assertEqual(len(self.calls), 2)  # no cache
+
+    def test_missing_closed_and_failing_places_are_reported_honestly(self):
+        self.responses = {
+            "ChIJgone0000000": httpx.Response(404, json={}),
+            "ChIJclosed00000": httpx.Response(200, json={"id": "ChIJclosed00000", "displayName": {"text": "Old Shop"},
+                                                         "businessStatus": "CLOSED_PERMANENTLY"}),
+            "ChIJerror000000": httpx.Response(500, json={}),
+        }
+        data = self.post(["ChIJgone0000000", "ChIJclosed00000", "ChIJerror000000"]).json()
+        self.assertEqual([p["status"] for p in data["places"]], ["not_found", "closed", "unavailable"])
+        self.assertIsNone(data["places"][0]["name"])
+        self.assertEqual(data["status"], "unavailable")
+
+        self.responses = {PID: httpx.Response(429, json={})}
+        self.assertEqual(self.post([PID], device="q").json()["status"], "limited")
+
+    def test_requests_are_validated(self):
+        self.assertEqual(self.post([]).status_code, 422)
+        self.assertEqual(self.post(["bad id!"]).status_code, 422)
+        self.assertEqual(self.post([f"ChIJ{i:012d}" for i in range(6)]).status_code, 422)
+        self.assertEqual(self.calls, [])
+        self.post([PID, PID])
+        self.assertEqual(len(self.calls), 1)  # duplicates collapse
+
+    def test_disabled_stub_and_limits_never_invent_details(self):
+        with mock.patch.object(ltc_config, "DISABLE_PLACES", True):
+            data = self.post([PID]).json()
+        self.assertEqual((data["status"], data["places"][0]["status"], data["places"][0]["name"]),
+                         ("disabled", "unavailable", None))
+        with mock.patch.dict(os.environ, {"PARTNER_DISCOVERY_PROVIDER": "stub"}):
+            data = self.post([PID]).json()
+        self.assertEqual((data["status"], data["places"][0]["name"]), ("unavailable", None))
+        with mock.patch.object(ltc_config, "PLACES_DETAILS_PER_DEVICE_DAY_LIMIT", 1):
+            self.post([PID], device="cap")
+            n = len(self.calls)
+            data = self.post([PID], device="cap").json()
+        self.assertEqual(data["status"], "limited")
+        self.assertEqual(len(self.calls), n)

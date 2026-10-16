@@ -44,6 +44,9 @@ from app.models_disposition import (
     DispositionOutreachComposeResponse,
     DispositionPartnersSearchRequest,
     DispositionPartnersSearchResponse,
+    PlaceDetailsDTO,
+    PlaceDetailsRequest,
+    PlaceDetailsResponse,
 )
 
 from app.services.gemini_client import (
@@ -2454,6 +2457,82 @@ async def disposition_partners_search(
         localDiscoveryStatus=local_status,
         notice=_LOCAL_DISCOVERY_NOTICES.get(local_status),
     )
+
+_PLACE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{10,300}$")
+_MAX_PLACE_DETAILS = 5
+
+
+@router.post("/disposition/places/details", response_model=PlaceDetailsResponse)
+async def disposition_place_details(payload: PlaceDetailsRequest, request: Request) -> PlaceDetailsResponse:
+    """
+    B2: on-demand details for providers a homeowner saved by Google place ID.
+    The app stores only the place ID; name, address, and Maps link are fetched
+    here when shown and are not cached. Uses the Place Details Pro field mask.
+    """
+    from app.services.partner_discovery.factory import PartnerDiscoveryConfigError, get_partner_discovery_provider
+    from app.services.partner_discovery.providers import PartnerDiscoveryUnavailable
+
+    ids: list[str] = []
+    for pid in payload.placeIds:
+        if not isinstance(pid, str) or not _PLACE_ID_RE.match(pid):
+            raise HTTPException(status_code=422, detail="Invalid place ID.")
+        if pid not in ids:
+            ids.append(pid)
+    if not ids or len(ids) > _MAX_PLACE_DETAILS:
+        raise HTTPException(status_code=422, detail=f"Send 1 to {_MAX_PLACE_DETAILS} place IDs.")
+
+    def _all(status: str) -> PlaceDetailsResponse:
+        return PlaceDetailsResponse(
+            generatedAt=_utcnow(), status=status,
+            places=[PlaceDetailsDTO(placeId=pid, status="unavailable") for pid in ids],
+        )
+
+    if ltc_config.DISABLE_PLACES:
+        return _all("disabled")
+    try:
+        provider = get_partner_discovery_provider(stub_fn=_stub_places_search)
+    except PartnerDiscoveryConfigError as exc:
+        logger.error("Place details not configured: %s", exc)
+        return _all("unavailable")
+    if provider.is_stub or not hasattr(provider, "details"):
+        return _all("unavailable")  # never invent details for a saved place
+
+    device_id = getattr(request.state, "device_id", None) or "unknown"
+    allowed, _retry = rate_limiter.check_daily(
+        device_id=device_id, scope="places-details", limit=ltc_config.PLACES_DETAILS_PER_DEVICE_DAY_LIMIT,
+    )
+    if not allowed:
+        return _all("limited")
+
+    places: list[PlaceDetailsDTO] = []
+    status = "ok"
+    for pid in ids:
+        allowed, _retry = rate_limiter.check_daily(
+            device_id=_PLACES_GLOBAL_BUDGET_KEY, scope="places-calls", limit=ltc_config.PLACES_PER_DAY_LIMIT,
+        )
+        if not allowed:
+            status = "limited"
+            places.append(PlaceDetailsDTO(placeId=pid, status="unavailable"))
+            continue
+        try:
+            d = provider.details(pid)
+        except PartnerDiscoveryUnavailable as exc:
+            logger.error("Place details unavailable reason=%s", exc.reason)
+            status = "limited" if exc.reason == "upstream_quota" else "unavailable"
+            places.append(PlaceDetailsDTO(placeId=pid, status="unavailable"))
+            continue
+        if d is None:
+            places.append(PlaceDetailsDTO(placeId=pid, status="not_found"))
+            continue
+        closed = d.get("businessStatus") not in (None, "OPERATIONAL")
+        places.append(PlaceDetailsDTO(
+            placeId=pid, status="closed" if closed else "ok",
+            name=d.get("name"), address=d.get("address"), googleMapsUri=d.get("googleMapsUri"),
+        ))
+
+    logger.info("place_details requested=%s status=%s", len(ids), status)
+    return PlaceDetailsResponse(generatedAt=_utcnow(), places=places, status=status)
+
 
 @router.post("/disposition/outreach/compose", response_model=DispositionOutreachComposeResponse)
 async def disposition_outreach_compose(payload: DispositionOutreachComposeRequest) -> DispositionOutreachComposeResponse:

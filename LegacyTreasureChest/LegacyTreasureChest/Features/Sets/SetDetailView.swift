@@ -56,27 +56,6 @@ struct SetDetailView: View {
         }
     }
 
-    // MARK: - Local Help gating (Set)
-
-    private var localHelpBriefRecord: LiquidationBriefRecord? {
-        guard let state = itemSet.liquidationState else { return nil }
-        if let active = state.briefs.first(where: { $0.isActive }) { return active }
-        return state.briefs.sorted(by: { $0.createdAt > $1.createdAt }).first
-    }
-
-    private var localHelpPlanRecord: LiquidationPlanRecord? {
-        guard let state = itemSet.liquidationState else { return nil }
-        if let active = state.plans.first(where: { $0.isActive }) { return active }
-        return state.plans.sorted(by: { $0.createdAt > $1.createdAt }).first
-    }
-
-    private var localHelpPrereqsMet: Bool {
-        localHelpBriefRecord != nil && localHelpPlanRecord != nil
-    }
-
-    private var localHelpGateMessage: String {
-        "Local Help requires a Brief and a Plan. Go to Liquidate Set → Generate Brief → Create Plan."
-    }
 
     var body: some View {
         Form {
@@ -176,56 +155,27 @@ struct SetDetailView: View {
                     .padding(.vertical, 4)
                 }
 
-                // Local Help (Set scope) — gated until Brief + Plan exist
-                if localHelpPrereqsMet {
+                // Find Help (Set scope): available with or without a Plan.
+                NavigationLink {
+                    DispositionPartnersView(itemSet: itemSet)
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "person.2.wave.2")
+                            .foregroundStyle(Theme.accent)
 
-                    NavigationLink {
-                        DispositionPartnersView(itemSet: itemSet)
-                    } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: "person.2.wave.2")
-                                .foregroundStyle(Theme.accent)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Find Help")
+                                .font(Theme.bodyFont.weight(.semibold))
+                                .foregroundStyle(Theme.text)
 
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Local Help")
-                                    .font(Theme.bodyFont.weight(.semibold))
-                                    .foregroundStyle(Theme.text)
-
-                                Text("Find partners for this set (advisor mode).")
-                                    .font(Theme.secondaryFont)
-                                    .foregroundStyle(Theme.textSecondary)
-                            }
-
-                            Spacer()
-                        }
-                        .padding(.vertical, 4)
-                    }
-
-                } else {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 10) {
-                            Image(systemName: "person.2.wave.2")
+                            Text("Find businesses that can help with this set.")
+                                .font(Theme.secondaryFont)
                                 .foregroundStyle(Theme.textSecondary)
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Local Help")
-                                    .font(Theme.bodyFont.weight(.semibold))
-                                    .foregroundStyle(Theme.textSecondary)
-
-                                Text("Find partners for this set (advisor mode).")
-                                    .font(Theme.secondaryFont)
-                                    .foregroundStyle(Theme.textSecondary)
-                            }
-
-                            Spacer()
                         }
-                        .padding(.vertical, 4)
 
-                        Text("Local Help requires a Brief and a Plan. Go to Liquidate Set → Generate Brief → Generate Plan.")
-                            .font(Theme.secondaryFont)
-                            .foregroundStyle(Theme.textSecondary)
+                        Spacer()
                     }
-                    .opacity(0.7)
+                    .padding(.vertical, 4)
                 }
 
                 NavigationLink {
@@ -381,6 +331,8 @@ private struct SetExecutePlanView: View {
     @State private var outcomePlan: LiquidationPlanRecord?
     @State private var findHelpRequest: LiquidationFindHelpRequest?
     @State private var reviewBrief: LiquidationBriefRecord?
+    /// Pile choices from earlier versions that could not be imported (shown, not copied).
+    @State private var legacyChoices: [String: LiquidationWorkflow.LegacyProviderChoice] = [:]
 
     private var owner: LiquidationOwner { .itemSet(itemSet) }
 
@@ -484,7 +436,7 @@ private struct SetExecutePlanView: View {
                         .font(Theme.sectionHeaderFont)
                         .foregroundStyle(Theme.text)
 
-                    Text("Work one pile at a time. Choose partners only where needed.")
+                    Text("Work one pile at a time. Choose businesses only where needed.")
                         .font(Theme.secondaryFont)
                         .foregroundStyle(Theme.textSecondary)
                 }
@@ -494,6 +446,7 @@ private struct SetExecutePlanView: View {
             if let plan = latestActivePlanRecord(for: itemSet) {
                 planBackedExecution(planRecord: plan)
                     .id(refreshToken)
+                    .onAppear { importLegacyChoices(plan) }
             } else {
                 Section("No Plan Yet") {
                     Text("Generate a brief and create a plan first.")
@@ -545,7 +498,9 @@ private struct SetExecutePlanView: View {
             LiquidationOutcomeForm(
                 planTitle: UserFacingTerms.Liquidation.planTitle(plan.chosenPath),
                 existing: LiquidationWorkflow.checklist(of: plan)?.outcome,
-                currencyCode: Locale.current.currency?.identifier ?? "USD"
+                currencyCode: Locale.current.currency?.identifier ?? "USD",
+                suggestedCounterparty: LiquidationWorkflow.checklist(of: plan)?.selectedProviders?
+                    .compactMap(\.storedDisplayName).first
             ) { outcome in
                 saveOutcome(outcome, in: plan)
             }
@@ -670,7 +625,7 @@ private struct SetExecutePlanView: View {
                 readinessChecklistIfApplicable(for: blockID)
 
                 // Row 3: Partner row (or "not needed")
-                partnerRow(blockID: blockID, planID: planID)
+                partnerRow(blockID: blockID, planRecord: planRecord, checklist: checklist)
 
                 // Rows 4..N: Plan checklist items (each as its own Form row)
                 ForEach(indices.sorted(), id: \.self) { i in
@@ -695,49 +650,75 @@ private struct SetExecutePlanView: View {
     }
     
     @ViewBuilder
-    private func partnerRow(blockID: BlockID, planID: String) -> some View {
-        if blockID.requiresPartner {
-            let selected = loadSelectedPartner(planID: planID, block: blockID)
-            let selectedName = selected?.name ?? "Not selected"
-            let actionLabel = (selected == nil) ? "Select" : "Change"
-
-            Button {
-                partnerPickerSheet = PartnerPickerSheet(block: blockID, planID: planID)
-            } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: "person.crop.circle.badge.checkmark")
-                        .foregroundStyle(Theme.textSecondary)
-
-                    Text(UserFacingTerms.Disposition.sellingOptionLabel + ":")
-                        .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.textSecondary)
-
-                    Text(selectedName)
-                        .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.text)
-
-                    Spacer()
-
-                    Text(actionLabel)
-                        .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.accent)
+    /// The business chosen for a pile, from the Plan (B2). A pile choice saved
+    /// by an earlier version without a reliable reference is shown so the
+    /// homeowner can choose again; it is never copied or guessed.
+    private func partnerRow(blockID: BlockID, planRecord: LiquidationPlanRecord, checklist: LiquidationPlanChecklistDTO) -> some View {
+        Group {
+            if blockID.requiresPartner {
+                if let selection = LiquidationWorkflow.selection(in: checklist, group: blockID.rawValue) {
+                    SavedProviderRow(
+                        selection: selection,
+                        isDisabled: false,
+                        onChange: { openFindHelp(for: blockID, planRecord: planRecord) },
+                        onRemove: { removeProvider(group: blockID.rawValue, from: planRecord) }
+                    )
+                } else if let legacy = legacyChoices[blockID.rawValue] {
+                    LegacyProviderChoiceRow(choice: legacy) { openFindHelp(for: blockID, planRecord: planRecord) }
+                } else {
+                    HStack(spacing: 10) {
+                        Text("No business chosen yet.")
+                            .font(Theme.secondaryFont)
+                            .foregroundStyle(Theme.textSecondary)
+                        Spacer()
+                        Button("Find Help") { openFindHelp(for: blockID, planRecord: planRecord) }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                    }
                 }
-            }
-            .buttonStyle(.plain)
-        } else {
-            HStack(spacing: 10) {
-                Image(systemName: "person.crop.circle")
-                    .foregroundStyle(Theme.textSecondary)
-
-                Text("\(UserFacingTerms.Disposition.sellingOptionLabel): Not needed")
-                    .font(Theme.secondaryFont)
-                    .foregroundStyle(Theme.textSecondary)
-
-                Spacer()
+            } else {
+                HStack(spacing: 10) {
+                    Image(systemName: "person.crop.circle")
+                        .foregroundStyle(Theme.textSecondary)
+                    Text("No business needed for this pile.")
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                    Spacer()
+                }
             }
         }
     }
 
+    private func openFindHelp(for blockID: BlockID, planRecord: LiquidationPlanRecord) {
+        findHelpRequest = LiquidationWorkflow.findHelpRequest(
+            plan: planRecord, step: nil, action: .findHelp, group: blockID.rawValue)
+    }
+
+    @MainActor
+    private func removeProvider(group: String, from plan: LiquidationPlanRecord) {
+        do {
+            try LiquidationWorkflow.removeProvider(group: group, in: plan, owner: owner, context: modelContext)
+            refreshToken = UUID()
+        } catch {
+            errorMessage = "Could not remove the business: \(error.localizedDescription)"
+        }
+    }
+
+    /// Brings pile choices saved by earlier versions into the Plan where a
+    /// reliable reference exists. Earlier storage is left untouched.
+    @MainActor
+    private func importLegacyChoices(_ plan: LiquidationPlanRecord) {
+        let planKey = String(describing: plan.persistentModelID)
+        let groups = BlockID.allCases.filter(\.requiresPartner).map(\.rawValue)
+        do {
+            let unresolved = try LiquidationWorkflow.importLegacySetChoices(
+                plan: plan, planKey: planKey, groups: groups, owner: owner, context: modelContext)
+            legacyChoices = Dictionary(uniqueKeysWithValues: unresolved.map { ($0.group, $0) })
+            refreshToken = UUID()
+        } catch {
+            errorMessage = "Could not read earlier business choices: \(error.localizedDescription)"
+        }
+    }
 
     // MARK: - Readiness Checklist (v1)
 
@@ -1114,8 +1095,7 @@ private struct SetExecutePlanView: View {
         }
     }
 
-    /// Find Help from a pile that needs a partner opens that pile's picker (and its
-    /// saved selection); other steps open the Set's Find Help. Never ticks the step.
+    /// Find Help opens the shared Find Help screen for the step's pile. Never ticks the step.
     private func handleStepAction(
         _ action: LiquidationStepAction,
         step: LiquidationChecklistItemDTO,
@@ -1125,11 +1105,10 @@ private struct SetExecutePlanView: View {
     ) {
         switch action {
         case .findHelp, .findSpecialtyHelp:
-            if blockID.requiresPartner {
-                partnerPickerSheet = PartnerPickerSheet(block: blockID, planID: planID)
-            } else {
-                findHelpRequest = LiquidationWorkflow.findHelpRequest(plan: planRecord, step: step, action: action)
-            }
+            // The shared Find Help screen, for this pile when it needs a business.
+            findHelpRequest = LiquidationWorkflow.findHelpRequest(
+                plan: planRecord, step: step, action: action,
+                group: blockID.requiresPartner ? blockID.rawValue : step.group)
         case .viewBrief:
             reviewBrief = LiquidationWorkflow.originatingBrief(of: planRecord, in: itemSet.liquidationState)
         case .recordOutcome:

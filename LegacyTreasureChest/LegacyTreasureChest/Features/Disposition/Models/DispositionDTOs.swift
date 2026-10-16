@@ -199,3 +199,26 @@ struct DispositionRanking: Codable {
     var score: Double?
     var reasons: [String]?
 }
+
+// MARK: - Saved-provider details (B2)
+
+struct PlaceDetailsRequest: Codable {
+    var placeIds: [String]
+}
+
+struct PlaceDetailsResponse: Codable {
+    var generatedAt: Date
+    var places: [PlaceDetails]
+    /// ok | unavailable | disabled | limited
+    var status: String
+    var attribution: String?
+
+    struct PlaceDetails: Codable, Equatable {
+        var placeId: String
+        /// ok | not_found | closed | unavailable
+        var status: String
+        var name: String?
+        var address: String?
+        var googleMapsUri: String?
+    }
+}

@@ -78,28 +78,6 @@ struct ItemDetailView: View {
         return true
     }
 
-    // MARK: - Local Help gating (Disposition Engine)
-
-    private var localHelpBriefRecord: LiquidationBriefRecord? {
-        guard let state = item.liquidationState else { return nil }
-        if let active = state.briefs.first(where: { $0.isActive }) { return active }
-        return state.briefs.sorted(by: { $0.createdAt > $1.createdAt }).first
-    }
-
-    private var localHelpPlanRecord: LiquidationPlanRecord? {
-        guard let state = item.liquidationState else { return nil }
-        if let active = state.plans.first(where: { $0.isActive }) { return active }
-        return state.plans.sorted(by: { $0.createdAt > $1.createdAt }).first
-    }
-
-    private var localHelpPrereqsMet: Bool {
-        localHelpBriefRecord != nil && localHelpPlanRecord != nil
-    }
-
-    private var localHelpGateMessage: String {
-        "Local Help requires a Brief and a Plan. Go to Liquidate → Generate Brief → Generate Plan."
-    }
-
     var body: some View {
         Form {
             // MARK: - Photos
@@ -197,54 +175,27 @@ struct ItemDetailView: View {
                     }
 
                     if FeatureFlags().dispositionEngineUI {
-                        if localHelpPrereqsMet {
-                            NavigationLink {
-                                DispositionPartnersView(item: item)
-                            } label: {
-                                HStack(spacing: 10) {
-                                    Image(systemName: "person.2.wave.2")
-                                        .foregroundStyle(Theme.accent)
+                        // Find Help: available with or without a Plan.
+                        NavigationLink {
+                            DispositionPartnersView(item: item)
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: "person.2.wave.2")
+                                    .foregroundStyle(Theme.accent)
 
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text("Local Help")
-                                            .font(Theme.bodyFont.weight(.semibold))
-                                            .foregroundStyle(Theme.text)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Find Help")
+                                        .font(Theme.bodyFont.weight(.semibold))
+                                        .foregroundStyle(Theme.text)
 
-                                        Text("Find nearby services for this item (advisor mode).")
-                                            .font(Theme.secondaryFont)
-                                            .foregroundStyle(Theme.textSecondary)
-                                    }
-
-                                    Spacer()
-                                }
-                                .padding(.vertical, 4)
-                            }
-                        } else {
-                            VStack(alignment: .leading, spacing: 6) {
-                                HStack(spacing: 10) {
-                                    Image(systemName: "person.2.wave.2")
+                                    Text("Find businesses that can help with this item.")
+                                        .font(Theme.secondaryFont)
                                         .foregroundStyle(Theme.textSecondary)
-
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text("Local Help")
-                                            .font(Theme.bodyFont.weight(.semibold))
-                                            .foregroundStyle(Theme.textSecondary)
-
-                                        Text("Find nearby services for this item (advisor mode).")
-                                            .font(Theme.secondaryFont)
-                                            .foregroundStyle(Theme.textSecondary)
-                                    }
-
-                                    Spacer()
                                 }
-                                .padding(.vertical, 4)
 
-                                Text(localHelpGateMessage)
-                                    .font(Theme.secondaryFont)
-                                    .foregroundStyle(Theme.textSecondary)
+                                Spacer()
                             }
-                            .opacity(0.7)
-                            .accessibilityHint(localHelpGateMessage)
+                            .padding(.vertical, 4)
                         }
                     }
                 } header: {

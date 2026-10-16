@@ -76,7 +76,7 @@ struct AICloudConsentView: View {
                 bullet("Item title, description, or notes")
                 bullet("An audio recording, when you explicitly request an AI summary")
                 bullet("Valuation or liquidation details")
-                bullet("City or general area, for Local Help searches")
+                bullet("For Find Help: the search words you review, the city or state you choose, and your precise location only when you tap Use Current Location")
             }
             .ltcCardBackground()
         }
@@ -92,7 +92,7 @@ struct AICloudConsentView: View {
             VStack(alignment: .leading, spacing: Theme.spacing.small) {
                 bullet("Requests go through the Legacy Treasure Chest secure server")
                 bullet("Google Gemini is used for AI analysis and guidance")
-                bullet("Google Places is used for applicable Local Help searches")
+                bullet("Google Maps (Google Places) is used for Find Help business searches")
             }
             .ltcCardBackground()
         }
