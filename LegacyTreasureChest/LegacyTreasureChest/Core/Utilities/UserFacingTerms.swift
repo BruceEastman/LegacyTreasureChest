@@ -40,6 +40,28 @@ enum UserFacingTerms {
         static let googleMapsAttribution = "Business information from Google Maps"
     }
 
+    // MARK: - Set settings (UI-only; stored raw values are unchanged)
+
+    nonisolated enum Sets {
+        static func name(_ p: SellTogetherPreference) -> String {
+            switch p {
+            case .togetherOnly: return "Together only"
+            case .togetherPreferred: return "Together preferred"
+            case .splitPreferred: return "Split preferred"
+            case .splitOnly: return "Split only"
+            }
+        }
+
+        static func name(_ c: Completeness) -> String {
+            switch c {
+            case .complete: return "Complete"
+            case .mostlyComplete: return "Mostly complete"
+            case .partial: return "Partial"
+            case .unknown: return "Unknown"
+            }
+        }
+    }
+
     // MARK: - Liquidation language (UI-only)
 
     // Pure constants and text helpers; usable from any isolation context.

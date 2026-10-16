@@ -67,13 +67,13 @@ struct SetEditorSheet: View {
 
                 Picker("Sell preference", selection: $sellPref) {
                     ForEach(SellTogetherPreference.allCases, id: \.self) { p in
-                        Text(p.rawValue).tag(p)
+                        Text(UserFacingTerms.Sets.name(p)).tag(p)
                     }
                 }
 
                 Picker("Completeness", selection: $completeness) {
                     ForEach(Completeness.allCases, id: \.self) { c in
-                        Text(c.rawValue).tag(c)
+                        Text(UserFacingTerms.Sets.name(c)).tag(c)
                     }
                 }
             }

@@ -182,7 +182,7 @@ struct DispositionPartnersView: View {
         } header: {
             Text("What to search for")
         } footer: {
-            Text("Keep it short and general, like \u{201C}film camera\u{201D}. You can change it before searching.")
+            Text("Keep it short: say what the item is, not its brand or model. You can change it before searching.")
         }
     }
 
