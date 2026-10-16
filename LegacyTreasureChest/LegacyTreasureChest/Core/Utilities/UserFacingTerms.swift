@@ -114,6 +114,8 @@ enum UserFacingTerms {
             "You can still choose an approach now. The Plan will start with the missing details, and its steps may change once they are confirmed."
         static let provisionalPlanNotice =
             "Provisional: created before the Brief could confirm key details."
+        static let basicBriefNotice =
+            "Basic Brief: made on this device because the server could not be reached. Update the Brief when connected for a full recommendation."
         static let basicPlanNotice =
             "Basic plan: online Plan generation was unavailable. Choose the approach again when connected for steps specific to this item."
 

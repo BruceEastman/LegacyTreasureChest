@@ -285,6 +285,11 @@ public struct LiquidationPlanChecklistDTO: Codable, Sendable {
     public var aiModel: String?
     /// The homeowner's choice and the Brief it came from, written by the app.
     public var context: LiquidationPlanContextDTO?
+    /// What actually happened, recorded by the homeowner (local only).
+    public var outcome: LiquidationPlanOutcomeDTO?
+    /// The newer Brief the homeowner chose to keep this Plan with, so the
+    /// "based on an earlier Brief" notice is not shown again for it.
+    public var keptWithBriefRecordId: UUID?
 
     public init(
         schemaVersion: Int = 1,
@@ -293,7 +298,9 @@ public struct LiquidationPlanChecklistDTO: Codable, Sendable {
         focus: String? = nil,
         aiProvider: String? = nil,
         aiModel: String? = nil,
-        context: LiquidationPlanContextDTO? = nil
+        context: LiquidationPlanContextDTO? = nil,
+        outcome: LiquidationPlanOutcomeDTO? = nil,
+        keptWithBriefRecordId: UUID? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.createdAt = createdAt
@@ -302,10 +309,15 @@ public struct LiquidationPlanChecklistDTO: Codable, Sendable {
         self.aiProvider = aiProvider
         self.aiModel = aiModel
         self.context = context
+        self.outcome = outcome
+        self.keptWithBriefRecordId = keptWithBriefRecordId
     }
 
+    // Every stored field must be listed here AND in init(from:)/encode(to:),
+    // or a checkbox toggle (decode, edit, re-encode) silently erases it.
     private enum CodingKeys: String, CodingKey {
         case schemaVersion, createdAt, items, focus, aiProvider, aiModel, context
+        case outcome, keptWithBriefRecordId
     }
 
     // Optional v2 fields decode leniently: a bad value is dropped, never the Plan.
@@ -318,6 +330,8 @@ public struct LiquidationPlanChecklistDTO: Codable, Sendable {
         self.aiProvider = (try? c.decodeIfPresent(String.self, forKey: .aiProvider)) ?? nil
         self.aiModel = (try? c.decodeIfPresent(String.self, forKey: .aiModel)) ?? nil
         self.context = (try? c.decodeIfPresent(LiquidationPlanContextDTO.self, forKey: .context)) ?? nil
+        self.outcome = (try? c.decodeIfPresent(LiquidationPlanOutcomeDTO.self, forKey: .outcome)) ?? nil
+        self.keptWithBriefRecordId = (try? c.decodeIfPresent(UUID.self, forKey: .keptWithBriefRecordId)) ?? nil
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -329,6 +343,8 @@ public struct LiquidationPlanChecklistDTO: Codable, Sendable {
         try c.encodeIfPresent(aiProvider, forKey: .aiProvider)
         try c.encodeIfPresent(aiModel, forKey: .aiModel)
         try c.encodeIfPresent(context, forKey: .context)
+        try c.encodeIfPresent(outcome, forKey: .outcome)
+        try c.encodeIfPresent(keptWithBriefRecordId, forKey: .keptWithBriefRecordId)
     }
 
     /// True when the checklist came from the basic offline generator.
@@ -416,6 +432,110 @@ public struct LiquidationChecklistItemDTO: Codable, Sendable, Identifiable {
         try c.encodeIfPresent(detail, forKey: .detail)
         try c.encodeIfPresent(action, forKey: .action)
         try c.encodeIfPresent(group, forKey: .group)
+    }
+}
+
+/// What actually happened to the item or Set, as the homeowner reports it.
+public enum LiquidationOutcomeResult: String, Codable, CaseIterable, Sendable {
+    case sold
+    case donated
+    case consigned
+    case kept
+    case didNotSell
+
+    public var displayName: String {
+        switch self {
+        case .sold: return "Sold"
+        case .donated: return "Donated"
+        case .consigned: return "Consigned, awaiting sale or payout"
+        case .kept: return "Kept"
+        case .didNotSell: return "Didn't sell"
+        }
+    }
+
+    /// Approved mapping: only a finished disposition completes the Plan.
+    public var planStatus: PlanStatus {
+        switch self {
+        case .sold, .donated: return .completed
+        case .consigned: return .inProgress
+        case .kept, .didNotSell: return .onHold
+        }
+    }
+
+    /// Whether an amount actually received applies.
+    public var recordsAmount: Bool { self == .sold || self == .consigned }
+
+    /// Label for the provider or recipient field, or nil when none applies.
+    public var counterpartyLabel: String? {
+        switch self {
+        case .sold: return "Sold to"
+        case .donated: return "Donated to"
+        case .consigned: return "Consigned with"
+        case .didNotSell: return "Tried with"
+        case .kept: return nil
+        }
+    }
+}
+
+/// The homeowner's record of the actual outcome. Amounts are what was really
+/// received, never derived from the Brief's estimates. Stored only on device.
+public struct LiquidationPlanOutcomeDTO: Codable, Sendable, Equatable {
+    public var result: LiquidationOutcomeResult
+    public var amountReceived: Double?
+    public var currencyCode: String?
+    public var counterparty: String?
+    public var date: Date
+    public var notes: String?
+    public var recordedAt: Date
+    public var updatedAt: Date
+
+    public init(
+        result: LiquidationOutcomeResult,
+        amountReceived: Double? = nil,
+        currencyCode: String? = nil,
+        counterparty: String? = nil,
+        date: Date = .now,
+        notes: String? = nil,
+        recordedAt: Date = .now,
+        updatedAt: Date = .now
+    ) {
+        self.result = result
+        self.amountReceived = amountReceived
+        self.currencyCode = currencyCode
+        self.counterparty = counterparty
+        self.date = date
+        self.notes = notes
+        self.recordedAt = recordedAt
+        self.updatedAt = updatedAt
+    }
+
+    /// A cleaned outcome from the form: amount only where it applies (whole
+    /// dollars, never negative), blank text dropped, first-recorded time kept.
+    public static func fromForm(
+        result: LiquidationOutcomeResult,
+        amount: Double?,
+        currencyCode: String,
+        counterparty: String,
+        date: Date,
+        notes: String,
+        previous: LiquidationPlanOutcomeDTO?,
+        now: Date = .now
+    ) -> LiquidationPlanOutcomeDTO {
+        func clean(_ s: String) -> String? {
+            let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            return t.isEmpty ? nil : t
+        }
+        let keptAmount = result.recordsAmount ? amount.map { max($0, 0).rounded() } : nil
+        return LiquidationPlanOutcomeDTO(
+            result: result,
+            amountReceived: keptAmount,
+            currencyCode: keptAmount == nil ? nil : currencyCode,
+            counterparty: result.counterpartyLabel == nil ? nil : clean(counterparty),
+            date: date,
+            notes: clean(notes),
+            recordedAt: previous?.recordedAt ?? now,
+            updatedAt: now
+        )
     }
 }
 

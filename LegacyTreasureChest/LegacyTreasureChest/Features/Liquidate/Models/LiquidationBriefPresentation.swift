@@ -38,6 +38,8 @@ struct LiquidationBriefPresentation {
     /// The recommended option first, then the others in their usual order.
     let options: [Option]
     let missingDetails: [String]
+    /// Made on the device because the server could not be reached.
+    let isBasicBrief: Bool
 
     var recommendedOption: Option? { options.first(where: { $0.isRecommended }) }
 
@@ -51,6 +53,7 @@ struct LiquidationBriefPresentation {
             : "Recommended: \(terms.approachName(dto.recommendedPath))"
         reasoning = terms.customerText(dto.reasoning)
         missingDetails = dto.missingDetails.map(terms.customerText)
+        isBasicBrief = dto.aiProvider == "local"
 
         let built = dto.pathOptions
             .filter { $0.path != .needsInfo }

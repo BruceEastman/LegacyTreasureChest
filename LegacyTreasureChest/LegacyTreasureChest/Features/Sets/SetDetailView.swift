@@ -377,6 +377,13 @@ private struct SetExecutePlanView: View {
     @State private var errorMessage: String?
     @State private var refreshToken: UUID = UUID()
 
+    // Shared Plan execution (LiquidationWorkflow): one outcome for the whole Plan.
+    @State private var outcomePlan: LiquidationPlanRecord?
+    @State private var findHelpRequest: LiquidationFindHelpRequest?
+    @State private var reviewBrief: LiquidationBriefRecord?
+
+    private var owner: LiquidationOwner { .itemSet(itemSet) }
+
     // Partner picker (sheet(item:) prevents empty/blank sheet)
     private struct PartnerPickerSheet: Identifiable {
         let id: String
@@ -534,6 +541,23 @@ private struct SetExecutePlanView: View {
             }
             .presentationDetents([.large])
         }
+        .sheet(item: $outcomePlan) { plan in
+            LiquidationOutcomeForm(
+                planTitle: UserFacingTerms.Liquidation.planTitle(plan.chosenPath),
+                existing: LiquidationWorkflow.checklist(of: plan)?.outcome,
+                currencyCode: Locale.current.currency?.identifier ?? "USD"
+            ) { outcome in
+                saveOutcome(outcome, in: plan)
+            }
+        }
+        .sheet(item: $reviewBrief) { record in
+            if let dto = LiquidationWorkflow.brief(of: record) {
+                LiquidationBriefReviewSheet(dto: dto, createdAt: record.createdAt)
+            }
+        }
+        .navigationDestination(item: $findHelpRequest) { request in
+            LiquidationFindHelpDestination(owner: owner, request: request)
+        }
     }
 
     // MARK: - Plan-backed UI
@@ -544,14 +568,14 @@ private struct SetExecutePlanView: View {
             LiquidationPlanChecklistDTO.self,
             from: planRecord.payloadJSON
         ) {
-            let pct = completionPercent(checklist)
-
-            Section("Progress") {
+            Section("Plan") {
                 VStack(alignment: .leading, spacing: 8) {
-                    ProgressView(value: pct)
-                    Text("Completion: \(Int(pct * 100))%")
-                        .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.textSecondary)
+                    LiquidationPlanContextHeader(
+                        chosenPath: planRecord.chosenPath,
+                        status: planRecord.status,
+                        checklist: checklist
+                    )
+                    LiquidationPlanProgressView(checklist: checklist)
                 }
                 .padding(.vertical, 4)
             }
@@ -576,6 +600,14 @@ private struct SetExecutePlanView: View {
                         )
                     }
                 }
+            }
+
+            // One outcome for the whole Plan, never one per pile.
+            Section("Outcome") {
+                LiquidationOutcomeRow(outcome: checklist.outcome, isDisabled: false) {
+                    outcomePlan = planRecord
+                }
+                .padding(.vertical, 4)
             }
         } else {
             Section("Plan") {
@@ -643,18 +675,20 @@ private struct SetExecutePlanView: View {
                 // Rows 4..N: Plan checklist items (each as its own Form row)
                 ForEach(indices.sorted(), id: \.self) { i in
                     let item = checklist.items[i]
-                    Toggle(isOn: Binding(
-                        get: { item.isCompleted },
-                        set: { newValue in
+                    LiquidationChecklistStepRow(
+                        step: item,
+                        isDisabled: false,
+                        onToggle: { newValue in
                             toggleChecklistItem(
                                 planRecord: planRecord,
                                 checklistItemID: item.id,
                                 newValue: newValue
                             )
+                        },
+                        onAction: { action in
+                            handleStepAction(action, step: item, blockID: blockID, planRecord: planRecord, planID: planID)
                         }
-                    )) {
-                        LiquidationChecklistStepLabel(item: item)
-                    }
+                    )
                 }
             }
         }
@@ -1054,48 +1088,11 @@ private struct SetExecutePlanView: View {
         checklist: LiquidationPlanChecklistDTO,
         setType: SetType
     ) -> [BlockID: [Int]] {
-        let indices = Array(checklist.items.indices)
-
-        // Plan v2 steps name their pile explicitly; older Plans keep keyword grouping.
-        if checklist.items.contains(where: { $0.group != nil }) {
-            var dict: [BlockID: [Int]] = [:]
-            for i in indices {
-                let bid = checklist.items[i].group.flatMap(BlockID.init(rawValue:)) ?? .other
-                dict[bid, default: []].append(i)
-            }
-            return dict
-        }
-
-        guard setType == .closetLot else {
-            return [.other: indices]
-        }
-
-        func blockForText(_ text: String) -> BlockID {
-            let t = text.lowercased()
-
-            if t.contains("hub") || t.contains("mail") || t.contains("ship") || t.contains("insured") || t.contains("authentication") || t.contains("designer") || t.contains("luxury") {
-                return .luxury
-            }
-
-            if t.contains("consign") || t.contains("consignment") || t.contains("resale") || t.contains("poshmark") || t.contains("depop") || t.contains("thredup") || t.contains("contemporary") || t.contains("facebook marketplace") {
-                return .contemporary
-            }
-
-            if t.contains("donat") || t.contains("charity") || t.contains("thrift") {
-                return .donate
-            }
-
-            if t.contains("discard") || t.contains("trash") || t.contains("recycle") || t.contains("damaged") || t.contains("stain") {
-                return .discard
-            }
-
-            return .other
-        }
-
+        // Shared rules: explicit Plan v2 piles, else legacy keyword grouping for closet lots.
+        let groups = LiquidationWorkflow.executionGroups(for: checklist, isClosetLot: setType == .closetLot)
         var dict: [BlockID: [Int]] = [:]
-        for i in indices {
-            let bid = blockForText(checklist.items[i].text)
-            dict[bid, default: []].append(i)
+        for (name, indices) in groups {
+            dict[BlockID(rawValue: name) ?? .other, default: []].append(contentsOf: indices)
         }
         return dict
     }
@@ -1109,52 +1106,48 @@ private struct SetExecutePlanView: View {
         newValue: Bool
     ) {
         errorMessage = nil
-
-        guard var checklist = LiquidationJSONCoding.tryDecode(LiquidationPlanChecklistDTO.self, from: planRecord.payloadJSON) else {
-            errorMessage = "Could not decode plan checklist JSON."
-            return
-        }
-
-        guard let idx = checklist.items.firstIndex(where: { $0.id == checklistItemID }) else {
-            errorMessage = "Checklist item not found."
-            return
-        }
-
-        checklist.items[idx].isCompleted = newValue
-        checklist.items[idx].completedAt = newValue ? .now : nil
-
         do {
-            let data = try LiquidationJSONCoding.encode(checklist)
-            planRecord.payloadJSON = data
-            planRecord.updatedAt = .now
-
-            let pct = completionPercent(checklist)
-            if pct >= 1.0, !checklist.items.isEmpty {
-                planRecord.statusRaw = PlanStatus.completed.rawValue
-                itemSet.liquidationState?.status = .completed
-            } else if pct > 0 {
-                planRecord.statusRaw = PlanStatus.inProgress.rawValue
-                itemSet.liquidationState?.status = .inProgress
-            } else {
-                planRecord.statusRaw = PlanStatus.notStarted.rawValue
-                itemSet.liquidationState?.status = .inProgress
-            }
-
-            itemSet.updatedAt = .now
-            itemSet.liquidationState?.updatedAt = .now
-
-            try modelContext.save()
+            try LiquidationWorkflow.setStep(checklistItemID, completed: newValue, in: planRecord, owner: owner, context: modelContext)
             refreshToken = UUID()
         } catch {
             errorMessage = "Failed saving checklist: \(error.localizedDescription)"
         }
     }
 
-    private func completionPercent(_ checklist: LiquidationPlanChecklistDTO) -> Double {
-        guard !checklist.items.isEmpty else { return 0 }
-        let completed = checklist.items.filter { $0.isCompleted }.count
-        return Double(completed) / Double(checklist.items.count)
+    /// Find Help from a pile that needs a partner opens that pile's picker (and its
+    /// saved selection); other steps open the Set's Find Help. Never ticks the step.
+    private func handleStepAction(
+        _ action: LiquidationStepAction,
+        step: LiquidationChecklistItemDTO,
+        blockID: BlockID,
+        planRecord: LiquidationPlanRecord,
+        planID: String
+    ) {
+        switch action {
+        case .findHelp, .findSpecialtyHelp:
+            if blockID.requiresPartner {
+                partnerPickerSheet = PartnerPickerSheet(block: blockID, planID: planID)
+            } else {
+                findHelpRequest = LiquidationWorkflow.findHelpRequest(plan: planRecord, step: step, action: action)
+            }
+        case .viewBrief:
+            reviewBrief = LiquidationWorkflow.originatingBrief(of: planRecord, in: itemSet.liquidationState)
+        case .recordOutcome:
+            outcomePlan = planRecord
+        }
     }
+
+    @MainActor
+    private func saveOutcome(_ outcome: LiquidationPlanOutcomeDTO, in plan: LiquidationPlanRecord) {
+        errorMessage = nil
+        do {
+            try LiquidationWorkflow.saveOutcome(outcome, in: plan, owner: owner, context: modelContext)
+            refreshToken = UUID()
+        } catch {
+            errorMessage = "Failed saving outcome: \(error.localizedDescription)"
+        }
+    }
+
 }
 
 private struct SetPartnerPickerView: View {

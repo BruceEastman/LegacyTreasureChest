@@ -1053,10 +1053,14 @@ def _plan_known_block(req: LiquidationPlanRequest, currency: str) -> str:
         if sc.memberSummaries:
             lines.append(f"- Members already listed in LTC ({len(sc.memberSummaries)}):")
             for m in sc.memberSummaries[:30]:
+                photos = f" | photos saved: {m.photoCount}" if m.photoCount is not None else ""
                 lines.append(
                     f"  - {m.title or 'Untitled'} | {m.category or 'Uncategorized'} | qty {m.quantity or 1}"
-                    f" | value each {_plan_money(m.unitValue, currency)}"
+                    f" | value each {_plan_money(m.unitValue, currency)}{photos}"
                 )
+            counted = [m.photoCount for m in sc.memberSummaries if m.photoCount is not None]
+            if counted:
+                lines.append(f"- Photos already saved across listed members: {sum(counted)}")
 
     sp = req.brief.specialty
     if sp is not None:

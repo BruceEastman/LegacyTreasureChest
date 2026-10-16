@@ -120,15 +120,8 @@ struct LiquidationAIService {
             return dto
 
         } catch {
-            // Transport failures (device can't reach server, timeout, etc.) -> fallback OK
-            let isTransportFailure: Bool = {
-                if error is URLError { return true }
-                let ns = error as NSError
-                if ns.domain == NSURLErrorDomain { return true }
-                return false
-            }()
-
-            if isTransportFailure {
+            // Transport failures (device can't reach server, timeout) -> fallback OK
+            if Self.allowsBasicBriefFallback(for: error) {
                 debugLog("⚠️ Backend liquidation brief transport failure; using local fallback. Error: \(error)")
                 return localBrief.generate(from: req, backendError: error)
             } else {
@@ -167,6 +160,21 @@ struct LiquidationAIService {
             debugLog("⚠️ Backend liquidation plan unavailable; using basic plan. Error: \(error)")
             return localPlan.generate(from: req)
         }
+    }
+
+    /// The offline Brief covers only a device that cannot reach the server.
+    /// BackendAIProvider reports that as AIError.offline or .timeout (raw
+    /// URLErrors never reach this service), so checking only URLError meant the
+    /// fallback never ran. Server, decoding, and request errors are surfaced.
+    static func allowsBasicBriefFallback(for error: Error) -> Bool {
+        if let ai = error as? AIError {
+            switch ai {
+            case .offline, .timeout: return true
+            default: return false
+            }
+        }
+        if error is URLError { return true }
+        return (error as NSError).domain == NSURLErrorDomain
     }
 
     /// Offline, timeouts, and temporary server unavailability (including an AI
@@ -304,7 +312,8 @@ enum LiquidationRequestBuilder {
                 title: item.name,
                 category: item.category,
                 quantity: membership.quantityInSet ?? item.quantity,
-                unitValue: item.estimatedUnitValue
+                unitValue: item.estimatedUnitValue,
+                photoCount: item.images.count
             )
         }
 
@@ -591,9 +600,9 @@ struct LocalLiquidationBriefGenerator {
         let reasoning: String = {
             if isIncompleteTotal {
                 let valuedCount = setMembers.count - unvaluedMemberCount
-                return "Local fallback brief for “\(title)” (\(category)). Known subtotal ~\(formatMoney(likelyTotal)) for \(valuedCount) of \(setMembers.count) members; \(unvaluedMemberCount) not estimated, so the set total is incomplete and may be higher."
+                return "Basic estimate for “\(title)” (\(category)). Known subtotal about \(formatMoney(likelyTotal)) for \(valuedCount) of \(setMembers.count) members; \(unvaluedMemberCount) not estimated, so the set total is incomplete and may be higher."
             }
-            return "Local fallback brief for “\(title)” (\(category)) — qty \(qty). Estimated total ~\(formatMoney(likelyTotal)) (range \(formatMoney(low))–\(formatMoney(high)))."
+            return "Basic estimate for “\(title)” (\(category)), quantity \(qty). Estimated total about \(formatMoney(likelyTotal)) (range \(formatMoney(low)) to \(formatMoney(high)))."
         }()
 
         let isLuxuryHub = looksLikeLuxuryHubScenario(req)
@@ -673,7 +682,7 @@ struct LocalLiquidationBriefGenerator {
             aiProvider: "local",
             aiModel: "heuristic-min",
             recommendedPath: .needsInfo,
-            reasoning: "Local fallback brief for “\(title)” (\(category)). The resale value has not been estimated, so a selling approach is not recommended yet.",
+            reasoning: "Basic estimate for “\(title)” (\(category)). The resale value has not been estimated, so a selling approach is not recommended yet.",
             pathOptions: [],
             actionSteps: [
                 "Add identifying details or photos, then run Improve with AI.",

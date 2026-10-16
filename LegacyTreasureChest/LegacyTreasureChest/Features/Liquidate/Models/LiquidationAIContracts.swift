@@ -101,11 +101,20 @@ public struct LiquidationMemberSummary: Codable, Sendable {
     public var category: String?
     public var quantity: Int?
     public var unitValue: Double?
+    /// Photos already saved for this member (a count only; never the images).
+    public var photoCount: Int?
 
-    public init(title: String? = nil, category: String? = nil, quantity: Int? = nil, unitValue: Double? = nil) {
+    public init(
+        title: String? = nil,
+        category: String? = nil,
+        quantity: Int? = nil,
+        unitValue: Double? = nil,
+        photoCount: Int? = nil
+    ) {
         self.title = title
         self.category = category
         self.quantity = quantity
         self.unitValue = unitValue
+        self.photoCount = photoCount
     }
 }

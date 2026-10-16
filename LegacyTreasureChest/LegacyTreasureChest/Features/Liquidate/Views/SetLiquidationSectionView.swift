@@ -4,7 +4,7 @@
 //
 //  Production-facing Liquidation panel for a set (LTCItemSet).
 //  - Generates Brief (backend-first via LiquidationAIService)
-//  - Allows choosing a path and generating a Plan (backend-first)
+//  - Choosing an approach creates a Plan (backend-first); the Plan is worked via LiquidationWorkflow
 //  - Persists to SwiftData: LiquidationState -> BriefRecord / PlanRecord
 //
 
@@ -22,18 +22,38 @@ struct SetLiquidationSectionView: View {
     @State private var isGeneratingPlan: Bool = false
     /// The homeowner chose to plan before the Brief's missing details are confirmed.
     @State private var isCreatingPlanAnyway: Bool = false
+    /// The approach choices are open while a Plan already exists.
+    @State private var isChoosingApproach: Bool = false
+    /// A replacement, regeneration, or Brief update awaiting confirmation.
+    @State private var pendingChange: LiquidationPendingChange?
+    /// The Plan whose outcome form is open.
+    @State private var outcomePlan: LiquidationPlanRecord?
+    /// Find Help opened from a checklist step.
+    @State private var findHelpRequest: LiquidationFindHelpRequest?
+    /// The Brief opened from a "View Brief" step.
+    @State private var reviewBrief: LiquidationBriefRecord?
 
     @StateObject private var consentGate = AIConsentGate()
 
     private let liquidationAI = LiquidationAIService()
 
+    private var owner: LiquidationOwner { .itemSet(itemSet) }
+    private var isBusy: Bool { isGeneratingBrief || isGeneratingPlan }
+
     var body: some View {
+        let briefRecord = LiquidationWorkflow.activeBrief(itemSet.liquidationState)
+        let planRecord = LiquidationWorkflow.activePlan(itemSet.liquidationState)
+
         Form {
             Section {
-                headerRow()
+                headerRow(planRecord: planRecord)
 
                 Button {
-                    Task { await consentGate.perform { await generateBrief(for: itemSet) } }
+                    if planRecord != nil {
+                        pendingChange = .updateBrief
+                    } else {
+                        startBriefGeneration()
+                    }
                 } label: {
                     HStack(spacing: 10) {
                         if isGeneratingBrief {
@@ -44,9 +64,8 @@ struct SetLiquidationSectionView: View {
                         Text(isGeneratingBrief ? "Generating Brief…" : "Generate / Update Brief")
                     }
                 }
-                .disabled(isGeneratingBrief || isGeneratingPlan)
+                .disabled(isBusy)
 
-                // Clearer "work happening" feedback
                 if isGeneratingBrief {
                     HStack(spacing: 10) {
                         ProgressView()
@@ -57,33 +76,18 @@ struct SetLiquidationSectionView: View {
                     }
                     .padding(.top, 6)
                 }
-                if let brief = latestActiveBriefRecord(for: itemSet) {
+
+                if let brief = briefRecord {
                     briefSummaryCard(briefRecord: brief)
 
                     Divider().padding(.vertical, 4)
 
-                    if briefNeedsMoreInformation(brief) {
-                        needsInfoCard(from: brief)
-                        if isCreatingPlanAnyway {
-                            Text(UserFacingTerms.Liquidation.createPlanAnywayExplanation)
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                            pathButtonsRow(itemSet: itemSet, briefRecord: brief)
-                        } else {
-                            Button(UserFacingTerms.Liquidation.createPlanAnyway) {
-                                isCreatingPlanAnyway = true
-                            }
-                            .buttonStyle(.bordered)
-                            .disabled(isGeneratingBrief || isGeneratingPlan)
-                        }
-                    } else {
-                        pathButtonsRow(itemSet: itemSet, briefRecord: brief)
-                    }
+                    approachChooser(briefRecord: brief, hasPlan: planRecord != nil)
                 } else {
                     Text("No liquidation brief yet.")
                         .foregroundStyle(.secondary)
                 }
-                
+
                 if isGeneratingPlan {
                     HStack(spacing: 10) {
                         ProgressView()
@@ -95,9 +99,9 @@ struct SetLiquidationSectionView: View {
                     .padding(.top, 6)
                 }
 
-                if let plan = latestActivePlanRecord(for: itemSet) {
+                if let plan = planRecord {
                     Divider().padding(.vertical, 4)
-                    planChecklistEditor(planRecord: plan, itemSet: itemSet)
+                    planPanel(plan)
                         .id(plan.persistentModelID)
 
                     if _isDebugAssertConfiguration() && FeatureFlags().showDebugInfo {
@@ -139,23 +143,56 @@ struct SetLiquidationSectionView: View {
         .background(Theme.background)
         .navigationTitle("Liquidate Set")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $outcomePlan) { plan in
+            LiquidationOutcomeForm(
+                planTitle: UserFacingTerms.Liquidation.planTitle(plan.chosenPath),
+                existing: LiquidationWorkflow.checklist(of: plan)?.outcome,
+                currencyCode: Locale.current.currency?.identifier ?? "USD"
+            ) { outcome in
+                saveOutcome(outcome, in: plan)
+            }
+        }
+        .sheet(item: $reviewBrief) { record in
+            if let dto = LiquidationWorkflow.brief(of: record) {
+                LiquidationBriefReviewSheet(dto: dto, createdAt: record.createdAt)
+            }
+        }
+        .navigationDestination(item: $findHelpRequest) { request in
+            LiquidationFindHelpDestination(owner: owner, request: request)
+        }
+        .alert(
+            pendingChange.map { change in
+                change.title(currentPlanTitle: planRecord.map { UserFacingTerms.Liquidation.planTitle($0.chosenPath) } ?? "Plan")
+            } ?? "",
+            isPresented: Binding(get: { pendingChange != nil }, set: { if !$0 { pendingChange = nil } }),
+            presenting: pendingChange
+        ) { change in
+            Button(change.confirmTitle, role: change.isDestructive ? .destructive : nil) {
+                perform(change)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { change in
+            if let planRecord {
+                Text(change.message(currentPlan: planRecord))
+            }
+        }
         .aiConsentSheet(consentGate)
     }
 
     // MARK: - Header
 
     @ViewBuilder
-    private func headerRow() -> some View {
+    private func headerRow(planRecord: LiquidationPlanRecord?) -> some View {
         HStack {
             Text("Status:")
                 .foregroundStyle(.secondary)
 
-            Text(UserFacingTerms.Liquidation.statusName(itemSet.liquidationState?.status ?? .notStarted))
+            Text(UserFacingTerms.Liquidation.statusName(owner.status))
                 .font(.subheadline.weight(.semibold))
 
             Spacer()
 
-            if let plan = latestActivePlanRecord(for: itemSet) {
+            if let plan = planRecord {
                 Text("Approach: \(plan.chosenPath.displayName)")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -164,88 +201,36 @@ struct SetLiquidationSectionView: View {
         .font(.footnote)
     }
 
-    // MARK: - SwiftData helpers
-
-    @MainActor
-    private func ensureSetState(_ itemSet: LTCItemSet) -> LiquidationState {
-        if let existing = itemSet.liquidationState { return existing }
-
-        let state = LiquidationState(
-            ownerType: .itemSet,
-            status: .notStarted,
-            createdAt: .now,
-            updatedAt: .now
-        )
-        state.itemSet = itemSet
-        itemSet.liquidationState = state
-
-        modelContext.insert(state)
-        return state
-    }
-
-    private func latestActiveBriefRecord(for itemSet: LTCItemSet) -> LiquidationBriefRecord? {
-        guard let state = itemSet.liquidationState else { return nil }
-        if let active = state.briefs.first(where: { $0.isActive }) { return active }
-        return state.briefs.sorted(by: { $0.createdAt > $1.createdAt }).first
-    }
-
-    private func latestActivePlanRecord(for itemSet: LTCItemSet) -> LiquidationPlanRecord? {
-        guard let state = itemSet.liquidationState else { return nil }
-        if let active = state.plans.first(where: { $0.isActive }) { return active }
-        return state.plans.sorted(by: { $0.createdAt > $1.createdAt }).first
-    }
-
     // MARK: - Generate Brief
 
+    private func startBriefGeneration() {
+        Task { await consentGate.perform { await generateBrief() } }
+    }
+
+    /// Saves a new Brief; an existing Plan and its progress are kept.
     @MainActor
-    private func generateBrief(for itemSet: LTCItemSet) async {
+    private func generateBrief() async {
+        guard !isBusy else { return }
         message = nil
         errorMessage = nil
         isGeneratingBrief = true
+        defer { isGeneratingBrief = false }
 
-        let state = ensureSetState(itemSet)
+        let hadPlan = LiquidationWorkflow.activePlan(itemSet.liquidationState) != nil
 
         do {
-            // v1: text-only set context (members summarized)
             let dto = try await liquidationAI.generateBriefDTO(
                 for: itemSet,
                 goal: .balanced,
                 constraints: nil,
                 locationHint: nil
             )
-
-            let payloadData = try LiquidationJSONCoding.encode(dto)
-
-            // Deactivate existing brief records
-            for i in state.briefs.indices { state.briefs[i].isActive = false }
-
-            let rec = LiquidationBriefRecord(
-                createdAt: .now,
-                isActive: true,
-                inputFingerprint: nil,
-                payloadVersion: "brief.v1",
-                aiProvider: dto.aiProvider ?? "unknown",
-                aiModel: dto.aiModel ?? "unknown",
-                payloadJSON: payloadData
-            )
-
-            rec.state = state
-            modelContext.insert(rec)
-            state.briefs.append(rec)
-
-            state.status = .hasBrief
-            state.updatedAt = .now
-
-            itemSet.updatedAt = .now
-
-            try modelContext.save()
+            try LiquidationWorkflow.recordNewBrief(dto, owner: owner, context: modelContext)
             isCreatingPlanAnyway = false
-            message = "Brief updated."
+            message = hadPlan ? "Brief updated. Your current Plan is unchanged." : "Brief updated."
         } catch {
             errorMessage = "Brief failed: \(error.localizedDescription)"
         }
-
-        isGeneratingBrief = false
     }
 
     // MARK: - Brief UI
@@ -264,7 +249,7 @@ struct SetLiquidationSectionView: View {
                 .font(.footnote)
         }
     }
-    
+
     /// More Information Needed no longer blocks a Plan; it asks for an explicit
     /// "Create a Plan Anyway" before the four approaches are offered.
     private func briefNeedsMoreInformation(_ briefRecord: LiquidationBriefRecord) -> Bool {
@@ -292,125 +277,130 @@ struct SetLiquidationSectionView: View {
         }
     }
 
-    // MARK: - Plan creation
+    // MARK: - Choosing an approach
+
+    /// Without a Plan the approaches are shown; with one, they open only from
+    /// "Change Approach…" or "Create a New Plan", and choosing asks first.
+    @ViewBuilder
+    private func approachChooser(briefRecord: LiquidationBriefRecord, hasPlan: Bool) -> some View {
+        let needsInfo = briefNeedsMoreInformation(briefRecord)
+        if needsInfo {
+            needsInfoCard(from: briefRecord)
+        }
+        if !hasPlan || isChoosingApproach {
+            if needsInfo && !isCreatingPlanAnyway {
+                Button(UserFacingTerms.Liquidation.createPlanAnyway) {
+                    isCreatingPlanAnyway = true
+                }
+                .buttonStyle(.bordered)
+                .disabled(isBusy)
+            } else {
+                if needsInfo {
+                    Text(UserFacingTerms.Liquidation.createPlanAnywayExplanation)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                pathButtonsRow(briefRecord: briefRecord, hasPlan: hasPlan)
+            }
+            if hasPlan {
+                Button("Keep Current Plan") {
+                    isChoosingApproach = false
+                    isCreatingPlanAnyway = false
+                }
+                .buttonStyle(.bordered)
+                .disabled(isBusy)
+            }
+        }
+    }
 
     @ViewBuilder
-    private func pathButtonsRow(itemSet: LTCItemSet, briefRecord: LiquidationBriefRecord) -> some View {
+    private func pathButtonsRow(briefRecord: LiquidationBriefRecord, hasPlan: Bool) -> some View {
         if let dto = LiquidationJSONCoding.tryDecode(LiquidationBriefDTO.self, from: briefRecord.payloadJSON) {
             LiquidationApproachPicker(
                 recommendedPath: dto.recommendedPath,
-                isDisabled: isGeneratingBrief || isGeneratingPlan
+                isDisabled: isBusy
             ) { chosen in
-                Task { await consentGate.perform { await createOrReplacePlan(itemSet: itemSet, briefRecord: briefRecord, chosen: chosen) } }
+                if hasPlan {
+                    pendingChange = .replace(chosen)
+                } else {
+                    startPlanGeneration(chosen)
+                }
             }
         }
     }
 
+    // MARK: - Plan creation
+
+    private func perform(_ change: LiquidationPendingChange) {
+        switch change {
+        case .replace(let path), .regenerate(let path):
+            startPlanGeneration(path)
+        case .updateBrief:
+            startBriefGeneration()
+        }
+    }
+
+    private func startPlanGeneration(_ chosen: LiquidationPath) {
+        Task { await consentGate.perform { await createPlan(chosen: chosen) } }
+    }
+
+    /// Generates from the current Brief; the current Plan stays active unless
+    /// generation succeeds. Repeated taps are ignored while a Plan is generating.
     @MainActor
-    private func createOrReplacePlan(itemSet: LTCItemSet, briefRecord: LiquidationBriefRecord, chosen: LiquidationPath) async {
+    private func createPlan(chosen: LiquidationPath) async {
+        guard !isBusy else { return }
         message = nil
         errorMessage = nil
-        isGeneratingPlan = true
 
-        let state = ensureSetState(itemSet)
-
-        do {
-            guard let briefDTO = LiquidationJSONCoding.tryDecode(LiquidationBriefDTO.self, from: briefRecord.payloadJSON) else {
-                throw NSError(
-                    domain: "SetLiquidationSectionView",
-                    code: 2201,
-                    userInfo: [NSLocalizedDescriptionKey: "Could not decode LiquidationBriefDTO from brief payload."]
-                )
-            }
-
-            // Backend-first; the service uses the basic Plan only when offline or unavailable.
-            let generated = try await liquidationAI.generatePlanChecklistDTO(
-                for: itemSet,
-                chosenPath: chosen,
-                briefDTO: briefDTO
-            )
-            let checklist = LiquidationPlanAssembler.withContext(
-                generated,
-                chosenPath: chosen,
-                brief: briefDTO,
-                briefRecordId: briefRecord.briefRecordId
-            )
-
-            let checklistData = try LiquidationJSONCoding.encode(checklist)
-
-            // Deactivate existing plan records
-            for i in state.plans.indices { state.plans[i].isActive = false }
-
-            let planRecord = LiquidationPlanRecord(
-                createdAt: .now,
-                updatedAt: .now,
-                isActive: true,
-                chosenPath: chosen,
-                status: .notStarted,
-                payloadVersion: LiquidationPlanAssembler.payloadVersion,
-                aiProvider: checklist.aiProvider,
-                aiModel: checklist.aiModel,
-                derivedFromBriefRecordId: briefRecord.briefRecordId,
-                payloadJSON: checklistData
-            )
-            planRecord.state = state
-
-            modelContext.insert(planRecord)
-            state.plans.append(planRecord)
-
-            state.status = .inProgress
-            state.updatedAt = .now
-            itemSet.updatedAt = .now
-
-            try modelContext.save()
-            isCreatingPlanAnyway = false
-            message = "Created your \(UserFacingTerms.Liquidation.planTitle(chosen))."
-        } catch {
-            errorMessage = "Plan failed: \(error.localizedDescription)"
+        let state = itemSet.liquidationState
+        let hadPlan = LiquidationWorkflow.activePlan(state) != nil
+        guard let briefRecord = LiquidationWorkflow.activeBrief(state),
+              let briefDTO = LiquidationWorkflow.brief(of: briefRecord) else {
+            errorMessage = "Generate a Brief before creating a Plan."
+            return
         }
 
-        isGeneratingPlan = false
+        isGeneratingPlan = true
+        defer { isGeneratingPlan = false }
+
+        do {
+            // Backend-first; the service uses the basic Plan only when offline or unavailable.
+            try await LiquidationWorkflow.createPlan(
+                owner: owner,
+                chosen: chosen,
+                briefRecord: briefRecord,
+                brief: briefDTO,
+                context: modelContext
+            ) {
+                try await liquidationAI.generatePlanChecklistDTO(for: itemSet, chosenPath: chosen, briefDTO: briefDTO)
+            }
+            isCreatingPlanAnyway = false
+            isChoosingApproach = false
+            message = "Created your \(UserFacingTerms.Liquidation.planTitle(chosen))."
+        } catch {
+            errorMessage = hadPlan
+                ? "Plan failed: \(error.localizedDescription) Your current Plan is unchanged."
+                : "Plan failed: \(error.localizedDescription)"
+        }
     }
 
-    // MARK: - Plan checklist UI
+    // MARK: - Plan
 
     @ViewBuilder
-    private func planChecklistEditor(planRecord: LiquidationPlanRecord, itemSet: LTCItemSet) -> some View {
-        if let checklist = LiquidationJSONCoding.tryDecode(LiquidationPlanChecklistDTO.self, from: planRecord.payloadJSON) {
-            VStack(alignment: .leading, spacing: 8) {
-                LiquidationPlanContextHeader(
-                    chosenPath: planRecord.chosenPath,
-                    status: planRecord.status,
-                    checklist: checklist
-                )
-
-                ForEach(checklist.items.sorted(by: { $0.order < $1.order })) { checklistItem in
-                    Toggle(isOn: Binding(
-                        get: { checklistItem.isCompleted },
-                        set: { newValue in
-                            toggleChecklistItem(
-                                planRecord: planRecord,
-                                itemSet: itemSet,
-                                checklistItemID: checklistItem.id,
-                                newValue: newValue
-                            )
-                        }
-                    )) {
-                        LiquidationChecklistStepLabel(item: checklistItem)
-                    }
-                }
-
-                let pct = completionPercent(checklist)
-                ProgressView(value: pct) {
-                    Text("Progress")
-                }
-                .padding(.top, 6)
-
-                Text("Completion: \(Int(pct * 100))%")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.vertical, 6)
+    private func planPanel(_ plan: LiquidationPlanRecord) -> some View {
+        if let checklist = LiquidationWorkflow.checklist(of: plan) {
+            LiquidationPlanPanel(
+                planRecord: plan,
+                checklist: checklist,
+                earlierBriefDate: LiquidationWorkflow.earlierBriefDate(for: plan, in: itemSet.liquidationState),
+                isBusy: isBusy,
+                onToggle: { id, done in setStep(id, completed: done, in: plan) },
+                onAction: { action, step in handle(action, step: step, plan: plan) },
+                onKeepPlan: { keepPlan(plan) },
+                onCreateNewPlan: { isChoosingApproach = true },
+                onChangeApproach: { isChoosingApproach = true },
+                onRegenerate: { pendingChange = .regenerate(plan.chosenPath) }
+            )
         } else {
             Text("Could not decode plan checklist JSON.")
                 .foregroundStyle(.red)
@@ -418,59 +408,49 @@ struct SetLiquidationSectionView: View {
         }
     }
 
+    private func handle(_ action: LiquidationStepAction, step: LiquidationChecklistItemDTO?, plan: LiquidationPlanRecord) {
+        switch action {
+        case .findHelp, .findSpecialtyHelp:
+            // Opening Find Help never ticks the step; the homeowner does that on return.
+            findHelpRequest = LiquidationWorkflow.findHelpRequest(plan: plan, step: step, action: action)
+        case .viewBrief:
+            reviewBrief = LiquidationWorkflow.originatingBrief(of: plan, in: itemSet.liquidationState)
+        case .recordOutcome:
+            outcomePlan = plan
+        }
+    }
+
     @MainActor
-    private func toggleChecklistItem(
-        planRecord: LiquidationPlanRecord,
-        itemSet: LTCItemSet,
-        checklistItemID: UUID,
-        newValue: Bool
-    ) {
+    private func setStep(_ id: UUID, completed: Bool, in plan: LiquidationPlanRecord) {
         message = nil
         errorMessage = nil
-
-        guard var checklist = LiquidationJSONCoding.tryDecode(LiquidationPlanChecklistDTO.self, from: planRecord.payloadJSON) else {
-            errorMessage = "Could not decode plan checklist JSON."
-            return
-        }
-
-        guard let idx = checklist.items.firstIndex(where: { $0.id == checklistItemID }) else {
-            errorMessage = "Checklist item not found."
-            return
-        }
-
-        checklist.items[idx].isCompleted = newValue
-        checklist.items[idx].completedAt = newValue ? .now : nil
-
         do {
-            let data = try LiquidationJSONCoding.encode(checklist)
-            planRecord.payloadJSON = data
-            planRecord.updatedAt = .now
-
-            let pct = completionPercent(checklist)
-            if pct >= 1.0, !checklist.items.isEmpty {
-                planRecord.statusRaw = PlanStatus.completed.rawValue
-                itemSet.liquidationState?.status = .completed
-            } else if pct > 0 {
-                planRecord.statusRaw = PlanStatus.inProgress.rawValue
-                itemSet.liquidationState?.status = .inProgress
-            } else {
-                planRecord.statusRaw = PlanStatus.notStarted.rawValue
-                itemSet.liquidationState?.status = .inProgress
-            }
-
-            itemSet.updatedAt = .now
-            itemSet.liquidationState?.updatedAt = .now
-
-            try modelContext.save()
+            try LiquidationWorkflow.setStep(id, completed: completed, in: plan, owner: owner, context: modelContext)
         } catch {
             errorMessage = "Failed saving checklist: \(error.localizedDescription)"
         }
     }
 
-    private func completionPercent(_ checklist: LiquidationPlanChecklistDTO) -> Double {
-        guard !checklist.items.isEmpty else { return 0 }
-        let completed = checklist.items.filter { $0.isCompleted }.count
-        return Double(completed) / Double(checklist.items.count)
+    @MainActor
+    private func saveOutcome(_ outcome: LiquidationPlanOutcomeDTO, in plan: LiquidationPlanRecord) {
+        errorMessage = nil
+        do {
+            try LiquidationWorkflow.saveOutcome(outcome, in: plan, owner: owner, context: modelContext)
+            message = "Outcome saved: \(outcome.result.displayName)."
+        } catch {
+            errorMessage = "Failed saving outcome: \(error.localizedDescription)"
+        }
+    }
+
+    @MainActor
+    private func keepPlan(_ plan: LiquidationPlanRecord) {
+        guard let brief = LiquidationWorkflow.activeBrief(itemSet.liquidationState) else { return }
+        do {
+            try LiquidationWorkflow.keepPlan(plan, with: brief, context: modelContext)
+            isChoosingApproach = false
+        } catch {
+            errorMessage = "Failed saving your choice: \(error.localizedDescription)"
+        }
     }
 
     // MARK: - Delete plan
@@ -486,7 +466,7 @@ struct SetLiquidationSectionView: View {
             modelContext.delete(plan)
             state.plans.removeAll(where: { $0.persistentModelID == plan.persistentModelID })
 
-            state.status = (latestActiveBriefRecord(for: itemSet) == nil) ? .notStarted : .hasBrief
+            state.status = (LiquidationWorkflow.activeBrief(state) == nil) ? .notStarted : .hasBrief
             state.updatedAt = .now
             itemSet.updatedAt = .now
 

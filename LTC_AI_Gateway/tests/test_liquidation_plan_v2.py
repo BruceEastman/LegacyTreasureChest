@@ -256,6 +256,20 @@ class ClosetLotTests(_PlanRouteTestCase):
         self.assertNotIn("CLOSET LOT", p)
         self.assertIn("Dinner plate | China & Crystal | qty 12", p)
 
+    def test_set_member_photo_counts_reach_the_prompt(self):
+        members = [{"title": "Dinner plate", "category": "China & Crystal", "quantity": 12, "unitValue": 15,
+                    "photoCount": 3},
+                   {"title": "Platter", "category": "China & Crystal", "quantity": 1, "unitValue": 40,
+                    "photoCount": 2},
+                   {"title": "Gravy boat", "category": "China & Crystal", "quantity": 1}]  # app 1.2 shape
+        china = {**CLOSET_SET_REQUEST, "category": "China/Dinnerware", "title": "Noritake china",
+                 "setContext": {**CLOSET_SET_REQUEST["setContext"], "setType": "China/Dinnerware",
+                                "story": None, "memberSummaries": members}}
+        p = _prompt(china)
+        self.assertIn("Dinner plate | China & Crystal | qty 12 | value each 15 USD | photos saved: 3", p)
+        self.assertIn("Gravy boat | China & Crystal | qty 1 | value each not estimated\n", p)
+        self.assertIn("Photos already saved across listed members: 5", p)
+
     def test_groups_kept_for_closet_lot_and_dropped_elsewhere(self):
         items = [_step("Split the lot into piles", group="other"),
                  _step("Ship designer pieces to a luxury consignor", group="luxury"),

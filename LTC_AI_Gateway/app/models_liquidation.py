@@ -39,6 +39,7 @@ class LiquidationMemberSummary(BaseModel):
     category: Optional[str] = None
     quantity: Optional[int] = None
     unitValue: Optional[float] = None
+    photoCount: Optional[int] = None  # photos already saved in LTC (count only)
 
 
 class LiquidationSetContext(BaseModel):

@@ -32,6 +32,12 @@ struct LiquidationBriefSummaryView: View {
             Text(presentation.headline)
                 .font(.title3.weight(.semibold))
 
+            if presentation.isBasicBrief {
+                Text(UserFacingTerms.Liquidation.basicBriefNotice)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
             if let specific = presentation.specificRecommendation {
                 Text(specific)
                     .font(.subheadline)
