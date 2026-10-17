@@ -9,7 +9,9 @@
 
 import Foundation
 import SwiftData
+import SwiftUI
 import Testing
+import UIKit
 @testable import LegacyTreasureChest
 
 // MARK: - Fixtures
@@ -503,5 +505,33 @@ struct SetFindHelpTests {
         #expect((sel.source, sel.providerRef, sel.directoryName) == (.googlePlaces, "ChIJabcdefghij123", nil))
         let stored = String(decoding: plan.payloadJSON, as: UTF8.self)
         #expect(!stored.contains("Boise Consign") && !stored.contains("555-0199"))
+    }
+
+    /// Regression for the 1.2 (9) watchdog kill: Execute Plan re-ran the
+    /// earlier-choice import on every identity reset, so the main thread never
+    /// went idle. With the loop, this test never gets past the first sleep.
+    @Test(.timeLimit(.minutes(1))) func executePlanScreenSettlesAfterImportingEarlierChoices() async throws {
+        let store = try Store()
+        let (set, plan) = try await store.closetLotWithPlan()
+        let key = LiquidationWorkflow.legacySelectionKey(planKey: String(describing: plan.persistentModelID),
+                                                         group: "luxury")
+        UserDefaults.standard.set(try JSONEncoder().encode(LTCSavedSelectedPartner(
+            partnerId: "curated-realreal-handbags", name: "The RealReal", partnerType: "Luxury",
+            distanceMiles: nil, website: nil, phone: nil)), forKey: key)
+        defer { UserDefaults.standard.removeObject(forKey: key) }
+
+        let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.rootViewController = UIHostingController(
+            rootView: NavigationStack { SetExecutePlanView(itemSet: set) }.modelContainer(store.container))
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+
+        try await Task.sleep(for: .seconds(1))
+        let checklist = LiquidationWorkflow.checklist(of: plan)
+        #expect(LiquidationWorkflow.selection(in: checklist, group: "luxury")?.providerRef == "curated:luxury:therealreal")
+        let settled = plan.payloadJSON
+        try await Task.sleep(for: .milliseconds(500))
+        #expect(plan.payloadJSON == settled)
     }
 }

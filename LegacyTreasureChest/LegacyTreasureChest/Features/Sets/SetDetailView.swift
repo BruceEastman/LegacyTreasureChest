@@ -321,7 +321,7 @@ struct SetDetailView: View {
 
 // MARK: - Set Execute Plan
 
-private struct SetExecutePlanView: View {
+struct SetExecutePlanView: View {
     @Environment(\.modelContext) private var modelContext
     @Bindable var itemSet: LTCItemSet
 
@@ -410,7 +410,6 @@ private struct SetExecutePlanView: View {
             if let plan = latestActivePlanRecord(for: itemSet) {
                 planBackedExecution(planRecord: plan)
                     .id(refreshToken)
-                    .onAppear { importLegacyChoices(plan) }
             } else {
                 Section("No Plan Yet") {
                     Text("Generate a brief and create a plan first.")
@@ -457,6 +456,12 @@ private struct SetExecutePlanView: View {
         }
         .navigationDestination(item: $findHelpRequest) { request in
             LiquidationFindHelpDestination(owner: owner, request: request)
+        }
+        // Runs once per Plan. It must stay outside the `.id(refreshToken)`
+        // subtree: an appearance trigger inside it re-fires on every identity
+        // reset, which kept the main thread busy and caused a watchdog kill.
+        .task(id: latestActivePlanRecord(for: itemSet)?.persistentModelID) {
+            if let plan = latestActivePlanRecord(for: itemSet) { importLegacyChoices(plan) }
         }
     }
 
@@ -658,8 +663,8 @@ private struct SetExecutePlanView: View {
         do {
             let unresolved = try LiquidationWorkflow.importLegacySetChoices(
                 plan: plan, planKey: planKey, groups: groups, owner: owner, context: modelContext)
-            legacyChoices = Dictionary(uniqueKeysWithValues: unresolved.map { ($0.group, $0) })
-            refreshToken = UUID()
+            let choices = Dictionary(uniqueKeysWithValues: unresolved.map { ($0.group, $0) })
+            if choices != legacyChoices { legacyChoices = choices }
         } catch {
             errorMessage = "Could not read earlier business choices: \(error.localizedDescription)"
         }
