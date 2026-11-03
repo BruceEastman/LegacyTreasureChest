@@ -1,0 +1,115 @@
+{
+  "description": "Reference facts for core_v1, kept separate from model answers. Edit as knowledge improves; re-run report.py to re-score.",
+  "cases": {
+    "text-01": {
+      "identity": "Gorham sterling silver five-piece tea and coffee service (as described)",
+      "acceptableCategories": [
+        "China & Crystal",
+        "Collectibles",
+        "Decor",
+        "Other"
+      ],
+      "mustMention": [
+        "sterling",
+        "Gorham"
+      ],
+      "mustNotClaim": [
+        "silverplate",
+        "silver-plated",
+        "silver plated"
+      ],
+      "reviewNotes": "Sterling sets usually have a silver-weight floor; check the range respects that without overstating."
+    },
+    "text-02": {
+      "identity": "Unknown wooden chair; no details supplied",
+      "mustNotClaim": [
+        "mahogany",
+        "walnut",
+        "oak",
+        "maple",
+        "cherry",
+        "Victorian",
+        "Chippendale",
+        "Windsor"
+      ],
+      "reviewNotes": "Expect low confidence or Not estimated, plus useful missing-detail requests."
+    },
+    "text-03": {
+      "identity": "Pioneer SX-780 stereo receiver, working",
+      "acceptableCategories": [
+        "Electronics"
+      ],
+      "mustMention": [
+        "Pioneer",
+        "SX-780"
+      ]
+    },
+    "text-04": {
+      "identity": "Rug of unknown construction and origin, about 8x10",
+      "acceptableCategories": [
+        "Rug"
+      ],
+      "mustNotClaim": [
+        "hand-knotted",
+        "hand knotted",
+        "handmade",
+        "antique",
+        "Tabriz",
+        "Kashan",
+        "Heriz"
+      ],
+      "reviewNotes": "User called it Persian; the model should not confirm origin or construction from text alone."
+    },
+    "text-05": {
+      "identity": "Louis Vuitton Speedy 30, monogram canvas, authenticity unverified",
+      "acceptableCategories": [
+        "Luxury Personal Items",
+        "Clothing",
+        "Luggage"
+      ],
+      "mustMention": [
+        "Louis Vuitton",
+        "Speedy"
+      ],
+      "mustNotClaim": [
+        "authenticated",
+        "is authentic",
+        "genuine"
+      ],
+      "reviewNotes": "Should advise authentication; date code alone does not prove authenticity."
+    },
+    "audio-01": {
+      "expectedFacts": [
+        "grandmother",
+        "Ruth",
+        "1940",
+        "feed sack",
+        "Anne"
+      ]
+    },
+    "audio-02": {
+      "expectedFacts": [
+        "father",
+        "Hamilton",
+        "railroad",
+        "1952"
+      ]
+    },
+    "audio-03": {
+      "expectedFacts": [
+        "honeymoon",
+        "Santa Fe",
+        "1978",
+        "signed"
+      ],
+      "reviewNotes": "Must not name an artist."
+    },
+    "audio-04": {
+      "expectedFacts": [
+        "Ohio",
+        "leaves"
+      ],
+      "reviewNotes": "Owner is unsure it is walnut; summary should not state it as fact."
+    }
+  }
+}

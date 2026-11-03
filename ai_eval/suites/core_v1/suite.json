@@ -1,0 +1,316 @@
+{
+  "suite": "core_v1",
+  "version": "1.0.0",
+  "description": "Non-private LTC AI regression cases: synthetic text and audio, and Brief/Plan inputs copied from gateway test fixtures. Safe to commit.",
+  "references": "references.json",
+  "cases": [
+    {
+      "id": "text-01",
+      "type": "text",
+      "note": "Detailed, marked sterling. Checks specificity and silver-weight awareness.",
+      "hints": {
+        "userWrittenTitle": "Sterling silver tea set",
+        "userWrittenDescription": "Gorham, five pieces: teapot, coffee pot, creamer, covered sugar, waste bowl. Marked 'Sterling' and 'Gorham' on the bases. Small dent on the teapot lid.",
+        "knownCategory": null
+      }
+    },
+    {
+      "id": "text-02",
+      "type": "text",
+      "note": "Vague input. Should stay uncertain and ask for details, not invent maker, wood or era.",
+      "hints": {
+        "userWrittenTitle": "Old wooden chair",
+        "userWrittenDescription": "",
+        "knownCategory": null
+      }
+    },
+    {
+      "id": "text-03",
+      "type": "text",
+      "note": "Specific model with an established secondary market.",
+      "hints": {
+        "userWrittenTitle": "Pioneer SX-780 stereo receiver",
+        "userWrittenDescription": "Works. All dial lights on. Some scratches on the case.",
+        "knownCategory": "Electronics"
+      }
+    },
+    {
+      "id": "text-04",
+      "type": "text",
+      "note": "Construction unknown. Should not assert hand-knotted or Persian origin as fact.",
+      "hints": {
+        "userWrittenTitle": "Persian rug",
+        "userWrittenDescription": "About 8 by 10 feet, red and dark blue, from my parents' house.",
+        "knownCategory": "Rug"
+      }
+    },
+    {
+      "id": "text-05",
+      "type": "text",
+      "note": "Luxury item. Should treat authenticity as unverified.",
+      "hints": {
+        "userWrittenTitle": "Louis Vuitton Speedy 30",
+        "userWrittenDescription": "Monogram canvas. Date code SP0091. Handles have darkened. Zipper works.",
+        "knownCategory": null
+      }
+    },
+    {
+      "id": "brief-01",
+      "type": "brief",
+      "note": "Existing gateway test fixture: single specialist item.",
+      "request": {
+        "schemaVersion": 1,
+        "scope": "item",
+        "title": "Leica M3 camera with 50mm lens",
+        "description": "Film rangefinder camera. Maker: Leica. Light wear on the top plate.",
+        "category": "Electronics",
+        "quantity": 1,
+        "unitValue": 1800,
+        "currencyCode": "USD",
+        "valuationLow": 1400,
+        "valuationLikely": 1800,
+        "valuationHigh": 2200,
+        "inputs": {
+          "goal": "balanced"
+        }
+      }
+    },
+    {
+      "id": "brief-02",
+      "type": "brief",
+      "note": "Existing gateway test fixture: 68-piece china set.",
+      "request": {
+        "schemaVersion": 1,
+        "scope": "set",
+        "title": "Noritake china service",
+        "category": "China/Dinnerware",
+        "quantity": 68,
+        "currencyCode": "USD",
+        "setContext": {
+          "setName": "Noritake china service",
+          "setType": "China/Dinnerware",
+          "sellTogetherPreference": "Together",
+          "completeness": "Complete",
+          "memberSummaries": [
+            {
+              "title": "Noritake dinner plate",
+              "category": "China & Crystal",
+              "quantity": 12,
+              "unitValue": 15
+            }
+          ]
+        },
+        "inputs": {
+          "goal": "balanced"
+        }
+      }
+    },
+    {
+      "id": "plan-01",
+      "type": "plan",
+      "note": "Existing gateway test fixture: consignment plan for a single item, fixed Brief input.",
+      "request": {
+        "schemaVersion": 1,
+        "scope": "item",
+        "chosenPath": "pathB_delegateConsign",
+        "brief": {
+          "schemaVersion": 1,
+          "scope": "item",
+          "generatedAt": "2026-10-16T00:00:00Z",
+          "recommendedPath": "pathB_delegateConsign",
+          "reasoning": "Collectors pay more through camera specialists.",
+          "pathOptions": [
+            {
+              "id": "e3396fe3-6557-4eb6-839a-51bfda51846a",
+              "path": "pathA_maximizePrice",
+              "label": "Sell online yourself",
+              "effort": "high",
+              "risks": [],
+              "netProceeds": {
+                "currencyCode": "USD",
+                "low": 1300,
+                "likely": 1500,
+                "high": 1700
+              }
+            },
+            {
+              "id": "7f0a8046-215f-4b08-ae11-6032d60fcbfa",
+              "path": "pathB_delegateConsign",
+              "label": "Specialist camera consignment",
+              "effort": "medium",
+              "risks": [
+                "Commission of 20 to 30 percent"
+              ],
+              "netProceeds": {
+                "currencyCode": "USD",
+                "low": 1100,
+                "likely": 1300,
+                "high": 1500
+              },
+              "timeEstimate": "3 to 8 weeks",
+              "logisticsNotes": "Most specialists accept insured mail-in."
+            },
+            {
+              "id": "da3126d3-da20-4b5d-ba8d-f777abe8e60a",
+              "path": "pathC_quickExit",
+              "label": "Sell to a local camera shop",
+              "effort": "low",
+              "risks": []
+            }
+          ],
+          "actionSteps": [
+            "Find a specialist"
+          ],
+          "missingDetails": [
+            "Whether the shutter fires accurately at all speeds"
+          ],
+          "assumptions": [
+            "Lens glass is clear",
+            "Local fallback used"
+          ],
+          "specialty": {
+            "itemKind": "film camera",
+            "detailTerms": [
+              "rangefinder",
+              "50mm lens"
+            ],
+            "brand": "Leica",
+            "model": "M3",
+            "isSpecialistItem": true
+          }
+        },
+        "title": "Leica M3 camera",
+        "category": "Electronics"
+      }
+    },
+    {
+      "id": "plan-02",
+      "type": "plan",
+      "note": "Existing gateway test fixture: set plan, fixed Brief input.",
+      "request": {
+        "schemaVersion": 2,
+        "scope": "set",
+        "chosenPath": "pathB_delegateConsign",
+        "brief": {
+          "schemaVersion": 1,
+          "scope": "set",
+          "generatedAt": "2026-10-16T00:00:00Z",
+          "recommendedPath": "pathB_delegateConsign",
+          "reasoning": "Collectors pay more through camera specialists.",
+          "pathOptions": [
+            {
+              "id": "e3396fe3-6557-4eb6-839a-51bfda51846a",
+              "path": "pathA_maximizePrice",
+              "label": "Sell online yourself",
+              "effort": "high",
+              "risks": [],
+              "netProceeds": {
+                "currencyCode": "USD",
+                "low": 1300,
+                "likely": 1500,
+                "high": 1700
+              }
+            },
+            {
+              "id": "7f0a8046-215f-4b08-ae11-6032d60fcbfa",
+              "path": "pathB_delegateConsign",
+              "label": "Specialist camera consignment",
+              "effort": "medium",
+              "risks": [
+                "Commission of 20 to 30 percent"
+              ],
+              "netProceeds": {
+                "currencyCode": "USD",
+                "low": 1100,
+                "likely": 1300,
+                "high": 1500
+              },
+              "timeEstimate": "3 to 8 weeks",
+              "logisticsNotes": "Most specialists accept insured mail-in."
+            },
+            {
+              "id": "da3126d3-da20-4b5d-ba8d-f777abe8e60a",
+              "path": "pathC_quickExit",
+              "label": "Sell to a local camera shop",
+              "effort": "low",
+              "risks": []
+            }
+          ],
+          "actionSteps": [
+            "Find a specialist"
+          ],
+          "missingDetails": [
+            "Whether the shutter fires accurately at all speeds"
+          ],
+          "assumptions": [
+            "Lens glass is clear",
+            "Local fallback used"
+          ],
+          "specialty": null
+        },
+        "title": "Mom's closet",
+        "category": "Closet Lot",
+        "setContext": {
+          "setName": "Mom's closet",
+          "setType": "Closet Lot",
+          "completeness": "Complete",
+          "sellTogetherPreference": "SplitPreferred",
+          "story": "Closet Lot Metadata:\n• Brands: Chanel, J.Crew, Talbots",
+          "memberSummaries": []
+        }
+      }
+    },
+    {
+      "id": "audio-01",
+      "type": "audio",
+      "audio": "../../generated/audio/audio-01.m4a",
+      "mimeType": "audio/mp4",
+      "itemName": "Quilt",
+      "seconds": 20,
+      "synthetic": {
+        "voice": "Samantha",
+        "format": "m4a",
+        "script": "This quilt was made by my grandmother, Ruth, in Iowa around 1940. She pieced it from feed sacks during the Depression, and it was on my bed every winter when I was a kid. I would like my daughter Anne to have it."
+      }
+    },
+    {
+      "id": "audio-02",
+      "type": "audio",
+      "audio": "../../generated/audio/audio-02.m4a",
+      "mimeType": "audio/mp4",
+      "itemName": "Pocket watch",
+      "seconds": 20,
+      "synthetic": {
+        "voice": "Daniel",
+        "format": "m4a",
+        "script": "My father carried this Hamilton pocket watch when he worked for the Union Pacific railroad. He got it in 1952, and it still runs if you wind it. His initials, R E M, are engraved on the back of the case."
+      }
+    },
+    {
+      "id": "audio-03",
+      "type": "audio",
+      "audio": "../../generated/audio/audio-03.wav",
+      "mimeType": "audio/wav",
+      "itemName": "Painting",
+      "seconds": 20,
+      "synthetic": {
+        "voice": "Karen",
+        "format": "wav",
+        "script": "We bought this painting on our honeymoon in Santa Fe in 1978, from the artist at a street fair. I don't remember the artist's name, but it is signed in the lower right corner. We paid about two hundred dollars."
+      }
+    },
+    {
+      "id": "audio-04",
+      "type": "audio",
+      "audio": "../../generated/audio/audio-04.m4a",
+      "mimeType": "audio/mp4",
+      "itemName": "Dining table",
+      "seconds": 20,
+      "synthetic": {
+        "voice": "Samantha",
+        "format": "m4a",
+        "script": "Um, okay, so this is the dining table. It came from my wife's parents' house in Ohio. I think it's walnut, but I'm not completely sure. The two leaves are in the hall closet."
+      }
+    }
+  ]
+}
