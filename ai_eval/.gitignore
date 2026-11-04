@@ -1,0 +1,10 @@
+# ai_eval: keep private inputs, generated media, raw results and secrets out of Git.
+# Only harness code, non-sensitive suite definitions and reviewed, sanitized reports are committed.
+private/
+results/
+generated/
+__pycache__/
+*.pyc
+.env
+.env.*
+*.key

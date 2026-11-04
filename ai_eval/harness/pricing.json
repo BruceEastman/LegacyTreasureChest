@@ -1,0 +1,11 @@
+{
+  "as_of": "2026-11-03",
+  "source": "Gemini API pricing page, paid tier, standard processing (aistudio.google.com/docs/pricing)",
+  "note": "USD per 1M tokens. Output price applies to response tokens plus thinking tokens. After 2026-12-01, requests to gemini-2.5-flash are billed at gemini-3.5-flash-lite rates.",
+  "models": {
+    "gemini-2.5-flash":      {"input_per_m": {"default": 0.30, "AUDIO": 1.00}, "output_per_m": 2.50},
+    "gemini-3.5-flash-lite": {"input_per_m": {"default": 0.30}, "output_per_m": 2.50},
+    "gemini-3.6-flash":      {"input_per_m": {"default": 0.75}, "output_per_m": 3.75,
+                              "note": "Rises to 1.50 input / 7.50 output on 2027-01-01"}
+  }
+}
