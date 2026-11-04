@@ -11,9 +11,10 @@ Service `ltc-ai-gateway`, region `us-west1`, project `legacy-treasure-chest`.
 | `ltc-ai-gateway-00018-kws` | (none) | `36cd4c2` (`main`) | `sha256:3bf5d06c4394…bed2f1` | `gemini-2.5-flash` | Previous production. Kept as rollback. |
 | `ltc-ai-gateway-00019-foc` | `stage1` | `be7d8e9` (`gemini-3-6-migration`) | `sha256:4fc69d2d1800…a55d52` | `gemini-2.5-flash` | Stage 1. 100% of traffic from 00:16 to 01:07 UTC on 2026-11-04. Kept as rollback. |
 | `ltc-ai-gateway-00021-hof` | `stage2` | `be7d8e9` (same image as Stage 1) | `sha256:4fc69d2d1800…a55d52` | `gemini-3.6-flash` | Stage 2. 100% of traffic from 01:07 to about 02:30 UTC on 2026-11-04. **Immediate rollback.** |
-| `ltc-ai-gateway-00023-vim` | `titlefix` | `716ca7f` (`photo-title-alias`, merged as `2bf55cb`) | `sha256:89479189c2c9…0c65f3a9` | `gemini-3.6-flash` | **Photo title fix. 100% of traffic since about 02:30 UTC on 2026-11-04.** |
+| `ltc-ai-gateway-00023-vim` | `titlefix` | `716ca7f` (`photo-title-alias`, merged as `2bf55cb`) | `sha256:89479189c2c9…0c65f3a9` | `gemini-3.6-flash` | Photo title fix. 100% of traffic from about 02:30 to 20:35 UTC on 2026-11-04. Kept as rollback. |
+| `ltc-ai-gateway-00025-rif` | `brieflog` | `92d732f` (`brief-latency-instrumentation`) | `sha256:b549510a6401…ed46624a` | `gemini-3.6-flash` | Brief timing instrumentation. 100% of traffic since about 20:35 UTC on 2026-11-04. |
 
-Revision numbers 00020 and 00022 were never created: Cloud Run numbers revisions by service generation, and the traffic changes used those generations.
+Revision numbers 00020, 00022 and 00024 were never created: Cloud Run numbers revisions by service generation, and the traffic changes used those generations.
 
 Image repository: `us-west1-docker.pkg.dev/legacy-treasure-chest/cloud-run-source-deploy/ltc-ai-gateway`.
 
@@ -76,11 +77,46 @@ Gemini 3.6 Flash often names the photo title field `itemName` or `name`, which u
 7. **iPhone verification by Bruce:** passed on 2026-11-04 (Improve with AI on multiple items).
 8. **Git:** merged into `main` as `2bf55cb`.
 
+## Liquidation Brief instrumentation (2026-11-04 UTC)
+
+On 2026-11-04 two Briefs took about 55 s on the iPhone. In each, the first Gemini reply could not be parsed as JSON (after about 20 s). The gateway resent the identical request, the iPhone timed out at 35 s and resent the Brief, and the resend succeeded in 18 to 19 s. Production did not log Gemini's finish reason or token use, so the cause could not be confirmed.
+
+1. **Change (`92d732f`):** the Brief route logs one `gemini.attempt` line per Gemini call and one `liquidation_brief.result` line per request, plus `liquidation_brief.repair` for a schema repair.
+   - Fields: request id, item/set scope, phase, attempt, latency, HTTP status, finishReason, prompt/output/thinking tokens, reply length, text part count and, for an unparseable reply, a content-free structure summary.
+   - No prompt, model text, item details or API key is logged.
+   - Request behavior was unchanged. Other endpoints do not log these lines.
+2. **Tests:** 206 existing pass, plus 10 new instrumentation tests.
+3. **Deploy** from a clean worktree at `92d732f`: `gcloud run deploy ltc-ai-gateway --source . --region us-west1 --project legacy-treasure-chest --no-traffic --tag brieflog`.
+4. **Configuration check:** compared with `00023-vim`, only the image and the deploy operation id differ.
+5. **Tagged-URL verification:** one synthetic Brief.
+   - HTTP 200 in 16.9 s, a sound Brief.
+   - Log lines present with all fields, no content.
+   - finishReason STOP. Output 1,064 + thinking 2,232 = 3,296 of 4,096 tokens (80%).
+6. **Traffic:** `--to-tags brieflog=100`. The base URL returned HTTP 200.
+7. **Observation (Bruce's iPhone, 20:38 to 20:42 UTC):** 3 Briefs (1 Set, 2 items), all first-pass valid JSON with finishReason STOP.
+   - 13.8 to 18.5 s each.
+   - Output plus thinking used 68 to 80% of the 4,096 cap.
+   - Gemini time is about 5.0 to 5.7 ms per generated token. At that rate, the failed attempts of earlier that day (19.6 to 21.9 s) imply about 3,400 to 4,400 generated tokens, which is consistent with reaching the 4,096 cap (not logged, so not confirmed).
+
+## Liquidation Brief output-limit correction (2026-11-04 UTC)
+
+Approved by Bruce on the timing evidence above, without a logged MAX_TOKENS failure. The instrumentation stays on to confirm the effect.
+
+1. **Change:** Brief only.
+   - The Gemini output limit for the Brief goes from 4,096 to 8,192 tokens. Thinking tokens count toward the limit. A Brief that fits today is unaffected.
+   - When Gemini reports finishReason MAX_TOKENS and the reply does not parse, the gateway no longer resends the identical request (about 20 s wasted). It fails at once.
+   - Every other failure still gets one retry.
+   - Unchanged: prompt, model, thinking settings, schema repair, and every other endpoint (Plan, photo, text, audio still at 4,096 with their existing retry).
+2. **Tests:** 218 of 218 pass, including tests that the Brief alone uses 8,192 and skips the identical retry after MAX_TOKENS, and that a Plan still retries.
+3. **Deploy, verification and traffic:** see below. Not yet deployed when this section was written.
+
 ## Rollback
 
 ```
 gcloud run services update-traffic ltc-ai-gateway --region us-west1 --project legacy-treasure-chest --to-revisions=<REVISION>=100
 ```
+- Brief output-limit correction problem: `00025-rif` (instrumentation only, 4,096 limit, identical retry).
+- Brief instrumentation problem: `00023-vim` (photo title fix, no Brief logging).
 - Photo title fix problem: `00021-hof` (Stage 2, `gemini-3.6-flash` without the fix).
 - Before 2026-12-01: `00019-foc` (Stage 1) or `00018-kws` (previous production).
 - From 2026-12-01: both of those run `gemini-3.5-flash-lite`, because Google redirects `gemini-2.5-flash`. That is not a return to 2.5 Flash. Prefer `00019-foc`, which has the audio fix.

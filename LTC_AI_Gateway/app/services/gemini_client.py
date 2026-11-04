@@ -163,7 +163,12 @@ def _gemini_url() -> str:
     )
 
 
-async def _post_gemini(payload: Dict[str, Any]) -> str:
+async def _post_gemini(payload: Dict[str, Any], *, retry_on_truncation: bool = True) -> str:
+    """POST a JSON-output request. One identical retry on a failed attempt (unchanged default).
+
+    retry_on_truncation=False: if Gemini reports finishReason MAX_TOKENS and the text does not
+    parse, fail at once instead of resending the identical request, which would be cut off again.
+    """
     import asyncio
 
     url = _gemini_url()
@@ -213,6 +218,9 @@ async def _post_gemini(payload: Dict[str, Any]) -> str:
                 return cleaned
             except Exception as exc:  # noqa: BLE001
                 outcome = "invalid_json"
+                cand0 = (data.get("candidates") or [{}])[0]
+                if not retry_on_truncation and isinstance(cand0, dict) and cand0.get("finishReason") == "MAX_TOKENS":
+                    info["noRetryTruncated"] = True
                 if log_ctx:
                     try:
                         info["jsonShape"] = _json_shape(raw_text or "")
@@ -233,9 +241,10 @@ async def _post_gemini(payload: Dict[str, Any]) -> str:
             last_exc = exc
             if outcome == "error" and (info.get("httpStatus") or 0) >= 400:
                 outcome = "http_error"
+            retry = attempt == 0 and not info.get("noRetryTruncated")
             _log_gemini_attempt(log_ctx, attempt=attempt + 1, started=started, info=info,
-                                outcome=outcome, will_retry=attempt == 0, payload=payload)
-            if attempt == 0:
+                                outcome=outcome, will_retry=retry, payload=payload)
+            if retry:
                 await asyncio.sleep(0.4)
                 continue
             raise
@@ -378,6 +387,9 @@ async def call_gemini_for_item_text_analysis(*, prompt: str) -> str:
 # Liquidation calls (keep these here so routes can import consistently)
 # ---------------------------------------------------------------------------
 
+LIQUIDATION_BRIEF_MAX_OUTPUT_TOKENS = 8192
+
+
 async def call_gemini_for_liquidation_brief(*, prompt: str, photo_base64: Optional[str] = None) -> str:
     """Liquidation brief. Optional photo."""
     parts = [{"text": prompt}]
@@ -394,11 +406,13 @@ async def call_gemini_for_liquidation_brief(*, prompt: str, photo_base64: Option
     payload: Dict[str, Any] = {
         "contents": [{"parts": parts}],
         "generationConfig": {
-            "maxOutputTokens": 4096,
+            # Thinking tokens count toward this cap. Briefs are the largest JSON reply and used up
+            # to ~80% of 4096 in testing; 8192 leaves room without changing the prompt or model.
+            "maxOutputTokens": LIQUIDATION_BRIEF_MAX_OUTPUT_TOKENS,
         },
     }
 
-    return await _post_gemini(payload)
+    return await _post_gemini(payload, retry_on_truncation=False)
 
 
 async def call_gemini_for_liquidation_plan(*, prompt: str) -> str:

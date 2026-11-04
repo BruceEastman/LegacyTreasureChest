@@ -41,7 +41,7 @@ def _capture(target_name: str):
     """Patch a low-level poster and return the list that collects each payload sent to it."""
     sent = []
 
-    async def _stub(payload):
+    async def _stub(payload, **kwargs):
         sent.append(payload)
         return '{"ok": true}' if target_name == "_post_gemini" else "Owner notes it."
 
@@ -101,7 +101,7 @@ class PayloadSettingsTests(unittest.TestCase):
         sent, patch = _capture("_post_gemini")
         with patch:
             _run(gemini_client.call_gemini_for_liquidation_brief(prompt="p", photo_base64="AAAA"))
-        self._assert_clean(sent[0], 4096)
+        self._assert_clean(sent[0], 8192)  # Brief only: thinking tokens count toward the cap
 
     def test_liquidation_plan(self):
         sent, patch = _capture("_post_gemini")
