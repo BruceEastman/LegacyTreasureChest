@@ -12,9 +12,10 @@ Service `ltc-ai-gateway`, region `us-west1`, project `legacy-treasure-chest`.
 | `ltc-ai-gateway-00019-foc` | `stage1` | `be7d8e9` (`gemini-3-6-migration`) | `sha256:4fc69d2d1800…a55d52` | `gemini-2.5-flash` | Stage 1. 100% of traffic from 00:16 to 01:07 UTC on 2026-11-04. Kept as rollback. |
 | `ltc-ai-gateway-00021-hof` | `stage2` | `be7d8e9` (same image as Stage 1) | `sha256:4fc69d2d1800…a55d52` | `gemini-3.6-flash` | Stage 2. 100% of traffic from 01:07 to about 02:30 UTC on 2026-11-04. **Immediate rollback.** |
 | `ltc-ai-gateway-00023-vim` | `titlefix` | `716ca7f` (`photo-title-alias`, merged as `2bf55cb`) | `sha256:89479189c2c9…0c65f3a9` | `gemini-3.6-flash` | Photo title fix. 100% of traffic from about 02:30 to 20:35 UTC on 2026-11-04. Kept as rollback. |
-| `ltc-ai-gateway-00025-rif` | `brieflog` | `92d732f` (`brief-latency-instrumentation`) | `sha256:b549510a6401…ed46624a` | `gemini-3.6-flash` | Brief timing instrumentation. 100% of traffic since about 20:35 UTC on 2026-11-04. |
+| `ltc-ai-gateway-00025-rif` | `brieflog` | `92d732f` (`brief-latency-instrumentation`) | `sha256:b549510a6401…ed46624a` | `gemini-3.6-flash` | Brief timing instrumentation. 100% of traffic from about 20:35 to 20:51 UTC on 2026-11-04. **Immediate rollback.** |
+| `ltc-ai-gateway-00027-mod` | `brieffix` | `8b8fb7a` (`brief-latency-instrumentation`) | `sha256:db02f13d57c5…b3dcf36` | `gemini-3.6-flash` | **Brief 8,192 output limit, no identical retry after MAX_TOKENS. 100% of traffic since about 20:51 UTC on 2026-11-04.** |
 
-Revision numbers 00020, 00022 and 00024 were never created: Cloud Run numbers revisions by service generation, and the traffic changes used those generations.
+Revision numbers 00020, 00022, 00024 and 00026 were never created: Cloud Run numbers revisions by service generation, and the traffic changes used those generations.
 
 Image repository: `us-west1-docker.pkg.dev/legacy-treasure-chest/cloud-run-source-deploy/ltc-ai-gateway`.
 
@@ -108,7 +109,16 @@ Approved by Bruce on the timing evidence above, without a logged MAX_TOKENS fail
    - Every other failure still gets one retry.
    - Unchanged: prompt, model, thinking settings, schema repair, and every other endpoint (Plan, photo, text, audio still at 4,096 with their existing retry).
 2. **Tests:** 218 of 218 pass, including tests that the Brief alone uses 8,192 and skips the identical retry after MAX_TOKENS, and that a Plan still retries.
-3. **Deploy, verification and traffic:** see below. Not yet deployed when this section was written.
+3. **Deploy** from a clean worktree at `8b8fb7a` with `--no-traffic --tag brieffix`, giving revision `00027-mod`.
+4. **Configuration check:** compared with `00025-rif`, only the image differs.
+5. **Tagged-URL verification:** the same synthetic Brief as for `00025-rif`.
+   - HTTP 200 in 15.1 s, against 16.9 s on `00025-rif`.
+   - Same recommendation, same four approaches and nearly identical net proceeds.
+   - Log line: maxOutputTokens 8192, finishReason STOP, output 1,062 + thinking 1,617 = 2,679 tokens (33% of the new limit).
+   - No warnings or errors, and no content in the logs.
+6. **Traffic:** `--to-tags brieffix=100` at about 20:51 UTC. The base URL returned HTTP 200.
+7. **To confirm in use:** whether any Brief uses more than 4,096 tokens (proving the old limit was reached) and whether any MAX_TOKENS or malformed-JSON reply appears.
+   - Query: `resource.labels.revision_name="ltc-ai-gateway-00027-mod" AND textPayload:"gemini.attempt"`.
 
 ## Rollback
 
