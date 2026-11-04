@@ -1,3 +1,45 @@
+# Gemini 3.6 Flash Migration (2026-11-04)
+
+**Status:** Complete. Production runs `gemini-3.6-flash` on Cloud Run revision `ltc-ai-gateway-00021-hof`.
+**Scope:** `LTC_AI_Gateway` model and Gemini request settings. No iOS, prompt or API contract changes.
+
+## Why
+
+- Google routes `gemini-2.5-flash` to `gemini-3.5-flash-lite` automatically on 2026-12-01.
+- A blind review on 2026-11-03 compared the models on 12 real inventory photos plus text, Brief and Plan cases:
+  - 3.5 Flash-Lite lost to 2.5 Flash (preferred on 1 item vs 11).
+  - 3.6 Flash was then preferred over 2.5 Flash on 19 of 21 items.
+- The comparison used the new `ai_eval/` harness, which runs the real gateway pipeline locally.
+
+## What changed
+
+**Gateway** (`app/services/gemini_client.py`, `app/routes/analyze_item_photo.py`)
+- Default model is `gemini-3.6-flash`. Cloud Run sets `GEMINI_MODEL=gemini-3.6-flash` explicitly.
+- Removed `temperature`, `topP` and `topK`: 3.x models ignore them and future models reject them.
+- Audio summaries were being cut off mid-sentence: thinking tokens used up the 256-token output limit. Fixes:
+  - the limit is now 1024
+  - a reply cut off at the limit is rejected, never saved; the app's existing "Create AI Summary Again" retry applies
+  - the 320-character limit now trims at the last complete sentence instead of mid-sentence
+- JSON output limit unchanged at 4096. The highest use observed was about 78%.
+- 17 new focused tests. All 181 tests pass.
+
+**Deployment** (two stages, each verified on a no-traffic tagged revision with synthetic inputs, then on iPhone)
+- Stage 1: revision `00019-foc`, new code still on 2.5 Flash.
+- Stage 2: revision `00021-hof`, same image with `GEMINI_MODEL=gemini-3.6-flash`.
+- Commit, image and revision mapping: `Docs/GEMINI_3_6_DEPLOYMENT_RECORD.md`.
+- Plan, quotas and reliability notes: `Docs/GEMINI_3_6_MIGRATION_PLAN.md`.
+
+## Rollback
+
+- Route traffic to `00019-foc` (tag `stage1`) or `00018-kws`.
+- From 2026-12-01, both of those run 3.5 Flash-Lite because of Google's redirect.
+
+## Follow-ups (not done)
+
+- Photo analysis often needs a second "repair" call because the photo prompt never lists the field names. It costs about 5 s per affected photo.
+- 429/503 backoff in the gateway, and aligning the 60 s Gemini timeout with the app's 35 s.
+- Keep Gemini prepaid credits on automatic top-up: 3.x models return HTTP 402 when the balance runs out.
+
 # Local Help Restored: Real Google Places Results (2026-10-15)
 
 **Status:** Gateway fixed and deployed to production; iOS fix in 1.2 build 8

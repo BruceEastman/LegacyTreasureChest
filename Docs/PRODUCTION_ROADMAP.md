@@ -15,7 +15,7 @@ iPhone (SwiftUI)
       ↓
 Cloud Run (FastAPI AI Gateway)
       ↓
-Gemini 2.5 Flash
+Gemini 3.6 Flash
 
 The system has been tested end-to-end from the iPhone through the cloud backend to Gemini and back.
 

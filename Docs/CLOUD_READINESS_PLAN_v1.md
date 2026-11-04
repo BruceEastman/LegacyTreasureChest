@@ -14,7 +14,7 @@ Absolutely. Below is the **complete, consolidated Externalization / Cloud Readin
 
 The cloud backend will provide:
 
-* AI services (Gemini 2.5)
+* AI services (Gemini 3.6 Flash)
 * Partner discovery (Google Places API New)
 * Stateless request processing
 * Rate limiting and cost control
@@ -211,7 +211,7 @@ If platform default >7 days, reduce retention where possible.
 
 ```
 GEMINI_API_KEY
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-3.6-flash
 PARTNER_DISCOVERY_PROVIDER=google
 GOOGLE_PLACES_API_KEY
 LTC_GATEWAY_API_KEY
