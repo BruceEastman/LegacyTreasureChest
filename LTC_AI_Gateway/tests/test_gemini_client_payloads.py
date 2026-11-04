@@ -173,5 +173,60 @@ class SummarizeAudioRouteTests(unittest.TestCase):
         self.assertEqual(body.get("message") or body.get("error", {}).get("message"), "Upstream service error.")
 
 
+class SummaryTrimTests(unittest.TestCase):
+    """The 320-character limit never leaves a mid-sentence fragment."""
+
+    S1 = "The owner notes that this Hamilton pocket watch was acquired in 1952 by their father, who carried it on the Union Pacific Railroad."
+    S2 = "It still runs when wound and has the initials REM engraved on the back of the case."
+    S3 = "The owner hopes it will go to their grandson, who has always admired it, asked about its history and wants to carry it at his wedding next summer."
+
+    def setUp(self):
+        from app.routes import analyze_item_photo as route
+        self.route = route
+        self.trim = route._trim_summary_to_sentences
+
+    def test_summary_within_limit_is_unchanged(self):
+        text = f"{self.S1} {self.S2}"
+        self.assertLessEqual(len(text), 320)
+        self.assertEqual(self.trim(text, 320), text)
+
+    def test_long_summary_is_cut_after_last_complete_sentence(self):
+        text = f"{self.S1} {self.S2} {self.S3}"
+        self.assertGreater(len(text), 320)
+        out = self.trim(text, 320)
+        self.assertEqual(out, f"{self.S1} {self.S2}")
+        self.assertLessEqual(len(out), 320)
+        self.assertFalse(out.endswith("..."))
+
+    def test_sentence_ending_in_quote_counts_as_complete(self):
+        first = 'The owner notes the sign reads "Home Sweet Home."'
+        text = first + " " + "x" * 300 + "."
+        self.assertEqual(self.trim(text, 320), first)
+
+    def test_no_complete_sentence_within_limit_returns_none(self):
+        text = "The owner notes " + "a very long run-on clause " * 15 + "without an ending"
+        self.assertIsNone(self.trim(text, 320))
+
+    def test_route_returns_trimmed_complete_summary(self):
+        long_text = f"{self.S1} {self.S2} {self.S3}"
+        client = TestClient(main.app)
+        with mock.patch.object(httpx.AsyncClient, "post", _FakePost(_gemini_response(long_text))):
+            r = client.post("/ai/summarize-audio",
+                            json={"audioBase64": TINY_AUDIO_B64, "mimeType": "audio/mp4"},
+                            headers={"X-LTC-Device-ID": "test-trim-device"})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json(), {"summaryText": f"{self.S1} {self.S2}"})
+
+    def test_route_rejects_summary_with_no_complete_sentence(self):
+        run_on = "The owner notes " + "a very long run-on clause " * 15 + "without an ending"
+        client = TestClient(main.app)
+        with mock.patch.object(httpx.AsyncClient, "post", _FakePost(_gemini_response(run_on))):
+            r = client.post("/ai/summarize-audio",
+                            json={"audioBase64": TINY_AUDIO_B64, "mimeType": "audio/mp4"},
+                            headers={"X-LTC-Device-ID": "test-trim-device"})
+        self.assertEqual(r.status_code, 502, r.text)
+        self.assertNotIn("summaryText", r.json())
+
+
 if __name__ == "__main__":
     unittest.main()

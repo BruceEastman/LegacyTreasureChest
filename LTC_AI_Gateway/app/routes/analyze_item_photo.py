@@ -2810,13 +2810,33 @@ async def summarize_audio(payload: SummarizeAudioRequest) -> SummarizeAudioRespo
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     cleaned = " ".join((text or "").split())
-    if len(cleaned) > 320:
-        cleaned = cleaned[:317].rstrip() + "..."
-
     if not cleaned:
         raise HTTPException(status_code=502, detail="Empty summary returned from AI")
 
-    return SummarizeAudioResponse(summaryText=cleaned)
+    trimmed = _trim_summary_to_sentences(cleaned, AUDIO_SUMMARY_MAX_CHARS)
+    if trimmed is None:
+        # Never save a fragment: the app treats 502 as retryable ("Create AI Summary Again").
+        raise HTTPException(status_code=502, detail="Summary could not be shortened to a complete sentence")
+
+    return SummarizeAudioResponse(summaryText=trimmed)
+
+
+AUDIO_SUMMARY_MAX_CHARS = 320
+_SENTENCE_END = re.compile(r"[.!?][\"')\]]*(?=\s|$)")
+
+
+def _trim_summary_to_sentences(text: str, limit: int) -> Optional[str]:
+    """Return text unchanged if it fits; otherwise cut after the last complete sentence that fits.
+
+    Returns None when no complete sentence fits within the limit, so the caller can fail
+    (retryable) instead of returning a mid-sentence fragment.
+    """
+    if len(text) <= limit:
+        return text
+    ends = [m.end() for m in _SENTENCE_END.finditer(text) if m.end() <= limit]
+    if not ends:
+        return None
+    return text[:ends[-1]].rstrip()
 
 @router.post("/generate-liquidation-brief", response_model=LiquidationBriefDTO)
 async def generate_liquidation_brief(payload: LiquidationBriefRequest) -> LiquidationBriefDTO:
