@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -12,8 +13,10 @@ HARNESS_VERSION = "1.0.0"
 HARNESS_DIR = Path(__file__).resolve().parent
 AI_EVAL_DIR = HARNESS_DIR.parent
 REPO_DIR = AI_EVAL_DIR.parent
-GATEWAY_DIR = REPO_DIR / "LTC_AI_Gateway"
-GATEWAY_PYTHON = GATEWAY_DIR / ".venv" / "bin" / "python"
+# LTC_EVAL_GATEWAY_DIR tests gateway code elsewhere (e.g. a git worktree of a migration branch).
+# The virtualenv always comes from this checkout.
+GATEWAY_DIR = Path(os.environ.get("LTC_EVAL_GATEWAY_DIR") or REPO_DIR / "LTC_AI_Gateway").resolve()
+GATEWAY_PYTHON = REPO_DIR / "LTC_AI_Gateway" / ".venv" / "bin" / "python"
 RESULTS_DIR = AI_EVAL_DIR / "results"
 REPORTS_DIR = AI_EVAL_DIR / "reports"
 PRICING_PATH = HARNESS_DIR / "pricing.json"
@@ -67,10 +70,13 @@ def gateway_fingerprint() -> Dict[str, Any]:
     git = {}
     try:
         git["commit"] = subprocess.run(
-            ["git", "-C", str(REPO_DIR), "rev-parse", "--short", "HEAD"],
+            ["git", "-C", str(GATEWAY_DIR), "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True, check=True).stdout.strip() + "@" + subprocess.run(
+            ["git", "-C", str(GATEWAY_DIR), "rev-parse", "--short", "HEAD"],
             capture_output=True, text=True, check=True).stdout.strip()
+        git["gateway_dir"] = str(GATEWAY_DIR)
         dirty = subprocess.run(
-            ["git", "-C", str(REPO_DIR), "status", "--porcelain", "--", "LTC_AI_Gateway/app"],
+            ["git", "-C", str(GATEWAY_DIR), "status", "--porcelain", "--", "app"],
             capture_output=True, text=True, check=True).stdout.strip()
         git["gateway_app_dirty"] = bool(dirty)
     except Exception:  # noqa: BLE001

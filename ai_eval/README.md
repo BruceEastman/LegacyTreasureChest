@@ -88,6 +88,11 @@ python3 -I harness/report.py results/<run-dir> [results/<older-run-dir>]
 Use `--mock` (with `--mock-scenario normal|repair|invented_category|style_list`) to test the
 harness itself without network or cost. `--only` and `--types` limit a run.
 
+To test gateway code from another branch (for example a git worktree), set
+`LTC_EVAL_GATEWAY_DIR=/path/to/worktree/LTC_AI_Gateway`. The run metadata records which branch,
+commit and directory were tested. `report.py` and `review_page.py` accept `--models` to compare
+only some models, and `report.py --blind-types photo,text,brief,plan` leaves audio out of blind review.
+
 ## Reading results
 
 - **Automated checks** (`fail` / `warn` / `info`) flag technical problems and things to look
