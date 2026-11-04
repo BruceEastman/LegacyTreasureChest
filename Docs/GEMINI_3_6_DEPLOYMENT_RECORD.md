@@ -9,8 +9,10 @@ Service `ltc-ai-gateway`, region `us-west1`, project `legacy-treasure-chest`.
 | Revision | Tag | Git commit (branch) | Image digest | GEMINI_MODEL | Status |
 |---|---|---|---|---|---|
 | `ltc-ai-gateway-00018-kws` | (none) | `36cd4c2` (`main`) | `sha256:3bf5d06c4394…bed2f1` | `gemini-2.5-flash` | Previous production. Kept as rollback. |
-| `ltc-ai-gateway-00019-foc` | `stage1` | `be7d8e9` (`gemini-3-6-migration`) | `sha256:4fc69d2d1800…a55d52` | `gemini-2.5-flash` | **Stage 1. 100% of traffic since 2026-11-04 00:16 UTC.** |
-| (pending) | `stage2` | `be7d8e9` (same image as Stage 1) | same as Stage 1 | `gemini-3.6-flash` | Stage 2. Not deployed; awaiting approval. |
+| `ltc-ai-gateway-00019-foc` | `stage1` | `be7d8e9` (`gemini-3-6-migration`) | `sha256:4fc69d2d1800…a55d52` | `gemini-2.5-flash` | Stage 1. 100% of traffic from 00:16 to 01:07 UTC on 2026-11-04. Kept as rollback. |
+| `ltc-ai-gateway-00021-hof` | `stage2` | `be7d8e9` (same image as Stage 1) | `sha256:4fc69d2d1800…a55d52` | `gemini-3.6-flash` | **Stage 2. 100% of traffic since 2026-11-04 01:07 UTC.** |
+
+Revision number 00020 was never created: Cloud Run numbers revisions by service generation, and the Stage 1 traffic change used generation 20.
 
 Image repository: `us-west1-docker.pkg.dev/legacy-treasure-chest/cloud-run-source-deploy/ltc-ai-gateway`.
 
@@ -31,16 +33,25 @@ Image repository: `us-west1-docker.pkg.dev/legacy-treasure-chest/cloud-run-sourc
    gcloud run services update-traffic ltc-ai-gateway --region us-west1 --project legacy-treasure-chest --to-tags stage1=100
    ```
    Confirmed that the app's base URL is served by `00019-foc`.
-7. **iPhone verification by Bruce:** pending.
+7. **iPhone verification by Bruce:** passed on 2026-11-04. All workflows worked, and responses seemed faster and better than before.
 
-## Stage 2 (prepared, not run)
+## Stage 2 (2026-11-04 UTC)
 
-Configuration-only. It creates a new revision from the Stage 1 image with no rebuild and no traffic:
+Configuration-only: a new revision from the Stage 1 image, with no rebuild and no traffic at first:
 ```
 gcloud run services update ltc-ai-gateway --region us-west1 --project legacy-treasure-chest \
   --update-env-vars GEMINI_MODEL=gemini-3.6-flash --no-traffic --tag stage2
 ```
-Then: run the tagged-URL smoke test (model must read `gemini-3.6-flash`), compare the configuration, and route traffic with `--to-tags stage2=100`.
+Results:
+1. **Configuration check:** compared with `00019-foc`, the only difference is `GEMINI_MODEL`. The image digest is identical.
+2. **Tagged-URL smoke test** (synthetic inputs):
+   - all 6 requests returned HTTP 200
+   - every response reports `gemini-3.6-flash`
+   - the audio summary is complete (234 characters)
+   - the Brief took 20.5 s, under the 35 s iOS timeout
+   - no warnings or errors in the revision logs
+3. **Traffic:** `--to-tags stage2=100` at 01:07 UTC, and the app's base URL returns HTTP 200.
+4. **iPhone verification by Bruce:** pending.
 
 ## Rollback
 
