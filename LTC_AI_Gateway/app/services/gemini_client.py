@@ -43,7 +43,7 @@ def _sanitize_env(name: str, value: Optional[str]) -> str:
 
 
 GEMINI_API_KEY = _sanitize_env("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY"))
-GEMINI_MODEL = _sanitize_env("GEMINI_MODEL", os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
+GEMINI_MODEL = _sanitize_env("GEMINI_MODEL", os.getenv("GEMINI_MODEL", "gemini-3.6-flash"))
 
 if not GEMINI_API_KEY:
     raise RuntimeError("GEMINI_API_KEY is not set in environment (.env / Secret Manager)")
@@ -155,6 +155,11 @@ async def _post_gemini_text(payload: Dict[str, Any]) -> str:
                 logger.error("Gemini response missing expected text field. data_keys=%s", list(data.keys()))
                 raise RuntimeError("Gemini response missing expected text field.") from exc
 
+            # A reply cut off at the output limit is incomplete: never return it as a finished summary.
+            if candidate.get("finishReason") == "MAX_TOKENS":
+                logger.error("Gemini text response truncated operation=%s", "generateContent(text)")
+                raise RuntimeError("Gemini summary was truncated at the output limit.")
+
             return (raw_text or "").strip()
 
         except RuntimeError as exc:
@@ -186,10 +191,8 @@ async def call_gemini_for_audio_summary(*, prompt: str, audio_base64: str, mime_
             }
         ],
         "generationConfig": {
-            "temperature": 0.2,
-            "topP": 0.8,
-            "topK": 40,
-            "maxOutputTokens": 256,
+            # Thinking tokens count toward this cap; 256 left room for only a few words.
+            "maxOutputTokens": 1024,
         },
     }
 
@@ -213,9 +216,6 @@ async def call_gemini_for_item_analysis(*, prompt: str, image_base64: str) -> st
             }
         ],
         "generationConfig": {
-            "temperature": 0.2,
-            "topP": 0.8,
-            "topK": 40,
             "maxOutputTokens": 4096,
         },
     }
@@ -234,9 +234,6 @@ async def call_gemini_for_item_text_analysis(*, prompt: str) -> str:
             }
         ],
         "generationConfig": {
-            "temperature": 0.2,
-            "topP": 0.8,
-            "topK": 40,
             "maxOutputTokens": 4096,
         },
     }
@@ -264,9 +261,6 @@ async def call_gemini_for_liquidation_brief(*, prompt: str, photo_base64: Option
     payload: Dict[str, Any] = {
         "contents": [{"parts": parts}],
         "generationConfig": {
-            "temperature": 0.2,
-            "topP": 0.8,
-            "topK": 40,
             "maxOutputTokens": 4096,
         },
     }
