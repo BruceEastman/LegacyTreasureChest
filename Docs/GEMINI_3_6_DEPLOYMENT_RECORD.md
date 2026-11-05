@@ -13,7 +13,7 @@ Service `ltc-ai-gateway`, region `us-west1`, project `legacy-treasure-chest`.
 | `ltc-ai-gateway-00021-hof` | `stage2` | `be7d8e9` (same image as Stage 1) | `sha256:4fc69d2d1800…a55d52` | `gemini-3.6-flash` | Stage 2. 100% of traffic from 01:07 to about 02:30 UTC on 2026-11-04. **Immediate rollback.** |
 | `ltc-ai-gateway-00023-vim` | `titlefix` | `716ca7f` (`photo-title-alias`, merged as `2bf55cb`) | `sha256:89479189c2c9…0c65f3a9` | `gemini-3.6-flash` | Photo title fix. 100% of traffic from about 02:30 to 20:35 UTC on 2026-11-04. Kept as rollback. |
 | `ltc-ai-gateway-00025-rif` | `brieflog` | `92d732f` (`brief-latency-instrumentation`) | `sha256:b549510a6401…ed46624a` | `gemini-3.6-flash` | Brief timing instrumentation. 100% of traffic from about 20:35 to 20:51 UTC on 2026-11-04. **Immediate rollback.** |
-| `ltc-ai-gateway-00027-mod` | `brieffix` | `8b8fb7a` (`brief-latency-instrumentation`) | `sha256:db02f13d57c5…b3dcf36` | `gemini-3.6-flash` | **Brief 8,192 output limit, no identical retry after MAX_TOKENS. 100% of traffic since about 20:51 UTC on 2026-11-04.** |
+| `ltc-ai-gateway-00027-mod` | `brieffix` | `8b8fb7a` (`brief-latency-instrumentation`, merged as `f7b20e3`) | `sha256:db02f13d57c5…b3dcf36` | `gemini-3.6-flash` | **Brief 8,192 output limit, no identical retry after MAX_TOKENS. 100% of traffic since about 20:51 UTC on 2026-11-04. Verified in real use.** |
 
 Revision numbers 00020, 00022, 00024 and 00026 were never created: Cloud Run numbers revisions by service generation, and the traffic changes used those generations.
 
@@ -117,8 +117,24 @@ Approved by Bruce on the timing evidence above, without a logged MAX_TOKENS fail
    - Log line: maxOutputTokens 8192, finishReason STOP, output 1,062 + thinking 1,617 = 2,679 tokens (33% of the new limit).
    - No warnings or errors, and no content in the logs.
 6. **Traffic:** `--to-tags brieffix=100` at about 20:51 UTC. The base URL returned HTTP 200.
-7. **To confirm in use:** whether any Brief uses more than 4,096 tokens (proving the old limit was reached) and whether any MAX_TOKENS or malformed-JSON reply appears.
+7. **Production verification (Bruce's iPhone, 00:35 to 00:59 UTC on 2026-11-05):** a varied set of items and Sets, text-only items and several categories.
+   - 11 Briefs (1 Set, 10 items): all HTTP 200, finishReason STOP, valid JSON on the first pass. No retries and no schema repairs. No MAX_TOKENS or malformed replies.
+   - Gemini time 14.8 to 22.4 s per Brief, all well inside the iOS 35 s timeout. The first request took 23.1 s end to end because the instance was starting up.
+   - **Two valid Briefs exceeded the former 4,096-token limit:** 4,294 and 4,209 tokens (output plus thinking), at 22.4 and 20.5 s. Under the old limit both would have been cut off at the same point as the failures of 2026-11-04. This confirms the cause (Briefs reaching the output limit) and the fix. 2 of 11 also matches the earlier failure rate of roughly 1 in 5.
+   - Also in the same window: 10 Plans (10.4 to 14.7 s), 9 photo analyses (9.5 to 14.1 s) and 1 text analysis (9.6 s). All returned HTTP 200.
    - Query: `resource.labels.revision_name="ltc-ai-gateway-00027-mod" AND textPayload:"gemini.attempt"`.
+8. **Status:** resolved and closed on 2026-11-05.
+   - The diagnostic logging stays on, with no content logged.
+   - `00025-rif` stays at 0% as the immediate rollback.
+
+### Deferred: iOS Brief timeout and resend (future app release)
+
+Not part of this correction, and no iOS code was changed.
+- **Current behavior:** the app waits 35 s for a Brief, then resends the same request.
+- **Proposed change:** a 60 s Brief timeout, and no automatic resend after a timeout.
+- **Why:**
+  - The slowest verified Brief (22.4 s) leaves about 13 s of margin. At about 5 ms per generated token, a Brief of about 6,500 tokens would reach 35 s.
+  - A resend after a timeout duplicates a Gemini call that may still succeed.
 
 ## Rollback
 
@@ -134,4 +150,5 @@ gcloud run services update-traffic ltc-ai-gateway --region us-west1 --project le
 ## Git reconciliation
 
 - `gemini-3-6-migration` and `ai-eval-harness` were merged into `main` on 2026-11-04 (`121092c`, `67c2691`; docs `ecd3296`).
-- `photo-title-alias` was merged into `main` as `2bf55cb`. `LTC_AI_Gateway` on `main` matches production revision `00023-vim` (commit `716ca7f`).
+- `photo-title-alias` was merged into `main` as `2bf55cb`. At that point, `LTC_AI_Gateway` on `main` matched production revision `00023-vim` (commit `716ca7f`).
+- `brief-latency-instrumentation` was merged into `main` as `f7b20e3` on 2026-11-05. `LTC_AI_Gateway` on `main` matches production revision `00027-mod` (commit `8b8fb7a`). 218 of 218 tests pass on the merged `main`.
