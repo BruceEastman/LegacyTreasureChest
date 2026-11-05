@@ -11,13 +11,24 @@ from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 from app.core import config as ltc_config
 from app.core.rate_limiter import rate_limiter
 from app.core.safe_logging import log_event
 from app.services.gemini_client import GEMINI_LOG_CONTEXT as gemini_log_context
-from app.models import AnalyzeItemPhotoRequest, CANONICAL_ITEM_CATEGORIES, ItemAIHints, ItemAnalysis, ValueHints
+from app.core.errors import make_error_envelope
+from app.models import (
+    AnalyzeItemPhotoRequest,
+    CANONICAL_ITEM_CATEGORIES,
+    ItemAIHints,
+    ItemAnalysis,
+    ItemAnalysisContext,
+    ItemAnalysisInputSummary,
+    ValueHints,
+)
+from app.ai.evidence import EvidenceError, ValidatedEvidence, validate_evidence
 
 from app.models_liquidation import (
     LiquidationBriefDTO,
@@ -39,7 +50,9 @@ from app.ai.normalization.item_analysis import _normalize_item_analysis_json
 from app.ai.prompts.item_analysis import (
     _build_item_analysis_repair_prompt,
     build_item_analysis_prompt,
+    build_item_analysis_prompt_v2,
     build_item_analysis_text_prompt,
+    build_item_analysis_text_prompt_v2,
 )
 
 from app.models_disposition import (
@@ -2639,13 +2652,165 @@ class SummarizeAudioResponse(BaseModel):
     summaryText: str
 
 # ---------------------------------------------------------------------------
+# Item analysis: helpers shared by the photo/evidence and text-only endpoints
+# ---------------------------------------------------------------------------
+
+# Returned for 5xx only; the global handler replaces 5xx messages anyway. Never
+# put model text, prompts or validation details (which can quote model text)
+# into an HTTPException detail or a log line.
+_UPSTREAM_DETAIL = "Upstream AI error."
+
+_PRIOR_ATTRIBUTE_KEYS = {
+    "brand", "modelNumber", "maker", "materials", "style", "origin",
+    "eraOrYear", "dimensions", "condition", "features",
+}
+_DESCRIPTION_ORIGINS = {"owner", "priorAI", "mixed"}
+_MAX_CONTEXT_TEXT = 8000
+_MAX_DESCRIPTION_PARTS = 5
+_MAX_CONFLICTS = 5
+_MAX_CONFLICT_CHARS = 300
+_MAX_UNIT_CHARS = 120
+
+
+def _coerce_item_analysis_style_field(json_str: str) -> str:
+    # Gemini sometimes emits `style` as a list of tags; our schema expects a string.
+    try:
+        obj = json.loads(json_str)
+        style = obj.get("style")
+        if isinstance(style, list):
+            obj["style"] = " · ".join(str(s).strip() for s in style if str(s).strip())
+            return json.dumps(obj, ensure_ascii=False)
+    except Exception:
+        pass
+    return json_str
+
+
+def _coerce_v2_fields(json_str: str) -> str:
+    """Shape the 1.3 output fields (1.3 requests only): conflicts as a short
+    list of strings, valuationUnit and modelNumber as bounded strings, and no
+    model-supplied inputSummary (the gateway fills that)."""
+    try:
+        obj = json.loads(json_str)
+    except Exception:
+        return json_str
+    if not isinstance(obj, dict):
+        return json_str
+
+    conflicts = obj.get("conflicts")
+    if isinstance(conflicts, str):
+        conflicts = [conflicts]
+    if isinstance(conflicts, list):
+        cleaned = [str(c).strip()[:_MAX_CONFLICT_CHARS] for c in conflicts if str(c).strip()]
+        obj["conflicts"] = cleaned[:_MAX_CONFLICTS] or None
+    elif conflicts is not None:
+        obj["conflicts"] = None
+
+    unit = obj.get("valuationUnit")
+    obj["valuationUnit"] = unit.strip()[:_MAX_UNIT_CHARS] or None if isinstance(unit, str) else None
+
+    model_number = obj.get("modelNumber")
+    if isinstance(model_number, (int, float)) and not isinstance(model_number, bool):
+        obj["modelNumber"] = str(model_number)
+    elif model_number is not None and not isinstance(model_number, str):
+        obj["modelNumber"] = None
+
+    obj.pop("inputSummary", None)
+    return json.dumps(obj, ensure_ascii=False)
+
+
+def _log_item_analysis(event: str, *, request: Optional[Request], level: int = logging.ERROR,
+                       fields: Optional[Dict[str, Any]] = None) -> None:
+    """Metadata-only log line for item analysis. Never pass exception
+    messages: Gemini errors can quote model output."""
+    log_event(
+        logging.getLogger(__name__),
+        level=level,
+        event=event,
+        request_id=getattr(getattr(request, "state", None), "request_id", None) if request else None,
+        fields=fields or {},
+    )
+
+
+def _item_error_response(request: Optional[Request], *, status: int, code: str, message: str,
+                         details: Optional[Dict[str, Any]] = None) -> JSONResponse:
+    request_id = getattr(getattr(request, "state", None), "request_id", None) if request else None
+    return JSONResponse(
+        status_code=status,
+        content=make_error_envelope(code=code, message=message, request_id=request_id or "unknown",
+                                    status=status, details=details or None),
+    )
+
+
+def _validate_context(context: Optional[ItemAnalysisContext]) -> Optional[str]:
+    """Return an error message when the 1.3 context is malformed, else None."""
+    if context is None:
+        return None
+    if context.quantity is not None and not (1 <= context.quantity <= 999):
+        return "quantity must be between 1 and 999."
+    if context.ownerNotes is not None and len(context.ownerNotes) > _MAX_CONTEXT_TEXT:
+        return "ownerNotes is too long."
+    parts = context.savedDescription or []
+    if len(parts) > _MAX_DESCRIPTION_PARTS:
+        return "savedDescription has too many parts."
+    for part in parts:
+        if part.origin not in _DESCRIPTION_ORIGINS:
+            return "savedDescription origin must be owner, priorAI or mixed."
+        if len(part.text or "") > _MAX_CONTEXT_TEXT:
+            return "savedDescription text is too long."
+    for key, value in (context.priorAttributes or {}).items():
+        if key not in _PRIOR_ATTRIBUTE_KEYS:
+            return "priorAttributes contains an unsupported key."
+        if len(value or "") > 500:
+            return "priorAttributes value is too long."
+    return None
+
+
+def _counts(evidence: Optional[ValidatedEvidence], context: Optional[ItemAnalysisContext]) -> Dict[str, Any]:
+    """Counts for logs and inputSummary. No content."""
+    return {
+        "primaryPhoto": bool(evidence and evidence.primary_photo),
+        "supplementaryPhotos": evidence.supplementary_photos if evidence else 0,
+        "documents": evidence.documents if evidence else 0,
+        "documentPages": evidence.document_pages if evidence else 0,
+        "quantity": context.quantity if context else None,
+        "ownerNotes": bool(context and (context.ownerNotes or "").strip()),
+        "savedDescriptionParts": len([p for p in (context.savedDescription or []) if (p.text or "").strip()])
+        if context else 0,
+        "priorAttributes": len(context.priorAttributes or {}) if context else 0,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Endpoints (existing)
 # ---------------------------------------------------------------------------
 
+async def _guard_item_analysis(request: Request, mode: str, work):
+    """Run an item-analysis handler so that an unexpected error is logged as
+    metadata only. Without this, Starlette re-raises unhandled exceptions after
+    the 500 response and the server logs the traceback, whose message could
+    quote item text or model output."""
+    try:
+        return await work
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        _log_item_analysis("item_analysis.failed", request=request,
+                           fields={"stage": "unexpected", "mode": mode, "errorType": type(exc).__name__})
+        raise HTTPException(status_code=500, detail="Internal server error.") from None
+
+
 @router.post("/analyze-item-photo", response_model=ItemAnalysis)
-async def analyze_item_photo(payload: AnalyzeItemPhotoRequest) -> ItemAnalysis:
-    import logging
-    logger = logging.getLogger(__name__)
+async def analyze_item_photo(payload: AnalyzeItemPhotoRequest, request: Request):
+    return await _guard_item_analysis(request, "photo", _analyze_item_photo(payload, request))
+
+
+async def _analyze_item_photo(payload: AnalyzeItemPhotoRequest, request: Request):
+    if payload.uses_v2:
+        return await _analyze_item_v2(payload, request)
+
+    # ---- LTC 1.2 path: unchanged prompt, payload and processing. ----
+    if not payload.imageJpegBase64:
+        return _item_error_response(request, status=400, code="NO_INPUT", message="imageJpegBase64 is required.")
 
     try:
         base64.b64decode(payload.imageJpegBase64, validate=True)
@@ -2660,23 +2825,11 @@ async def analyze_item_photo(payload: AnalyzeItemPhotoRequest) -> ItemAnalysis:
             image_base64=payload.imageJpegBase64,
         )
     except RuntimeError as exc:
-        logger.exception("Gemini call failed in /ai/analyze-item-photo")
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        _log_item_analysis("item_analysis.failed", request=request,
+                           fields={"contractVersion": 1, "stage": "gemini", "errorType": type(exc).__name__})
+        raise HTTPException(status_code=502, detail=_UPSTREAM_DETAIL) from exc
 
     normalized = _normalize_item_analysis_json(raw_json)
-
-    def _coerce_item_analysis_style_field(json_str: str) -> str:
-        # Gemini sometimes emits `style` as a list of tags; our schema expects a string.
-        # Keep this local and minimal to avoid changing the model or wider pipeline.
-        try:
-            obj = json.loads(json_str)
-            style = obj.get("style")
-            if isinstance(style, list):
-                obj["style"] = " · ".join(str(s).strip() for s in style if str(s).strip())
-                return json.dumps(obj, ensure_ascii=False)
-        except Exception:
-            pass
-        return json_str
 
     try:
         analysis = ItemAnalysis.model_validate_json(_coerce_item_analysis_style_field(normalized))
@@ -2695,24 +2848,117 @@ async def analyze_item_photo(payload: AnalyzeItemPhotoRequest) -> ItemAnalysis:
             repaired_norm = _normalize_item_analysis_json(repaired)
             analysis = ItemAnalysis.model_validate_json(_coerce_item_analysis_style_field(repaired_norm))
         except Exception as exc:  # noqa: BLE001
-            logger.exception("Gemini repair attempt failed in /ai/analyze-item-photo")
-            raise HTTPException(
-                status_code=502,
-                detail=f"Failed to decode ItemAnalysis JSON from Gemini: {ve}",
-            ) from exc
+            _log_item_analysis("item_analysis.failed", request=request,
+                               fields={"contractVersion": 1, "stage": "repair", "errorType": type(exc).__name__,
+                                       "validationErrors": ve.error_count()})
+            raise HTTPException(status_code=502, detail=_UPSTREAM_DETAIL) from exc
     except Exception as exc:  # noqa: BLE001
-        logger.exception("Unexpected JSON validation failure in /ai/analyze-item-photo")
-        raise HTTPException(
-            status_code=502,
-            detail=f"Failed to decode ItemAnalysis JSON from Gemini: {exc}",
-        ) from exc
+        _log_item_analysis("item_analysis.failed", request=request,
+                           fields={"contractVersion": 1, "stage": "validation", "errorType": type(exc).__name__})
+        raise HTTPException(status_code=502, detail=_UPSTREAM_DETAIL) from exc
 
     analysis.category = _normalize_category(analysis.category)
     analysis = _apply_value_policy(analysis)
     return analysis
 
+
+async def _analyze_item_v2(payload: AnalyzeItemPhotoRequest, request: Request):
+    """LTC 1.3: optional primary photo, owner-selected evidence, and
+    source-labeled context. All evidence is kept for the repair call."""
+    context = payload.context
+    supplementary = payload.supplementary or []
+
+    context_error = _validate_context(context)
+    if context_error:
+        return _item_error_response(request, status=400, code="INVALID_CONTEXT", message=context_error)
+
+    try:
+        if supplementary or not payload.imageJpegBase64:
+            evidence = validate_evidence(payload.imageJpegBase64, supplementary)
+        else:
+            try:
+                base64.b64decode(payload.imageJpegBase64, validate=True)
+            except Exception:  # noqa: BLE001
+                raise EvidenceError("EVIDENCE_INVALID_BASE64", "The primary photo is not valid base64.")
+            evidence = ValidatedEvidence(primary_photo=True)
+    except EvidenceError as err:
+        _log_item_analysis("item_analysis.rejected", request=request, level=logging.WARNING,
+                           fields={"contractVersion": 2, "code": err.code, "evidenceIndex": err.index,
+                                   "evidenceItems": len(supplementary)})
+        return _item_error_response(request, status=err.status, code=err.code, message=err.message,
+                                    details=err.details())
+
+    counts = _counts(evidence, context)
+    prompt = build_item_analysis_prompt_v2(
+        payload.hints,
+        context,
+        has_primary=evidence.primary_photo,
+        has_evidence=bool(evidence.labeled),
+        has_document=evidence.documents > 0,
+        truncations=evidence.truncations,
+    )
+
+    async def _call(prompt_text: str, phase: str) -> str:
+        token = gemini_log_context.set({
+            "requestId": getattr(request.state, "request_id", None),
+            "operation": "item_analysis",
+            "scope": "evidence" if evidence.labeled else "context",
+            "phase": phase,
+        })
+        try:
+            return await call_gemini_for_item_analysis(
+                prompt=prompt_text,
+                image_base64=payload.imageJpegBase64 or None,
+                evidence=evidence.labeled,
+                retry_on_truncation=False,
+            )
+        finally:
+            gemini_log_context.reset(token)
+
+    def _parse(raw: str) -> ItemAnalysis:
+        normalized = _normalize_item_analysis_json(raw)
+        return ItemAnalysis.model_validate_json(_coerce_v2_fields(_coerce_item_analysis_style_field(normalized)))
+
+    try:
+        raw_json = await _call(prompt, "initial")
+    except RuntimeError as exc:
+        _log_item_analysis("item_analysis.failed", request=request,
+                           fields={"contractVersion": 2, "stage": "gemini", "errorType": type(exc).__name__, **counts})
+        raise HTTPException(status_code=502, detail=_UPSTREAM_DETAIL) from exc
+
+    try:
+        analysis = _parse(raw_json)
+    except ValidationError as ve:
+        try:
+            repair_prompt = _build_item_analysis_repair_prompt(
+                original_prompt=prompt,
+                raw_json=_normalize_item_analysis_json(raw_json),
+                validation_error=str(ve),
+            )
+            analysis = _parse(await _call(repair_prompt, "repair"))
+        except Exception as exc:  # noqa: BLE001
+            _log_item_analysis("item_analysis.failed", request=request,
+                               fields={"contractVersion": 2, "stage": "repair", "errorType": type(exc).__name__,
+                                       "validationErrors": ve.error_count(), **counts})
+            raise HTTPException(status_code=502, detail=_UPSTREAM_DETAIL) from exc
+    except Exception as exc:  # noqa: BLE001
+        _log_item_analysis("item_analysis.failed", request=request,
+                           fields={"contractVersion": 2, "stage": "validation", "errorType": type(exc).__name__,
+                                   **counts})
+        raise HTTPException(status_code=502, detail=_UPSTREAM_DETAIL) from exc
+
+    analysis.category = _normalize_category(analysis.category)
+    analysis = _apply_value_policy(analysis)
+    analysis.inputSummary = ItemAnalysisInputSummary(**counts)
+    return analysis
+
+
 @router.post("/analyze-item-text", response_model=ItemAnalysis)
-async def analyze_item_text(payload: dict) -> ItemAnalysis:
+async def analyze_item_text(payload: dict, request: Request):
+    return await _guard_item_analysis(request, "text", _analyze_item_text(payload, request))
+
+
+async def _analyze_item_text(payload: dict, request: Request):
     """
     Text-only item analysis (no photo).
     Payload shape:
@@ -2720,7 +2966,8 @@ async def analyze_item_text(payload: dict) -> ItemAnalysis:
         "title": "...",
         "description": "...",
         "category": "Jewelry",
-        "hints": { optional ItemAIHints-compatible object }
+        "hints": { optional ItemAIHints-compatible object },
+        "context": { optional ItemAnalysisContext object (LTC 1.3) }
       }
     """
     if call_gemini_for_item_text_analysis is None:
@@ -2741,35 +2988,62 @@ async def analyze_item_text(payload: dict) -> ItemAnalysis:
         except Exception:
             hints = None
 
-    # Always use the TEXT-ONLY prompt for this endpoint.
-    # If title/description/category are missing, fall back to hints.
-    effective_title = title or (hints.userWrittenTitle if hints else None)
-    effective_description = description or (hints.userWrittenDescription if hints else None)
-    effective_category = category or (hints.knownCategory if hints else None)
+    # LTC 1.3: optional source-labeled context selects the 1.3 text prompt.
+    context: Optional[ItemAnalysisContext] = None
+    context_obj = payload.get("context")
+    if context_obj is not None:
+        try:
+            context = ItemAnalysisContext.model_validate(context_obj)
+        except Exception:
+            return _item_error_response(request, status=400, code="INVALID_CONTEXT",
+                                        message="context is not valid.")
+        context_error = _validate_context(context)
+        if context_error:
+            return _item_error_response(request, status=400, code="INVALID_CONTEXT", message=context_error)
 
-    prompt = build_item_analysis_text_prompt(
-        effective_title,
-        effective_description,
-        effective_category,
-    )
+    if context is not None:
+        if title and (hints is None or not hints.userWrittenTitle):
+            hints = (hints or ItemAIHints()).model_copy(update={"userWrittenTitle": title})
+        if category and (hints is None or not hints.knownCategory):
+            hints = (hints or ItemAIHints()).model_copy(update={"knownCategory": category})
+        prompt = build_item_analysis_text_prompt_v2(hints, context)
+    else:
+        # Always use the TEXT-ONLY prompt for this endpoint.
+        # If title/description/category are missing, fall back to hints.
+        effective_title = title or (hints.userWrittenTitle if hints else None)
+        effective_description = description or (hints.userWrittenDescription if hints else None)
+        effective_category = category or (hints.knownCategory if hints else None)
+
+        prompt = build_item_analysis_text_prompt(
+            effective_title,
+            effective_description,
+            effective_category,
+        )
 
     try:
         raw_json = await call_gemini_for_item_text_analysis(prompt=prompt)  # type: ignore[misc]
     except RuntimeError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        _log_item_analysis("item_analysis.failed", request=request,
+                           fields={"contractVersion": 2 if context else 1, "stage": "gemini", "mode": "text",
+                                   "errorType": type(exc).__name__})
+        raise HTTPException(status_code=502, detail=_UPSTREAM_DETAIL) from exc
 
     normalized = _normalize_item_analysis_json(raw_json)
+    if context is not None:
+        normalized = _coerce_v2_fields(_coerce_item_analysis_style_field(normalized))
 
     try:
         analysis = ItemAnalysis.model_validate_json(normalized)
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            status_code=502,
-            detail=f"Failed to decode ItemAnalysis JSON from Gemini: {exc}",
-        ) from exc
+        _log_item_analysis("item_analysis.failed", request=request,
+                           fields={"contractVersion": 2 if context else 1, "stage": "validation", "mode": "text",
+                                   "errorType": type(exc).__name__})
+        raise HTTPException(status_code=502, detail=_UPSTREAM_DETAIL) from exc
 
     analysis.category = _normalize_category(analysis.category)
     analysis = _apply_value_policy(analysis)
+    if context is not None:
+        analysis.inputSummary = ItemAnalysisInputSummary(**_counts(None, context))
     return analysis
 
 

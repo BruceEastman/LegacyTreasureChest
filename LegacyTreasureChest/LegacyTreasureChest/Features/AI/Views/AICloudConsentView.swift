@@ -15,6 +15,17 @@ import SwiftUI
 
 struct AICloudConsentView: View {
 
+    enum Mode {
+        /// First-time consent (or review from Privacy & AI).
+        case standard
+        /// The owner already turned AI on under the earlier disclosure and is
+        /// about to include additional photos or a document for the first
+        /// time. "Not Now" cancels only this analysis; it does not turn AI off.
+        case evidenceUpdate
+    }
+
+    var mode: Mode = .standard
+
     /// Called after the user makes a choice, with the resulting status.
     /// Optional so callers that only need the persisted side effect can
     /// ignore it.
@@ -28,6 +39,9 @@ struct AICloudConsentView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.spacing.large) {
 
+                    if mode == .evidenceUpdate {
+                        evidenceUpdateSection
+                    }
                     coreExplanationSection
                     whatMaySendSection
                     thirdPartiesSection
@@ -40,7 +54,7 @@ struct AICloudConsentView: View {
                 .padding(.vertical, Theme.spacing.large)
             }
             .background(Theme.background.ignoresSafeArea())
-            .navigationTitle("Using AI and Online Assistance")
+            .navigationTitle(mode == .evidenceUpdate ? "Photos and Documents for AI" : "Using AI and Online Assistance")
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {
                 footerButtons
@@ -64,6 +78,19 @@ struct AICloudConsentView: View {
         }
     }
 
+    // MARK: - Update notice (disclosure version 2)
+
+    private var evidenceUpdateSection: some View {
+        Text(
+            "Improve with AI can now also use additional photos and a document that you select for an analysis. " +
+            "Please review what may be sent before continuing."
+        )
+        .font(Theme.bodyFont.weight(.semibold))
+        .foregroundStyle(Theme.text)
+        .fixedSize(horizontal: false, vertical: true)
+        .ltcCardBackground()
+    }
+
     // MARK: - What may be sent
 
     private var whatMaySendSection: some View {
@@ -72,8 +99,9 @@ struct AICloudConsentView: View {
                 .ltcSectionHeaderStyle()
 
             VStack(alignment: .leading, spacing: Theme.spacing.small) {
-                bullet("A photo you choose to analyze")
-                bullet("Item title, description, or notes")
+                bullet("Photos you choose to analyze, including additional photos you select for Improve with AI")
+                bullet("A document you select for Improve with AI. Its pages are sent as images, so anything printed on them, such as names, addresses, or certificate numbers, is included")
+                bullet("Item title, description, quantity, or notes")
                 bullet("An audio recording, when you explicitly request an AI summary")
                 bullet("Valuation or liquidation details")
                 bullet("For Find Help: the search words you review, the city or state you choose, and your precise location only when you tap Use Current Location")
@@ -107,7 +135,8 @@ struct AICloudConsentView: View {
 
             VStack(alignment: .leading, spacing: Theme.spacing.small) {
                 bullet("Legacy Treasure Chest does not maintain a cloud-hosted copy of your estate inventory")
-                bullet("Our server does not keep submitted photos, audio, or item details in permanent storage")
+                bullet("Our server does not keep submitted photos, documents, audio, or item details in permanent storage")
+                bullet("Only what you select for an analysis is sent. Your other photos and documents stay on this iPhone")
                 bullet("Limited request details (like a device ID, timing, and status) may be logged for diagnostics, rate limiting, and abuse protection")
                 bullet("Google processes information under its own privacy and data-handling terms. See our Privacy Policy for more information.")
             }
@@ -133,7 +162,7 @@ struct AICloudConsentView: View {
             Button {
                 handleGrant()
             } label: {
-                Text("Turn On AI Features")
+                Text(mode == .evidenceUpdate ? "Continue" : "Turn On AI Features")
                     .font(Theme.bodyFont.weight(.semibold))
                     .foregroundStyle(Theme.background)
                     .frame(maxWidth: .infinity)
@@ -169,7 +198,11 @@ struct AICloudConsentView: View {
     }
 
     private func handleDecline() {
-        consent.decline()
+        // In update mode the owner keeps their existing AI choice; only the
+        // pending analysis with additional evidence is cancelled.
+        if mode == .standard {
+            consent.decline()
+        }
         onDecision?(.declined)
         dismiss()
     }

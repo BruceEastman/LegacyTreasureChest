@@ -13,6 +13,7 @@ from app.core.config import (
     AI_PER_DAY_LIMIT,
     AI_PER_MINUTE_LIMIT,
     DISABLE_ALL_AI,
+    MAX_ANALYZE_REQUEST_BYTES,
 )
 from app.core.errors import make_error_envelope
 from app.core.rate_limiter import rate_limiter
@@ -54,6 +55,25 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
                     status=503,
                 ),
             )
+
+        # -----------------------
+        # Request size (item analysis carries images inline)
+        # -----------------------
+        if path.endswith("/analyze-item-photo"):
+            try:
+                content_length = int(request.headers.get("content-length") or 0)
+            except ValueError:
+                content_length = 0
+            if content_length > MAX_ANALYZE_REQUEST_BYTES:
+                return JSONResponse(
+                    status_code=413,
+                    content=make_error_envelope(
+                        code="PAYLOAD_TOO_LARGE",
+                        message="The analysis request is too large.",
+                        request_id=request_id,
+                        status=413,
+                    ),
+                )
 
         # -----------------------
         # Rate limiting

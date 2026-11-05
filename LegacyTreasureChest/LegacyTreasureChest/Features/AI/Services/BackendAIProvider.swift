@@ -86,6 +86,57 @@ struct BackendAIProvider: AIProvider {
         return response
     }
 
+    // MARK: - Item analysis (1.3: context + selected evidence)
+
+    /// Photo/evidence endpoint when there is any image, text endpoint
+    /// otherwise. Requests carrying additional photos or document pages:
+    /// - require the expanded AI disclosure (version 2),
+    /// - wait up to 90 seconds and are sent exactly once (never re-uploaded
+    ///   automatically, so the analysis cannot run twice),
+    /// - must be confirmed by the gateway's inputSummary, or the result is
+    ///   discarded.
+    func analyzeItem(_ request: ItemAnalysisRequest) async throws -> ItemAnalysis {
+        let result: ItemAnalysis
+        if request.usesPhotoEndpoint {
+            let body = AnalyzeItemRequestV2(
+                imageJpegBase64: request.primaryJPEG?.base64EncodedString(),
+                hints: request.hints,
+                context: request.context,
+                supplementary: request.supplementary.isEmpty ? nil : request.supplementary
+            )
+            result = try await postJSON(
+                path: "/ai/analyze-item-photo",
+                body: body,
+                policy: request.carriesEvidence ? .evidence : .standard,
+                requiresEvidenceDisclosure: request.carriesEvidence
+            )
+        } else {
+            result = try await postJSON(
+                path: "/ai/analyze-item-text",
+                body: AnalyzeItemTextRequestV2(hints: request.hints, context: request.context)
+            )
+        }
+        try Self.verifyReceipt(result, for: request)
+        return result
+    }
+
+    /// Confirms the gateway analyzed what was sent. A missing summary is only
+    /// acceptable when nothing beyond a primary photo and text was sent (an
+    /// older gateway would still analyze those).
+    static func verifyReceipt(_ result: ItemAnalysis, for request: ItemAnalysisRequest) throws {
+        let needsReceipt = request.carriesEvidence || (request.usesPhotoEndpoint && request.primaryJPEG == nil)
+        guard let summary = result.inputSummary else {
+            if needsReceipt { throw AIError.evidenceNotProcessed }
+            return
+        }
+        guard request.usesPhotoEndpoint else { return }
+        if summary.primaryPhoto != (request.primaryJPEG != nil)
+            || summary.supplementaryPhotos != request.supplementaryPhotoCount
+            || summary.documentPages != request.documentPageCount {
+            throw AIError.evidenceNotProcessed
+        }
+    }
+
     // MARK: - Liquidation
 
     func generateLiquidationBrief(
@@ -179,15 +230,34 @@ struct BackendAIProvider: AIProvider {
 
     // MARK: - Internal Networking Helpers
 
+    /// Timeout and retry behavior for one call.
+    nonisolated struct RequestPolicy: Equatable, Sendable {
+        let timeout: TimeInterval
+        let maxAttempts: Int
+
+        /// Unchanged LTC behavior: 35 s, one retry on transient failures.
+        static let standard = RequestPolicy(timeout: 35, maxAttempts: 2)
+        /// Requests carrying supplementary evidence: larger uploads get more
+        /// time, and are never re-sent automatically.
+        static let evidence = RequestPolicy(timeout: 90, maxAttempts: 1)
+    }
+
     private func postJSON<RequestBody: Encodable, ResponseBody: Decodable>(
         path: String,
-        body: RequestBody
+        body: RequestBody,
+        policy: RequestPolicy = .standard,
+        requiresEvidenceDisclosure: Bool = false
     ) async throws -> ResponseBody {
 
         // Hard consent guard: must be the first thing this function does.
         // If consent isn't granted, no URL/request is built, no headers are
         // set, no retry task is created, and nothing is logged.
         guard consent.isOnlineProcessingAllowed else {
+            throw AIError.consentRequired
+        }
+        // Additional photos and documents need the expanded (version 2)
+        // disclosure, even for owners who consented earlier.
+        if requiresEvidenceDisclosure && !consent.isEvidenceDisclosureAccepted {
             throw AIError.consentRequired
         }
 
@@ -198,7 +268,7 @@ struct BackendAIProvider: AIProvider {
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.timeoutInterval = 35  // predictable, conservative
+        request.timeoutInterval = policy.timeout
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         // Headers discipline
@@ -209,8 +279,9 @@ struct BackendAIProvider: AIProvider {
         encoder.dateEncodingStrategy = .iso8601
         request.httpBody = try encoder.encode(body)
 
-        // Conservative retry policy: at most 1 retry on transient failures.
-        let maxAttempts = 2
+        // Conservative retry policy: at most 1 retry on transient failures
+        // (none for evidence requests; see RequestPolicy).
+        let maxAttempts = max(policy.maxAttempts, 1)
         var lastError: Error?
 
         for attempt in 1...maxAttempts {
@@ -250,6 +321,13 @@ struct BackendAIProvider: AIProvider {
                 // Try to detect a structured server error (best-effort, not required)
                 let envelope = decodeErrorEnvelope(from: data)
 
+                // Evidence and context the gateway refused (never retried).
+                if status == 400 || status == 413,
+                   let code = decodeGatewayErrorCode(from: data),
+                   Self.evidenceErrorCodes.contains(code) || code.hasPrefix("EVIDENCE_") {
+                    throw AIError.evidenceRejected(code: code, requestID: responseRequestID)
+                }
+
                 // Kill switch / temporarily disabled (server-side)
                 if status == 503 {
                     throw AIError.temporarilyUnavailable(requestID: responseRequestID)
@@ -283,6 +361,11 @@ struct BackendAIProvider: AIProvider {
 
                 // If already normalized, do not wrap
                 if let ai = error as? AIError { throw ai }
+
+                // Cancelled by the owner (task cancellation): never retried.
+                if error is CancellationError || (error as? URLError)?.code == .cancelled || Task.isCancelled {
+                    throw AIError.cancelled
+                }
 
                 // Transport error normalization
                 if let urlError = error as? URLError {
@@ -347,6 +430,15 @@ struct BackendAIProvider: AIProvider {
         try await Task.sleep(nanoseconds: base)
     }
 
+    /// Gateway error codes that describe the request's evidence or context.
+    static let evidenceErrorCodes: Set<String> = ["NO_INPUT", "INVALID_CONTEXT", "PAYLOAD_TOO_LARGE"]
+
+    /// The gateway's `{"error": {"code": ...}}` envelope code, if present.
+    private func decodeGatewayErrorCode(from data: Data) -> String? {
+        guard !data.isEmpty else { return nil }
+        return (try? JSONDecoder().decode(GatewayErrorEnvelope.self, from: data))?.error?.code
+    }
+
     private func decodeErrorEnvelope(from data: Data) -> BackendErrorEnvelope? {
         guard !data.isEmpty else { return nil }
         do {
@@ -390,6 +482,29 @@ private struct AnalyzeItemPhotoRequest: Encodable {
 
 private struct AnalyzeItemTextRequest: Encodable {
     let hints: ItemAIHints
+}
+
+/// LTC 1.3 photo/evidence request. Optional fields are omitted when nil.
+private struct AnalyzeItemRequestV2: Encodable {
+    let imageJpegBase64: String?
+    let hints: ItemAIHints
+    let context: ItemAnalysisContextDTO
+    let supplementary: [SupplementaryEvidenceDTO]?
+}
+
+/// LTC 1.3 text-only request.
+private struct AnalyzeItemTextRequestV2: Encodable {
+    let hints: ItemAIHints
+    let context: ItemAnalysisContextDTO
+}
+
+/// The gateway's structured error envelope.
+private struct GatewayErrorEnvelope: Decodable {
+    struct Body: Decodable {
+        let code: String?
+        let message: String?
+    }
+    let error: Body?
 }
 
 private struct SummarizeAudioRequest: Encodable {

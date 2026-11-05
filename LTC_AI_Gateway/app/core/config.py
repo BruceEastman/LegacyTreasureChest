@@ -25,3 +25,8 @@ PLACES_SEARCHES_PER_DEVICE_DAY_LIMIT = int(os.getenv("LTC_PLACES_SEARCHES_PER_DE
 PLACES_MAX_QUERIES_PER_TYPE = int(os.getenv("LTC_PLACES_MAX_QUERIES_PER_TYPE", "2"))
 # Saved-provider refreshes (Place Details Pro) per device per day.
 PLACES_DETAILS_PER_DEVICE_DAY_LIMIT = int(os.getenv("LTC_PLACES_DETAILS_PER_DEVICE_DAY_LIMIT", "40"))
+# Largest /ai/analyze-item-photo request body accepted (bytes). Images travel
+# inline as base64. Matches Cloud Run's own 32 MiB request limit, so no request
+# LTC 1.2 could send successfully today is newly refused; it gives a clear 413
+# before the body is parsed.
+MAX_ANALYZE_REQUEST_BYTES = int(os.getenv("LTC_MAX_ANALYZE_REQUEST_BYTES", str(32 * 1024 * 1024)))

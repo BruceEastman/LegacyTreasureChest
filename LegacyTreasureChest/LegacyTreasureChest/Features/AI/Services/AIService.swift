@@ -85,6 +85,25 @@ final class AIService {
         }
     }
 
+    /// Improve with AI (LTC 1.3): source-labeled context, the primary photo
+    /// (if any) and any owner-selected evidence, prepared by
+    /// AIEvidencePreparer and assembled by ItemAnalysisRequestBuilder.
+    func analyzeItem(_ request: ItemAnalysisRequest) async throws -> ItemAnalysis {
+        guard featureFlags.enableMarketAI else {
+            throw AIError.featureDisabled("Market AI features are currently turned off.")
+        }
+
+        do {
+            return try await provider.analyzeItem(request)
+        } catch let aiError as AIError {
+            throw aiError
+        } catch is CancellationError {
+            throw AIError.cancelled
+        } catch {
+            throw AIError.underlying(error)
+        }
+    }
+
     /// Estimate a value range for an item.
     func estimateValue(for item: ItemValueInput) async throws -> ValueRange {
         guard featureFlags.enableMarketAI else {

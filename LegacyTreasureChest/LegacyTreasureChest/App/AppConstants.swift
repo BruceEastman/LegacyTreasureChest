@@ -37,6 +37,8 @@ enum AppConstants {
         /// Raw value of AICloudConsentStatus — the user's choice about
         /// sending selected item data off-device for AI / Local Help.
         static let aiCloudConsentStatus = "aiCloudConsentStatus"
+        /// AI disclosure version the owner accepted (see AICloudConsentManager).
+        static let aiCloudConsentDisclosureVersion = "aiCloudConsentDisclosureVersion"
 
         // MARK: - Catalog Access (Monetization / Migration)
 

@@ -571,51 +571,41 @@ struct ItemAIAnalysisSheet: View {
         errorMessage = nil
         analysisResult = nil
 
-        // Base description from the item.
-        let baseDescription = item.itemDescription.isEmpty ? nil : item.itemDescription
-
-        // Extra owner details from the current valuation.
-        let extraDetails = item.valuation?.userNotes?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        let combinedDescription: String?
-        if let base = baseDescription, let extra = extraDetails, !extra.isEmpty {
-            combinedDescription = base + "\n\nAdditional details from owner:\n" + extra
-        } else if let extra = extraDetails, !extra.isEmpty {
-            combinedDescription = "Additional details from owner:\n" + extra
-        } else {
-            combinedDescription = baseDescription
-        }
-
-        let hints = ItemAIHints(
-            userWrittenTitle: item.name.isEmpty ? nil : item.name,
-            userWrittenDescription: combinedDescription,
-            knownCategory: item.category.isEmpty ? nil : item.category
-        )
-
         do {
-            if let previewImage {
-                // Photo path (existing behavior)
-                let result = try await AIService.shared.analyzeItemPhoto(previewImage, hints: hints)
-                analysisResult = result
-            } else {
-                // Text-only path (new)
-                let result = try await AIService.shared.analyzeItemText(hints: hints)
-                analysisResult = result
-            }
+            // LTC 1.3 pipeline: the primary photo (downscaled), source-labeled
+            // context and quantity. Additional photos and documents are added
+            // by the Stage 4 selection UI; until then the selection is empty.
+            let selection = AIEvidenceSelection()
+            let prepared = try await AIEvidencePreparer().prepare(for: item, selection: selection)
+            let request = ItemAnalysisRequestBuilder.build(for: item, prepared: prepared)
+            analysisResult = try await AIService.shared.analyzeItem(request)
         } catch {
             // Keep full detail for debugging, but avoid surfacing raw 502/body in the UI.
             print("ItemAIAnalysisSheet runAnalysis error:", error)
-
-            let message = error.localizedDescription
-            if message.contains("/ai/analyze-item-text") || message.contains("404") {
-                errorMessage = "Text-only analysis isn’t enabled on the backend yet. Photo analysis will continue to work."
-            } else {
-                errorMessage = "AI analysis didn’t succeed this time. Nothing was saved. Please try again."
-            }
+            errorMessage = Self.userMessage(for: error)
         }
 
         isAnalyzing = false
+    }
+
+    /// Nothing is applied on failure; the message says so where relevant.
+    static func userMessage(for error: Error) -> String {
+        if let evidenceError = error as? AIEvidenceError {
+            return evidenceError.localizedDescription
+        }
+        if let aiError = error as? AIError {
+            switch aiError {
+            case .evidenceRejected, .evidenceNotProcessed, .cancelled, .timeout, .offline, .consentRequired:
+                return aiError.localizedDescription
+            default:
+                break
+            }
+        }
+        let message = error.localizedDescription
+        if message.contains("/ai/analyze-item-text") || message.contains("404") {
+            return "Text-only analysis isn’t enabled on the backend yet. Photo analysis will continue to work."
+        }
+        return "AI analysis didn’t succeed this time. Nothing was saved. Please try again."
     }
     
     private func applyAnalysis(_ analysis: ItemAnalysis) {

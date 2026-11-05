@@ -86,8 +86,15 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
     # Keep details minimal and safe; no raw payload echo.
     # Pydantic error structure is usually safe, but can be verbose — we keep it bounded.
+    # Pydantic includes the offending "input" value (and "ctx"/"url") in each
+    # error; drop them so request content (item text, base64 media) is never
+    # echoed back. Location, type and message remain.
     errs = exc.errors()
-    safe_errs = errs[:10]
+    safe_errs = [
+        {k: v for k, v in err.items() if k not in ("input", "ctx", "url")}
+        for err in errs[:10]
+        if isinstance(err, dict)
+    ]
 
     return JSONResponse(
         status_code=status,

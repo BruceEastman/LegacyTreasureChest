@@ -39,6 +39,15 @@ enum AIError: LocalizedError, Sendable {
     case serviceUnavailable(requestID: String)       // backend down / 5xx / transport
     case unexpectedResponse(requestID: String)       // decode mismatch, empty body, etc.
 
+    // 1.3 evidence cases (user-safe; never carry evidence content)
+    /// The gateway refused the selected evidence (code from its error envelope).
+    case evidenceRejected(code: String, requestID: String)
+    /// The response did not confirm that the selected evidence was analyzed.
+    /// The result is discarded rather than shown.
+    case evidenceNotProcessed
+    /// The owner cancelled the analysis.
+    case cancelled
+
     case underlying(Error)
 
     var errorDescription: String? {
@@ -75,6 +84,13 @@ enum AIError: LocalizedError, Sendable {
         case .unexpectedResponse(let requestID):
             return "We hit an unexpected response. Please try again. (Ref: \(short(requestID)))"
 
+        case .evidenceRejected(let code, let requestID):
+            return "\(Self.evidenceMessage(for: code)) (Ref: \(short(requestID)))"
+        case .evidenceNotProcessed:
+            return "Your added photos or document weren't used in this analysis, so nothing was shown or saved. Please try again."
+        case .cancelled:
+            return "Analysis cancelled. Nothing was saved."
+
         case .underlying(let error):
             return error.localizedDescription
         }
@@ -82,6 +98,24 @@ enum AIError: LocalizedError, Sendable {
 
     private func short(_ id: String) -> String {
         String(id.prefix(8))
+    }
+
+    /// Plain-language message for a gateway evidence error code.
+    static func evidenceMessage(for code: String) -> String {
+        switch code {
+        case "EVIDENCE_TOO_MANY_PHOTOS":
+            return "Too many additional photos were selected."
+        case "EVIDENCE_TOO_MANY_DOCUMENTS":
+            return "Only one document can be included."
+        case "EVIDENCE_TOO_MANY_PAGES":
+            return "Too many document pages were included."
+        case "EVIDENCE_TOO_LARGE", "EVIDENCE_TOTAL_TOO_LARGE", "PAYLOAD_TOO_LARGE":
+            return "The selected photos and pages are too large to send together. Remove some and try again."
+        case "NO_INPUT":
+            return "Add a photo, a document, or a description before analyzing."
+        default:
+            return "The selected photos or document couldn't be analyzed."
+        }
     }
 }
 // MARK: - Item Hints
@@ -139,6 +173,14 @@ struct ItemAnalysis: Codable, Sendable {
     var eraOrYear: String?
     var features: [String]?
 
+    // 1.3 (optional; absent from older gateways)
+    /// What ONE catalog unit is, e.g. "one stool". Values are for this unit.
+    var valuationUnit: String?
+    /// Where the evidence contradicts the owner's notes or earlier AI details.
+    var conflicts: [String]?
+    /// Gateway-filled counts confirming what was analyzed (no content).
+    var inputSummary: ItemAnalysisInputSummary?
+
     enum CodingKeys: String, CodingKey {
         case title
         case summary = "description" // backend uses "description"
@@ -157,6 +199,9 @@ struct ItemAnalysis: Codable, Sendable {
         case dimensions
         case eraOrYear
         case features
+        case valuationUnit
+        case conflicts
+        case inputSummary
     }
 
     init(
@@ -176,7 +221,10 @@ struct ItemAnalysis: Codable, Sendable {
         condition: String? = nil,
         dimensions: String? = nil,
         eraOrYear: String? = nil,
-        features: [String]? = nil
+        features: [String]? = nil,
+        valuationUnit: String? = nil,
+        conflicts: [String]? = nil,
+        inputSummary: ItemAnalysisInputSummary? = nil
     ) {
         self.title = title
         self.summary = summary
@@ -195,7 +243,54 @@ struct ItemAnalysis: Codable, Sendable {
         self.dimensions = dimensions
         self.eraOrYear = eraOrYear
         self.features = features
+        self.valuationUnit = valuationUnit
+        self.conflicts = conflicts
+        self.inputSummary = inputSummary
     }
+}
+
+// MARK: - 1.3 Analysis context and processing metadata
+
+/// Counts returned by the gateway for 1.3 requests so the app can confirm the
+/// analysis used what was sent. Contains no content.
+nonisolated struct ItemAnalysisInputSummary: Codable, Equatable, Sendable {
+    var contractVersion: Int
+    var primaryPhoto: Bool
+    var supplementaryPhotos: Int
+    var documents: Int
+    var documentPages: Int
+    var quantity: Int?
+    var ownerNotes: Bool?
+    var savedDescriptionParts: Int?
+    var priorAttributes: Int?
+}
+
+/// Item information sent with 1.3 analysis requests, labeled by source so
+/// earlier AI text is never presented as the owner's own facts.
+nonisolated struct ItemAnalysisContextDTO: Codable, Equatable, Sendable {
+    struct DescriptionPart: Codable, Equatable, Sendable {
+        enum Origin: String, Codable, Sendable {
+            /// The owner's own words.
+            case owner
+            /// An earlier AI paragraph the owner accepted (not verified).
+            case priorAI
+            /// Edited after an AI suggestion; which parts are whose is unknown.
+            case mixed
+        }
+        let origin: Origin
+        let text: String
+    }
+
+    /// How many identical units this entry represents. Values are requested
+    /// for ONE unit.
+    var quantity: Int
+    /// The owner's separately stored notes (More Details).
+    var ownerNotes: String?
+    /// The saved description, split by source. Empty when there is none.
+    var savedDescription: [DescriptionPart]
+    /// Earlier AI details-line attributes (not verified), keyed by the
+    /// ItemAnalysis field name (brand, materials, eraOrYear, ...).
+    var priorAttributes: [String: String]?
 }
 
 // MARK: - ValueHints (backend-aligned)

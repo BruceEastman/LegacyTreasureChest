@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel
 
@@ -99,9 +99,90 @@ class ItemAnalysis(BaseModel):
     eraOrYear: Optional[str] = None
     features: Optional[List[str]] = None
 
+    # ---- 1.3 additions (all optional; older apps ignore unknown keys) ----
+    # Manufacturer model / reference / pattern number, when identified.
+    modelNumber: Optional[str] = None
+    # What ONE catalog unit is, e.g. "one stool" or "complete 10-place-setting
+    # service". Every value in valueHints is for this unit.
+    valuationUnit: Optional[str] = None
+    # Short notes where the evidence contradicts the owner's notes or earlier
+    # AI-identified details.
+    conflicts: Optional[List[str]] = None
+    # Filled by the gateway (never by Gemini) for requests that use the 1.3
+    # context/evidence fields, so the app can confirm what was analyzed.
+    inputSummary: Optional["ItemAnalysisInputSummary"] = None
+
+
+# ---- 1.3: processing metadata returned to the app ----
+
+class ItemAnalysisInputSummary(BaseModel):
+    """Counts only. Never contains evidence content, labels, or item text."""
+    contractVersion: int = 2
+    primaryPhoto: bool = False
+    supplementaryPhotos: int = 0
+    documents: int = 0
+    documentPages: int = 0
+    quantity: Optional[int] = None
+    ownerNotes: bool = False
+    savedDescriptionParts: int = 0
+    priorAttributes: int = 0
+
+
+# ---- 1.3: optional analysis context and supplementary evidence ----
+
+class SavedDescriptionPart(BaseModel):
+    """Part of the item's saved description, labeled by where it came from.
+
+    origin: "owner" (written by the owner), "priorAI" (an earlier AI
+    suggestion the owner accepted; not verified), or "mixed" (edited after an
+    AI suggestion; which parts are whose is unknown).
+    """
+    origin: str
+    text: str
+
+
+class ItemAnalysisContext(BaseModel):
+    """Optional context sent by LTC 1.3. Its presence selects the 1.3 prompt."""
+    # How many identical units this catalog entry represents (the app's
+    # quantity). Values are always requested for ONE unit.
+    quantity: Optional[int] = None
+    # The owner's separately stored notes (More Details).
+    ownerNotes: Optional[str] = None
+    savedDescription: Optional[List[SavedDescriptionPart]] = None
+    # Attributes from the earlier AI details line (not verified), keyed by
+    # the ItemAnalysis field name (brand, materials, eraOrYear, ...).
+    priorAttributes: Optional[Dict[str, str]] = None
+
+
+class SupplementaryEvidence(BaseModel):
+    """One supplementary image selected by the owner.
+
+    kind: "photo" (an additional item photo) or "documentPage" (one page of a
+    selected document, rendered to JPEG on the device). Pages carry their
+    document index and page number so order and source are preserved.
+    """
+    kind: str
+    mimeType: str
+    dataBase64: str
+    documentIndex: Optional[int] = None
+    page: Optional[int] = None
+    pageCount: Optional[int] = None
+
 
 # ---- Request from iOS for photo analysis ----
 
 class AnalyzeItemPhotoRequest(BaseModel):
-    imageJpegBase64: str
+    # Required by LTC 1.2 and earlier, which always send it. LTC 1.3 may omit
+    # it when the item has no photo but the owner selected evidence.
+    imageJpegBase64: Optional[str] = None
     hints: Optional[ItemAIHints] = None
+    context: Optional[ItemAnalysisContext] = None
+    supplementary: Optional[List[SupplementaryEvidence]] = None
+
+    @property
+    def uses_v2(self) -> bool:
+        """True when the 1.3 context/evidence fields are present."""
+        return self.context is not None or bool(self.supplementary)
+
+
+ItemAnalysis.model_rebuild()

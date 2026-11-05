@@ -5,7 +5,7 @@ import logging
 import os
 import re
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Sequence, Tuple
 
 import httpx
 from dotenv import load_dotenv
@@ -341,28 +341,36 @@ async def call_gemini_for_audio_summary(*, prompt: str, audio_base64: str, mime_
     return await _post_gemini_text(payload)
 
 
-async def call_gemini_for_item_analysis(*, prompt: str, image_base64: str) -> str:
-    """Call Gemini with an image + prompt and return cleaned JSON text."""
+async def call_gemini_for_item_analysis(
+    *,
+    prompt: str,
+    image_base64: Optional[str],
+    evidence: Sequence[Tuple[str, str]] = (),
+    retry_on_truncation: bool = True,
+) -> str:
+    """Call Gemini with a prompt, the primary photo and optional labeled evidence.
+
+    Parts: [prompt] [primary JPEG, if any] then, for each evidence item,
+    [label text] [JPEG]. `evidence` is a sequence of (label, base64 JPEG).
+    Media is sent inline in this one request: nothing is uploaded or stored
+    with Gemini's Files API. With no evidence and a primary photo the payload
+    is exactly the LTC 1.2 single-image request.
+    """
+    parts: list[Dict[str, Any]] = [{"text": prompt}]
+    if image_base64:
+        parts.append({"inline_data": {"mime_type": "image/jpeg", "data": image_base64}})
+    for label, data in evidence:
+        parts.append({"text": label})
+        parts.append({"inline_data": {"mime_type": "image/jpeg", "data": data}})
+
     payload: Dict[str, Any] = {
-        "contents": [
-            {
-                "parts": [
-                    {"text": prompt},
-                    {
-                        "inline_data": {
-                            "mime_type": "image/jpeg",
-                            "data": image_base64,
-                        }
-                    },
-                ]
-            }
-        ],
+        "contents": [{"parts": parts}],
         "generationConfig": {
             "maxOutputTokens": 4096,
         },
     }
 
-    return await _post_gemini(payload)
+    return await _post_gemini(payload, retry_on_truncation=retry_on_truncation)
 
 
 async def call_gemini_for_item_text_analysis(*, prompt: str) -> str:

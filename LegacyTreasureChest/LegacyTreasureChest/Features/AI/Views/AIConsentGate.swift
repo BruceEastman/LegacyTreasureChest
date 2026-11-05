@@ -18,6 +18,10 @@ final class AIConsentGate: ObservableObject {
 
     @Published var isPresentingConsent: Bool = false
 
+    /// Which disclosure the sheet shows: first-time consent, or the expanded
+    /// (version 2) disclosure for owners who consented earlier.
+    @Published var presentationMode: AICloudConsentView.Mode = .standard
+
     private let consent: AICloudConsentManager
     private var pendingAction: (() async -> Void)?
 
@@ -29,12 +33,22 @@ final class AIConsentGate: ObservableObject {
     /// stores it and presents the disclosure sheet; the action resumes
     /// automatically, exactly once, only if the user grants consent there.
     /// No part of `action` runs if the user declines or dismisses.
-    func perform(_ action: @escaping () async -> Void) async {
-        if consent.isOnlineProcessingAllowed {
+    ///
+    /// Pass `requiresEvidenceDisclosure: true` when the action sends
+    /// additional photos or a document: owners who consented under the
+    /// earlier disclosure then see the expanded disclosure once first.
+    func perform(requiresEvidenceDisclosure: Bool = false, _ action: @escaping () async -> Void) async {
+        let allowed = requiresEvidenceDisclosure
+            ? consent.isEvidenceDisclosureAccepted
+            : consent.isOnlineProcessingAllowed
+        if allowed {
             await action()
             return
         }
         pendingAction = action
+        presentationMode = (requiresEvidenceDisclosure && consent.isOnlineProcessingAllowed)
+            ? .evidenceUpdate
+            : .standard
         isPresentingConsent = true
     }
 
@@ -70,7 +84,7 @@ extension View {
                 gate.handlePresentationEnded()
             }
         ) {
-            AICloudConsentView { status in
+            AICloudConsentView(mode: gate.presentationMode) { status in
                 gate.handleDecision(status)
             }
         }

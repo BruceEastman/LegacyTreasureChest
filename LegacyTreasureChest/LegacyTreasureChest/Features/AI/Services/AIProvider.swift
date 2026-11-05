@@ -31,6 +31,15 @@ protocol AIProvider: Sendable {
         hints: ItemAIHints
     ) async throws -> ItemAnalysis
 
+    // MARK: - Item Analysis (1.3: context + selected evidence)
+
+    /// Analyze an item with source-labeled context, the primary photo (if any)
+    /// and any owner-selected evidence. Throws if the gateway does not confirm
+    /// that the selected evidence was analyzed.
+    func analyzeItem(
+        _ request: ItemAnalysisRequest
+    ) async throws -> ItemAnalysis
+
     // MARK: - Value Estimation
 
     /// Estimate the resale value range for an item based on its details.
