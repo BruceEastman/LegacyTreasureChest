@@ -312,7 +312,7 @@ struct EstateDashboardView: View {
 
         return HStack(alignment: .top, spacing: Theme.spacing.medium) {
             // Thumbnail
-            if let firstImage = item.images.first,
+            if let firstImage = item.primaryImage,
                let uiImage = MediaStorage.loadImage(from: firstImage.filePath) {
                 Image(uiImage: uiImage)
                     .resizable()

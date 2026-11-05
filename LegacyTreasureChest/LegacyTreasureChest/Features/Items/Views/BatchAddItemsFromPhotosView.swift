@@ -420,37 +420,13 @@ struct BatchAddItemsFromPhotosView: View {
         let relativePath = try MediaStorage.saveImage(draft.image)
         let imageRecord = ItemImage(filePath: relativePath)
 
-        // Build description similar to the AI analysis sheet.
-        var descriptionLines: [String] = []
-        descriptionLines.append(analysis.summary)
-
-        var detailsParts: [String] = []
-
-        if let maker = analysis.maker, !maker.isEmpty {
-            detailsParts.append("Maker: \(maker)")
-        }
-        if let materialsArray = analysis.materials, !materialsArray.isEmpty {
-            let joined = materialsArray.joined(separator: ", ")
-            detailsParts.append("Materials: \(joined)")
-        }
-        if let style = analysis.style, !style.isEmpty {
-            detailsParts.append("Style: \(style)")
-        }
-        if let condition = analysis.condition, !condition.isEmpty {
-            detailsParts.append("Condition: \(condition)")
-        }
-        if let featuresArray = analysis.features, !featuresArray.isEmpty {
-            let joined = featuresArray.joined(separator: ", ")
-            detailsParts.append("Features: \(joined)")
-        }
-
-        if !detailsParts.isEmpty {
-            let detailsLine = detailsParts.joined(separator: " • ")
-            descriptionLines.append("")
-            descriptionLines.append(detailsLine)
-        }
-
-        let fullDescription = descriptionLines.joined(separator: "\n")
+        // Same description format as Improve with AI: the AI paragraph plus one
+        // generated details line (brand, model, materials, ...).
+        let fullDescription = ItemAnalysisApplier.composeDescription(
+            current: "",
+            llmGeneratedDescription: nil,
+            analysis: analysis
+        ).description
 
         let item = LTCItem(
             name: analysis.title,

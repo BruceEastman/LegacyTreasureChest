@@ -285,7 +285,7 @@ struct SetDetailView: View {
 
     @ViewBuilder
     private func thumbnail(for item: LTCItem) -> some View {
-        if let firstImage = item.images.first,
+        if let firstImage = item.primaryImage,
            let uiImage = MediaStorage.loadImage(from: firstImage.filePath) {
             Image(uiImage: uiImage)
                 .resizable()

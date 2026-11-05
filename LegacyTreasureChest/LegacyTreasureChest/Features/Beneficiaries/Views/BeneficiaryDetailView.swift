@@ -188,8 +188,8 @@ struct BeneficiaryDetailView: View {
 
     private func itemRow(for item: LTCItem, link: ItemBeneficiary) -> some View {
         HStack(spacing: Theme.spacing.medium) {
-            // Thumbnail: first image if available, otherwise a placeholder.
-            if let firstImage = item.images.first,
+            // Thumbnail: primary photo if available, otherwise a placeholder.
+            if let firstImage = item.primaryImage,
                let uiImage = MediaStorage.loadImage(from: firstImage.filePath) {
                 Image(uiImage: uiImage)
                     .resizable()

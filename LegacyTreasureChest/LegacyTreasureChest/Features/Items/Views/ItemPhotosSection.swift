@@ -34,6 +34,9 @@ struct ItemPhotosSection: View {
     @State private var isProcessing: Bool = false
     @State private var errorMessage: String?
 
+    /// Photo waiting for delete confirmation (deleting cannot be undone).
+    @State private var photoPendingDeletion: ItemImage?
+
     // Responsive grid for thumbnails
     private let gridColumns: [GridItem] = [
         GridItem(.adaptive(minimum: 90, maximum: 130), spacing: 10)
@@ -77,6 +80,31 @@ struct ItemPhotosSection: View {
                 Text(errorMessage ?? "An unknown error occurred while handling photos.")
             }
         )
+        .confirmationDialog(
+            "Delete this photo?",
+            isPresented: Binding(
+                get: { photoPendingDeletion != nil },
+                set: { newValue in
+                    if !newValue { photoPendingDeletion = nil }
+                }
+            ),
+            titleVisibility: .visible,
+            presenting: photoPendingDeletion
+        ) { photo in
+            Button("Delete Photo", role: .destructive) {
+                deletePhoto(photo)
+                photoPendingDeletion = nil
+            }
+            Button("Cancel", role: .cancel) {
+                photoPendingDeletion = nil
+            }
+        } message: { photo in
+            if photo.imageId == item.primaryImage?.imageId, item.orderedImages.count > 1 {
+                Text("This is the item's main photo. The next photo will become the main photo. This can't be undone.")
+            } else {
+                Text("This photo will be removed from the item. This can't be undone.")
+            }
+        }
         // iOS 17+ style onChange (no parameter)
         .onChange(of: selectedItems) {
             guard !selectedItems.isEmpty else { return }
@@ -122,10 +150,8 @@ struct ItemPhotosSection: View {
     private var photosGridView: some View {
         VStack(alignment: .leading, spacing: 8) {
             LazyVGrid(columns: gridColumns, spacing: 10) {
-                ForEach(
-                    item.images.sorted(by: { $0.createdAt < $1.createdAt }),
-                    id: \.imageId
-                ) { image in
+                // Deterministic order: the primary photo first (LTCItem+PrimaryImage).
+                ForEach(item.orderedImages, id: \.imageId) { image in
                     thumbnailView(for: image)
                 }
             }
@@ -185,7 +211,7 @@ struct ItemPhotosSection: View {
                 }
 
             Button {
-                deletePhoto(itemImage)
+                photoPendingDeletion = itemImage
             } label: {
                 Image(systemName: "trash.fill")
                     .font(.system(size: 13, weight: .semibold))
@@ -200,7 +226,7 @@ struct ItemPhotosSection: View {
         }
         .contextMenu {
             Button(role: .destructive) {
-                deletePhoto(itemImage)
+                photoPendingDeletion = itemImage
             } label: {
                 Label("Delete Photo", systemImage: "trash")
             }
