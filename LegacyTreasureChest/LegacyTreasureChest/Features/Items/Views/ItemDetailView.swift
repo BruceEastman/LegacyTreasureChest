@@ -4,9 +4,14 @@
 //
 //  Editable detail screen for a single LTCItem.
 //
+//  Layout (1.3): Item summary (main photo, name, category, quantity,
+//  description) → Estimated Resale Value → Improve with AI → supporting
+//  photos, documents and audio → beneficiaries and next steps.
+//
 
 import SwiftUI
 import SwiftData
+import PhotosUI
 import UIKit
 import QuickLook
 
@@ -51,9 +56,6 @@ struct ItemDetailView: View {
     @AppStorage("ltc_fieldGuidanceUserOverride") private var fieldGuidanceUserOverride: Bool = false
     @AppStorage("ltc_aiGuidanceCollapsed") private var aiGuidanceCollapsed: Bool = false
     @AppStorage("ltc_aiGuidanceUserOverride") private var aiGuidanceUserOverride: Bool = false
-    @AppStorage("ltc_itemCreationCount") private var itemCreationCount: Int = 0
-
-    private let autoCollapseThreshold: Int = 5
 
     private var categoryOptions: [String] {
         let current = item.category.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -78,21 +80,53 @@ struct ItemDetailView: View {
         return true
     }
 
-    var body: some View {
-        Form {
-            // MARK: - Photos
-            ItemPhotosSection(item: item) { image in
-                photoPreviewItem = PhotoPreviewItem(filePath: image.filePath)
-            }
+    // Summary editing state
+    @FocusState private var isDescriptionFocused: Bool
+    @State private var isDescriptionExpanded: Bool = false
+    @State private var summaryPhotoSelection: [PhotosPickerItem] = []
+    @State private var isAddingSummaryPhoto: Bool = false
+    @State private var summaryPhotoError: String?
 
-            // MARK: - Basic Info
+    private let summaryPhotoSize: CGFloat = 84
+
+    /// A description longer than this shows a "Show full description" control
+    /// instead of the whole text while not being edited.
+    private let collapsedDescriptionLines = 3
+
+    private var isDescriptionLong: Bool {
+        let text = item.itemDescription
+        return text.count > 160 || text.filter { $0 == "\n" }.count >= collapsedDescriptionLines
+    }
+
+    var body: some View {
+        let valuation = ItemValuationPresentation(item: item)
+
+        Form {
+            // MARK: - 1. Item Summary
             Section {
-                TextField("Name", text: $item.name)
-                    .textInputAutocapitalization(.words)
-                    .font(Theme.bodyFont)
+                summaryHeader
+
+                Picker("Category", selection: $item.category) {
+                    ForEach(categoryOptions, id: \.self) { category in
+                        Text(category)
+                            .font(Theme.bodyFont)
+                            .tag(category)
+                    }
+                }
+
+                Stepper(value: $item.quantity, in: 1...999) {
+                    HStack {
+                        Text("Quantity")
+                        Spacer()
+                        Text("×\(max(item.quantity, 1))")
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                }
+
+                descriptionEditor
 
                 FieldGuidanceDisclosure(
-                    title: "Field Guidance",
+                    title: "Writing Tips",
                     collapsed: $fieldGuidanceCollapsed,
                     onToggle: {
                         fieldGuidanceUserOverride = true
@@ -102,7 +136,7 @@ struct ItemDetailView: View {
                     },
                     content: {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("• **Title**: brand + item type + key detail (3–7 words).")
+                            Text("• **Name**: brand + item type + key detail (3–7 words).")
                             Text("  Example: “Waterford Lismore Vase”.")
                             Text("• **Description**: what it is + traits + story.")
                             Text("  Save hard facts (stamps, size, condition, quantity) for AI details.")
@@ -111,45 +145,142 @@ struct ItemDetailView: View {
                         .foregroundStyle(Theme.textSecondary)
                     }
                 )
-
-                TextField("Description", text: $item.itemDescription, axis: .vertical)
-                    .font(Theme.bodyFont)
             } header: {
-                Text("Basic Info")
+                Text("Item")
                     .ltcSectionHeaderStyle()
             }
 
-            // MARK: - Value
+            // MARK: - 2. Estimated Resale Value
             Section {
-                TextField(
-                    "Estimated Unit Value",
-                    value: Binding<Int?>(
-                        get: { item.estimatedUnitValue.map { Int($0.rounded()) } },
-                        set: { item.value = Double(max($0 ?? 0, 0)) }
-                    ),
-                    format: .currency(code: currencyCode).precision(.fractionLength(0)),
-                    prompt: Text(CurrencyFormat.notEstimated)
-                )
-                .keyboardType(.numberPad)
-                .font(Theme.bodyFont)
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(valuation.quantity > 1 ? "Value each" : "Estimated value")
+                            .font(Theme.bodyFont)
+                            .foregroundStyle(Theme.text)
+                        Text(valuation.sourceCaption)
+                            .font(Theme.secondaryFont)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
 
-                if max(item.quantity, 1) > 1,
-                   let unit = item.estimatedUnitValue,
-                   let total = item.estimatedTotalValue {
-                    Text("Total: \(CurrencyFormat.dollars(total)) (\(CurrencyFormat.dollars(unit)) each)")
-                        .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.textSecondary)
+                    Spacer(minLength: 12)
+
+                    TextField(
+                        "Estimated Unit Value",
+                        value: Binding<Int?>(
+                            get: { item.estimatedUnitValue.map { Int($0.rounded()) } },
+                            set: { item.value = Double(max($0 ?? 0, 0)) }
+                        ),
+                        format: .currency(code: currencyCode).precision(.fractionLength(0)),
+                        prompt: Text(CurrencyFormat.notEstimated)
+                    )
+                    .keyboardType(.numberPad)
+                    .multilineTextAlignment(.trailing)
+                    .font(Theme.bodyFont.weight(.semibold))
+                    .foregroundStyle(Theme.accent)
+                    .accessibilityLabel(valuation.quantity > 1 ? "Value each" : "Estimated value")
+                    .accessibilityHint("Edit the value.")
                 }
+
+                if let total = valuation.totalValue {
+                    HStack {
+                        Text("Total for \(valuation.quantity)")
+                            .font(Theme.bodyFont)
+                            .foregroundStyle(Theme.text)
+                        Spacer()
+                        Text(CurrencyFormat.dollars(total))
+                            .font(Theme.bodyFont.weight(.semibold))
+                            .foregroundStyle(Theme.text)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+
+                ItemValuationSummaryView(presentation: valuation)
             } header: {
-                Text("Value")
+                Text("Estimated Resale Value")
                     .ltcSectionHeaderStyle()
             } footer: {
-                Text("Tap the amount above to edit it anytime.")
+                Text(valuation.quantity > 1
+                     ? "Tap the value to change it. The total is the value each × quantity."
+                     : "Tap the value to change it.")
                     .font(Theme.secondaryFont)
                     .foregroundStyle(Theme.textSecondary)
             }
 
-            // MARK: - Liquidate (Next Step)
+            // MARK: - 3. Improve with AI
+            Section {
+                Button {
+                    isAIAnalysisPresented = true
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "sparkles")
+                        Text("Improve with AI")
+                            .font(Theme.bodyFont.weight(.semibold))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Theme.accent)
+                    )
+                    .foregroundStyle(.white)
+                }
+                .buttonStyle(.plain)
+                .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 4, trailing: 16))
+                // IMPORTANT: do not block this. The sheet supports text-only now.
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Add details, photos, or documents to improve identification and estimated resale value.")
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    // Why the current estimate, then the AI's own suggestions.
+                    ItemValuationExplanationView(explanation: valuation.explanation)
+                    ItemValuationSuggestionsView(suggestions: valuation.suggestions)
+                }
+                .listRowSeparator(.hidden, edges: .top)
+
+                FieldGuidanceDisclosure(
+                    title: "What helps most",
+                    collapsed: $aiGuidanceCollapsed,
+                    onToggle: {
+                        aiGuidanceUserOverride = true
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            aiGuidanceCollapsed.toggle()
+                        }
+                    },
+                    content: {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("• **Most impact**: a clear photo + hard facts.")
+                            Text("• Add: brand/model, stamps/labels, materials, measurements, condition, quantity.")
+                            Text("• Title helps; description adds context.")
+                        }
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                    }
+                )
+                .padding(.bottom, 4)
+            }
+
+            // MARK: - 4. Supporting Information
+            ItemPhotosSection(item: item) { image in
+                photoPreviewItem = PhotoPreviewItem(filePath: image.filePath)
+            }
+
+            ItemDocumentsSection(item: item) { document in
+                documentPreviewItem = DocumentPreviewItem(document: document)
+            }
+
+            ItemAudioSection(item: item)
+
+            // MARK: - 5. Decisions & Next Steps
+            ItemBeneficiariesSection(
+                item: item,
+                onAddTapped: { isBeneficiaryPickerPresented = true },
+                onEditLink: { link in editingLinkItem = BeneficiaryEditItem(link: link) },
+                onRemoveLink: { link in removeItemBeneficiary(link) }
+            )
+
             if shouldShowLiquidate {
                 Section {
                     NavigationLink {
@@ -199,102 +330,13 @@ struct ItemDetailView: View {
                         }
                     }
                 } header: {
-                    Text("Next Step")
+                    Text("Next Steps")
                         .ltcSectionHeaderStyle()
-                } footer: {
-                    Text("Liquidation uses backend-first AI for both Brief and Plan, with local fallback only when the backend fails.")
-                        .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.textSecondary)
                 }
             }
-
-            // MARK: - Details
-            Section {
-                Picker("Category", selection: $item.category) {
-                    ForEach(categoryOptions, id: \.self) { category in
-                        Text(category)
-                            .font(Theme.bodyFont)
-                            .tag(category)
-                    }
-                }
-
-                Stepper(value: $item.quantity, in: 1...999) {
-                    HStack {
-                        Text("Quantity")
-                        Spacer()
-                        Text("×\(max(item.quantity, 1))")
-                            .foregroundStyle(Theme.textSecondary)
-                    }
-                }
-            } header: {
-                Text("Details")
-                    .ltcSectionHeaderStyle()
-            }
-
-            // MARK: - AI Assistance
-            Section {
-                FieldGuidanceDisclosure(
-                    title: "AI Guidance",
-                    collapsed: $aiGuidanceCollapsed,
-                    onToggle: {
-                        aiGuidanceUserOverride = true
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            aiGuidanceCollapsed.toggle()
-                        }
-                    },
-                    content: {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("• **Most impact**: a clear photo + hard facts.")
-                            Text("• Add: brand/model, stamps/labels, materials, measurements, condition, quantity.")
-                            Text("• Title helps; description adds context.")
-                        }
-                        .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.textSecondary)
-                    }
-                )
-
-                Button {
-                    isAIAnalysisPresented = true
-                } label: {
-                    HStack {
-                        Image(systemName: "sparkles")
-                        Text("Improve with AI")
-                            .font(Theme.bodyFont.weight(.semibold))
-                    }
-                }
-                // IMPORTANT: do not block this. The sheet supports text-only now.
-            } header: {
-                Text("AI Assistance")
-                    .ltcSectionHeaderStyle()
-            } footer: {
-                if item.images.isEmpty {
-                    Text("You can run a text-only AI estimate now. Adding photos later improves accuracy and confidence.")
-                        .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.textSecondary)
-                } else {
-                    Text("Use AI to refine the title, description, category, and estimated value using your photos and added details.")
-                        .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.textSecondary)
-                }
-            }
-
-            // MARK: - Documents
-            ItemDocumentsSection(item: item) { document in
-                documentPreviewItem = DocumentPreviewItem(document: document)
-            }
-
-            // MARK: - Audio
-            ItemAudioSection(item: item)
-
-            // MARK: - Beneficiaries
-            ItemBeneficiariesSection(
-                item: item,
-                onAddTapped: { isBeneficiaryPickerPresented = true },
-                onEditLink: { link in editingLinkItem = BeneficiaryEditItem(link: link) },
-                onRemoveLink: { link in removeItemBeneficiary(link) }
-            )
         }
         .scrollContentBackground(.hidden)
+        .scrollDismissesKeyboard(.interactively)
         .background(Theme.background)
         .navigationTitle("Item Details")
         .navigationBarTitleDisplayMode(.inline)
@@ -314,12 +356,27 @@ struct ItemDetailView: View {
         .sheet(isPresented: $isAIAnalysisPresented) {
             ItemAIAnalysisSheet(item: item)
         }
+        .onChange(of: summaryPhotoSelection) {
+            guard !summaryPhotoSelection.isEmpty else { return }
+            let picked = summaryPhotoSelection
+            Task { @MainActor in
+                isAddingSummaryPhoto = true
+                let succeeded = await ItemPhotoImporter.importPhotos(picked, into: item, context: modelContext)
+                isAddingSummaryPhoto = false
+                summaryPhotoSelection = []
+                if !succeeded { summaryPhotoError = ItemPhotoImporter.failureMessage }
+            }
+        }
+        .onChange(of: isDescriptionFocused) {
+            if isDescriptionFocused { isDescriptionExpanded = true }
+        }
         .onAppear {
+            // Guidance starts collapsed; the owner's own choice is kept.
             if !fieldGuidanceUserOverride {
-                fieldGuidanceCollapsed = itemCreationCount >= autoCollapseThreshold
+                fieldGuidanceCollapsed = true
             }
             if !aiGuidanceUserOverride {
-                aiGuidanceCollapsed = itemCreationCount >= autoCollapseThreshold
+                aiGuidanceCollapsed = true
             }
         }
         .onDisappear {
@@ -330,7 +387,132 @@ struct ItemDetailView: View {
         } message: {
             Text(saveErrorMessage ?? "Unknown error.")
         }
-    }    // MARK: - Photo Preview Sheet (with Share)
+        .alert(
+            "Photo Error",
+            isPresented: Binding(
+                get: { summaryPhotoError != nil },
+                set: { if !$0 { summaryPhotoError = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { summaryPhotoError = nil }
+        } message: {
+            Text(summaryPhotoError ?? "")
+        }
+    }
+
+    // MARK: - Item Summary
+
+    private var summaryHeader: some View {
+        HStack(alignment: .center, spacing: 14) {
+            summaryPhoto
+
+            VStack(alignment: .leading, spacing: 4) {
+                TextField("Item name", text: $item.name, axis: .vertical)
+                    .font(Theme.bodyFont.weight(.semibold))
+                    .textInputAutocapitalization(.words)
+                    .lineLimit(1...3)
+
+                if let caption = attachmentCaption {
+                    Text(caption)
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private var summaryPhoto: some View {
+        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+
+        if let primary = item.primaryImage {
+            Button {
+                photoPreviewItem = PhotoPreviewItem(filePath: primary.filePath)
+            } label: {
+                Group {
+                    if let uiImage = MediaStorage.loadImage(from: primary.filePath) {
+                        Image(uiImage: uiImage)
+                            .resizable()
+                            .scaledToFill()
+                    } else {
+                        ZStack {
+                            Theme.textSecondary.opacity(0.15)
+                            Image(systemName: "photo.slash")
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                    }
+                }
+                .frame(width: summaryPhotoSize, height: summaryPhotoSize)
+                .clipShape(shape)
+                .overlay(shape.stroke(Theme.textSecondary.opacity(0.2), lineWidth: 0.5))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Main photo")
+            .accessibilityHint("Opens the photo.")
+        } else {
+            PhotosPicker(
+                selection: $summaryPhotoSelection,
+                maxSelectionCount: 10,
+                matching: .images,
+                photoLibrary: .shared()
+            ) {
+                VStack(spacing: 4) {
+                    if isAddingSummaryPhoto {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "camera")
+                            .font(.title3)
+                        Text("Add Photo")
+                            .font(.caption.weight(.semibold))
+                    }
+                }
+                .foregroundStyle(Theme.accent)
+                .frame(width: summaryPhotoSize, height: summaryPhotoSize)
+                .background(shape.fill(Theme.accent.opacity(0.08)))
+                .overlay(shape.stroke(Theme.accent.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+            }
+            .buttonStyle(.plain)
+            .disabled(isAddingSummaryPhoto)
+            .accessibilityLabel("Add photo")
+        }
+    }
+
+    /// "3 photos · 1 document", pointing to Supporting Information below.
+    private var attachmentCaption: String? {
+        var parts: [String] = []
+        let photos = item.orderedImages.count
+        if photos > 0 { parts.append(photos == 1 ? "1 photo" : "\(photos) photos") }
+        let documents = item.documents.count
+        if documents > 0 { parts.append(documents == 1 ? "1 document" : "\(documents) documents") }
+        let audio = item.audioRecordings.count
+        if audio > 0 { parts.append(audio == 1 ? "1 audio story" : "\(audio) audio stories") }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    private var descriptionEditor: some View {
+        let showAll = isDescriptionExpanded || isDescriptionFocused || !isDescriptionLong
+
+        return VStack(alignment: .leading, spacing: 6) {
+            TextField("Description", text: $item.itemDescription, axis: .vertical)
+                .font(Theme.bodyFont)
+                .lineLimit(showAll ? 1...500 : 1...collapsedDescriptionLines)
+                .focused($isDescriptionFocused)
+
+            if isDescriptionLong && !isDescriptionFocused {
+                Button(isDescriptionExpanded ? "Show less" : "Show full description") {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isDescriptionExpanded.toggle()
+                    }
+                }
+                .font(Theme.secondaryFont.weight(.semibold))
+                .foregroundStyle(Theme.accent)
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    // MARK: - Photo Preview Sheet (with Share)
 
     private func photoPreviewSheet(for filePath: String) -> some View {
         let url = MediaStorage.absoluteURL(from: filePath)

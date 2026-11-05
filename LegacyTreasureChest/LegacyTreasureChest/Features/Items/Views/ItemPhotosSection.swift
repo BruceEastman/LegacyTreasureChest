@@ -203,12 +203,31 @@ struct ItemPhotosSection: View {
         .cornerRadius(10)
         .shadow(color: Color.black.opacity(0.12), radius: 3, x: 0, y: 2)
 
+        // Label the primary photo (shown in the item summary) when there are
+        // several, so its repeat here is explained. No selection controls.
+        let isPrimary = item.images.count > 1 && itemImage.imageId == item.primaryImage?.imageId
+
         return ZStack(alignment: .topTrailing) {
             thumbnail
+                .overlay(alignment: .bottomLeading) {
+                    if isPrimary {
+                        Text("Main")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.black.opacity(0.55)))
+                            .padding(5)
+                    }
+                }
                 .contentShape(Rectangle())
                 .onTapGesture {
                     onImageTap(itemImage)
                 }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(isPrimary ? "Main photo" : "Photo")
+                .accessibilityHint("Opens the photo.")
+                .accessibilityAddTraits(.isButton)
 
             Button {
                 photoPendingDeletion = itemImage
@@ -245,35 +264,15 @@ struct ItemPhotosSection: View {
             selectedItems = []   // reset picker selection so it can be used again
         }
 
-        var encounteredError = false
+        let succeeded = await ItemPhotoImporter.importPhotos(
+            items,
+            into: item,
+            context: modelContext,
+            onFileSaved: onFileSaved
+        )
 
-        for pickerItem in items {
-            do {
-                guard let data = try await pickerItem.loadTransferable(type: Data.self) else {
-                    continue
-                }
-
-                guard let uiImage = UIImage(data: data) else {
-                    print("❌ Failed to create UIImage from picked data.")
-                    encounteredError = true
-                    continue
-                }
-
-                let relativePath = try MediaStorage.saveImage(uiImage)
-                onFileSaved?(relativePath)
-
-                let newImage = ItemImage(filePath: relativePath)
-                newImage.item = item
-                item.images.append(newImage)
-                modelContext.insert(newImage)
-            } catch {
-                print("❌ Failed to import photo: \(error)")
-                encounteredError = true
-            }
-        }
-
-        if encounteredError {
-            errorMessage = "Unable to add one or more photos. Please try again."
+        if !succeeded {
+            errorMessage = ItemPhotoImporter.failureMessage
         }
     }
 
@@ -332,4 +331,53 @@ private let itemPhotosPreviewContainer: ModelContainer = {
         }
     }
     .modelContainer(container)
+}
+
+// MARK: - Shared photo import
+
+/// Imports picked photos as ItemImage records: one at a time, in pick order,
+/// so the first photo added to an item without photos becomes its primary
+/// photo (see LTCItem+PrimaryImage). Shared by the Photos section and the Item
+/// Detail summary.
+enum ItemPhotoImporter {
+
+    static let failureMessage = "Unable to add one or more photos. Please try again."
+
+    /// Returns false if any photo could not be imported.
+    @MainActor
+    static func importPhotos(
+        _ pickerItems: [PhotosPickerItem],
+        into item: LTCItem,
+        context: ModelContext,
+        onFileSaved: ((String) -> Void)? = nil
+    ) async -> Bool {
+        var encounteredError = false
+
+        for pickerItem in pickerItems {
+            do {
+                guard let data = try await pickerItem.loadTransferable(type: Data.self) else {
+                    continue
+                }
+
+                guard let uiImage = UIImage(data: data) else {
+                    print("❌ Failed to create UIImage from picked data.")
+                    encounteredError = true
+                    continue
+                }
+
+                let relativePath = try MediaStorage.saveImage(uiImage)
+                onFileSaved?(relativePath)
+
+                let newImage = ItemImage(filePath: relativePath)
+                newImage.item = item
+                item.images.append(newImage)
+                context.insert(newImage)
+            } catch {
+                print("❌ Failed to import photo: \(error)")
+                encounteredError = true
+            }
+        }
+
+        return !encounteredError
+    }
 }
