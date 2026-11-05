@@ -67,7 +67,7 @@ struct AICloudConsentView: View {
     private var coreExplanationSection: some View {
         VStack(alignment: .leading, spacing: Theme.spacing.small) {
             Text(
-                "Your estate inventory is stored on this iPhone.\n\n" +
+                "Your estate inventory is stored on this device.\n\n" +
                 "When you choose an AI or Local Help feature, selected information is sent securely for online processing.\n\n" +
                 "AI and Local Help are optional. The rest of the app remains fully usable if you decline."
             )
@@ -83,6 +83,7 @@ struct AICloudConsentView: View {
     private var evidenceUpdateSection: some View {
         Text(
             "Improve with AI can now also use additional photos and a document that you select for an analysis. " +
+            "The item's main photo and existing information are still sent automatically. " +
             "Please review what may be sent before continuing."
         )
         .font(Theme.bodyFont.weight(.semibold))
@@ -99,9 +100,8 @@ struct AICloudConsentView: View {
                 .ltcSectionHeaderStyle()
 
             VStack(alignment: .leading, spacing: Theme.spacing.small) {
-                bullet("Photos you choose to analyze, including additional photos you select for Improve with AI")
-                bullet("A document you select for Improve with AI. Its pages are sent as images, so anything printed on them, such as names, addresses, or certificate numbers, is included")
-                bullet("Item title, description, quantity, or notes")
+                bullet("When you use Improve with AI, the item's main photo and its existing information (name, category, quantity, description, and your notes) are sent automatically")
+                bullet("Additional photos and one document, only when you select them for an analysis. Document pages are sent as images, so anything printed on them, such as names, addresses, or certificate numbers, is included")
                 bullet("An audio recording, when you explicitly request an AI summary")
                 bullet("Valuation or liquidation details")
                 bullet("For Find Help: the search words you review, the city or state you choose, and your precise location only when you tap Use Current Location")
@@ -136,7 +136,7 @@ struct AICloudConsentView: View {
             VStack(alignment: .leading, spacing: Theme.spacing.small) {
                 bullet("Legacy Treasure Chest does not maintain a cloud-hosted copy of your estate inventory")
                 bullet("Our server does not keep submitted photos, documents, audio, or item details in permanent storage")
-                bullet("Only what you select for an analysis is sent. Your other photos and documents stay on this iPhone")
+                bullet("Your other photos and documents are not sent and stay on this device")
                 bullet("Limited request details (like a device ID, timing, and status) may be logged for diagnostics, rate limiting, and abuse protection")
                 bullet("Google processes information under its own privacy and data-handling terms. See our Privacy Policy for more information.")
             }

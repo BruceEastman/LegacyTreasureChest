@@ -189,41 +189,10 @@ struct ItemDocumentsSection: View {
     }
 
     private func importDocument(from url: URL) {
-        let didAccess = url.startAccessingSecurityScopedResource()
-        defer {
-            if didAccess {
-                url.stopAccessingSecurityScopedResource()
-            }
-        }
-
         do {
-            let data = try Data(contentsOf: url)
-
-            // Simple file size guard: 50 MB max
-            let maxSizeBytes = 50 * 1024 * 1024 // 50 MB
-            if data.count > maxSizeBytes {
-                importErrorMessage = "This document is too large (over 50 MB). Please choose a smaller file."
-                return
-            }
-
-            let relativePath = try MediaStorage.saveDocument(
-                data,
-                suggestedFilename: url.lastPathComponent
-            )
-
-            let inferredType = inferDocumentType(from: url)
-            let originalFilename = url.lastPathComponent
-
-            let document = Document(
-                filePath: relativePath,
-                documentType: inferredType,
-                originalFilename: originalFilename
-            )
-            document.item = item
-            item.documents.append(document)
-            item.updatedAt = .now
-
-            modelContext.insert(document)
+            _ = try ItemDocumentImporter.importDocument(from: url, into: item, context: modelContext)
+        } catch let error as ItemDocumentImporter.ImportError {
+            importErrorMessage = error.localizedDescription
         } catch {
             importErrorMessage = "Unable to import document: \(error.localizedDescription)"
             print("❌ Document import failed: \(error)")
@@ -307,8 +276,58 @@ struct ItemDocumentsSection: View {
             return String(format: "%.1f MB", mb)
         }
     }
+}
 
-    private func inferDocumentType(from url: URL) -> String {
+// MARK: - Shared document import
+
+/// Imports a picked file as a Document attached to the item (copied into app
+/// storage). Shared by the Documents section and Improve with AI.
+enum ItemDocumentImporter {
+
+    /// Simple file size guard: 50 MB max.
+    static let maxSizeBytes = 50 * 1024 * 1024
+
+    enum ImportError: LocalizedError {
+        case tooLarge
+
+        var errorDescription: String? {
+            "This document is too large (over 50 MB). Please choose a smaller file."
+        }
+    }
+
+    @MainActor
+    @discardableResult
+    static func importDocument(from url: URL, into item: LTCItem, context: ModelContext) throws -> Document {
+        let didAccess = url.startAccessingSecurityScopedResource()
+        defer {
+            if didAccess {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        let data = try Data(contentsOf: url)
+        if data.count > maxSizeBytes {
+            throw ImportError.tooLarge
+        }
+
+        let relativePath = try MediaStorage.saveDocument(
+            data,
+            suggestedFilename: url.lastPathComponent
+        )
+
+        let document = Document(
+            filePath: relativePath,
+            documentType: inferDocumentType(from: url),
+            originalFilename: url.lastPathComponent
+        )
+        document.item = item
+        item.documents.append(document)
+        item.updatedAt = .now
+        context.insert(document)
+        return document
+    }
+
+    static func inferDocumentType(from url: URL) -> String {
         let ext = url.pathExtension.lowercased()
 
         if let type = UTType(filenameExtension: ext) {

@@ -298,7 +298,7 @@ nonisolated struct ItemAnalysisContextDTO: Codable, Equatable, Sendable {
 /// Represents structured valuation hints returned by the backend for an item.
 /// This maps 1:1 to the Python `ValueHints` Pydantic model and is what we will
 /// use to build SwiftData `ItemValuation` records.
-struct ValueHints: Codable, Sendable {
+struct ValueHints: Codable, Equatable, Sendable {
     /// Lower bound of the estimate (conservative).
     var valueLow: Double?
 

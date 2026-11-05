@@ -2,13 +2,22 @@
 //  ItemAIAnalysisSheet.swift
 //  LegacyTreasureChest
 //
-//  Sheet for analyzing an existing LTCItem with AI.
-//  - If photo exists: uses photo-based analysis
-//  - If no photo: uses text-only analysis (title/description/category + extra details)
+//  Improve with AI (LTC 1.3), two states:
+//  1. Supply information: owner notes, category tips, optional additional
+//     photos and one document chosen explicitly, and a summary of exactly
+//     what will be sent. One "Analyze with AI" action.
+//  2. Review suggestions (ImproveWithAIReviewView): current vs proposed with
+//     per-field choices; nothing is saved until "Apply Selected".
+//
+//  The item's main photo and its details are included automatically; extra
+//  photos and documents only when selected. Photos and documents added here
+//  become normal item attachments whether or not suggestions are applied.
 //
 
 import SwiftUI
 import SwiftData
+import PhotosUI
+import UniformTypeIdentifiers
 import UIKit
 
 struct ItemAIAnalysisSheet: View {
@@ -16,12 +25,9 @@ struct ItemAIAnalysisSheet: View {
     @Bindable var item: LTCItem
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
 
-    @State private var previewImage: UIImage?
-    @State private var isAnalyzing: Bool = false
-    @State private var analysisResult: ItemAnalysis?
-    @State private var errorMessage: String?
-
+    @State private var model: ImproveWithAIModel
     @StateObject private var consentGate = AIConsentGate()
 
     /// Extra owner-supplied details that should help the AI value this item.
@@ -31,96 +37,57 @@ struct ItemAIAnalysisSheet: View {
     /// Navigation to editor (instead of a nested sheet).
     @State private var showExtraDetailsEditor: Bool = false
 
-    // The primary photo (the photo the item was created with); see LTCItem+PrimaryImage.
-    private var firstImagePath: String? {
-        item.primaryImage?.filePath
+    @State private var showAllTips = false
+    @State private var photoPickerItems: [PhotosPickerItem] = []
+    @State private var isImportingPhotos = false
+    @State private var isDocumentImporterPresented = false
+    @State private var previewDocument: Document?
+    @State private var noticeMessage: String?
+    @State private var confirmDiscardReview = false
+
+    init(item: LTCItem) {
+        self.item = item
+        _model = State(initialValue: ImproveWithAIModel(item: item))
     }
 
-    private var hasPhoto: Bool { previewImage != nil }
+    /// Test/preview hook: a model with an injected analyzer.
+    init(item: LTCItem, model: ImproveWithAIModel) {
+        self.item = item
+        _model = State(initialValue: model)
+    }
 
-    /// Require at least a title or a description for text-only.
-    private var hasEnoughTextForTextOnly: Bool {
-        let title = item.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let desc = item.itemDescription.trimmingCharacters(in: .whitespacesAndNewlines)
-        return !title.isEmpty || !desc.isEmpty
+    private var isReviewing: Bool {
+        if case .review = model.phase { return true }
+        return false
     }
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: Theme.spacing.large) {
-
-                    // Current item summary
-                    currentItemCard
-
-                    // Mode explanation (photo vs text-only)
-                    analysisModeCard
-
-                    // Photo preview or guidance
-                    photoSection
-
-                    // Extra details for AI expert
-                    extraDetailsSection
-
-                    // Run analysis
-                    analyzeButton
-
-                    if let errorMessage {
-                        VStack(alignment: .leading, spacing: Theme.spacing.small) {
-                            Text(errorMessage)
-                                .font(Theme.secondaryFont)
-                                .foregroundStyle(Theme.destructive)
-
-                            if !isAnalyzing {
-                                Button(action: {
-                                    Task { await consentGate.perform { await runAnalysis() } }
-                                }) {
-                                    HStack(spacing: 8) {
-                                        Image(systemName: "arrow.clockwise")
-                                        Text("Try Again")
-                                            .font(Theme.secondaryFont.weight(.semibold))
-                                    }
-                                }
-                            }
-                        }
-                        .padding()
-                        .ltcCardBackground()
-                    }
-                    if let result = analysisResult {
-                        analysisCard(result)
-
-                        Button {
-                            applyAnalysis(result)
-                        } label: {
-                            HStack {
-                                Image(systemName: "square.and.arrow.down")
-                                Text("Apply Suggestions to Item")
-                                    .font(Theme.bodyFont.weight(.semibold))
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Theme.primary)
-                            .foregroundColor(.white)
-                            .cornerRadius(12)
-                        }
-                        .padding(.top, Theme.spacing.medium)
-                    }
-
-                    Spacer(minLength: 40)
+            Group {
+                switch model.phase {
+                case .compose, .analyzing:
+                    composeView
+                case .review(let analysis, let review):
+                    ImproveWithAIReviewView(
+                        model: model,
+                        analysis: analysis,
+                        review: review,
+                        onApply: applyAndClose,
+                        onKeepCurrent: { dismiss() }
+                    )
                 }
-                .padding(.horizontal, Theme.spacing.large)
-                .padding(.top, Theme.spacing.large)
             }
-            .scrollDismissesKeyboard(.interactively)
-            .navigationTitle("AI Analysis")
+            .navigationTitle(isReviewing ? "Review Suggestions" : "Improve with AI")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Close") { dismiss() }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    if let result = analysisResult {
-                        Button("Apply") { applyAnalysis(result) }
+                    if isReviewing {
+                        Button("Back") { confirmDiscardReview = true }
+                    } else {
+                        Button("Close") {
+                            model.cancelAnalysis()
+                            dismiss()
+                        }
                     }
                 }
             }
@@ -136,109 +103,112 @@ struct ItemAIAnalysisSheet: View {
                     }
                 )
             }
+            .confirmationDialog(
+                "Go back without applying?",
+                isPresented: $confirmDiscardReview,
+                titleVisibility: .visible
+            ) {
+                Button("Discard Suggestions", role: .destructive) { model.discardReview() }
+                Button("Stay", role: .cancel) { }
+            } message: {
+                Text("Nothing has been changed on this item. You can analyze again after going back.")
+            }
+            .sheet(item: $previewDocument) { document in
+                DocumentPreviewScreen(
+                    document: document,
+                    url: MediaStorage.absoluteURL(from: document.filePath),
+                    onDone: { previewDocument = nil }
+                )
+            }
+            .fileImporter(isPresented: $isDocumentImporterPresented, allowedContentTypes: [.pdf]) { result in
+                importDocument(result)
+            }
+            .onChange(of: photoPickerItems) {
+                importPickedPhotos()
+            }
             .onAppear {
-                loadPreviewImageIfNeeded()
                 loadExtraDetailsIfNeeded()
+                model.refreshPlan()
             }
             .aiConsentSheet(consentGate)
         }
+        .tint(Theme.accent)
+        // Leaving the review must be a deliberate choice (Apply, Keep, Back).
+        .interactiveDismissDisabled(isReviewing || model.isAnalyzing)
     }
 
-    // MARK: - Subviews
+    // MARK: - State 1: Supply information
 
-    private var currentItemCard: some View {
-        VStack(alignment: .leading, spacing: Theme.spacing.small) {
-            Text("Current Item")
-                .ltcSectionHeaderStyle()
+    private var composeView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Theme.spacing.large) {
+                headerCard
 
-            VStack(alignment: .leading, spacing: Theme.spacing.small) {
-                Text(item.name.isEmpty ? "Untitled Item" : item.name)
-                    .font(Theme.bodyFont.weight(.semibold))
-                    .foregroundStyle(Theme.text)
-
-                if !item.itemDescription.isEmpty {
-                    Text(item.itemDescription)
-                        .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.textSecondary)
-                } else {
-                    Text("Add a short description to improve text-only analysis.")
-                        .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.textSecondary)
+                if let error = model.errorMessage {
+                    messageCard(error, systemImage: "exclamationmark.triangle", tint: Theme.destructive)
                 }
 
-                if !item.category.isEmpty {
-                    Text("Category: \(item.category)")
-                        .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.textSecondary)
-                }
+                notesSection
+                photosSection
+                documentSection
+                summarySection
 
-                if item.value > 0 {
-                    CurrencyText.view(item.value)
-                        .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.textSecondary)
-                }
+                Spacer(minLength: 24)
             }
-            .ltcCardBackground()
+            .padding(.horizontal, Theme.spacing.large)
+            .padding(.top, Theme.spacing.medium)
+            .disabled(model.isAnalyzing)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .safeAreaInset(edge: .bottom) { analyzeBar }
+        .overlay {
+            if model.isAnalyzing { analyzingOverlay }
         }
     }
 
-    private var analysisModeCard: some View {
+    private var headerCard: some View {
         VStack(alignment: .leading, spacing: Theme.spacing.small) {
-            Text("How This Will Run")
-                .ltcSectionHeaderStyle()
+            HStack(alignment: .center, spacing: 12) {
+                thumbnail(for: item.primaryImage, size: 56)
 
-            VStack(alignment: .leading, spacing: Theme.spacing.small) {
-                if hasPhoto {
-                    Text("Photo-based analysis")
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.name.isEmpty ? "Untitled Item" : item.name)
                         .font(Theme.bodyFont.weight(.semibold))
                         .foregroundStyle(Theme.text)
-                    Text("This uses your photo plus any details you’ve added. Best accuracy.")
-                        .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.textSecondary)
-                } else {
-                    Text("Text-only analysis (no photo yet)")
-                        .font(Theme.bodyFont.weight(.semibold))
-                        .foregroundStyle(Theme.text)
-                    Text("You can run an estimate now using title/description/category. Add photos later to improve confidence.")
+                        .lineLimit(2)
+                    Text(item.quantity > 1 ? "\(item.category) · ×\(item.quantity)" : item.category)
                         .font(Theme.secondaryFont)
                         .foregroundStyle(Theme.textSecondary)
                 }
+                Spacer(minLength: 0)
             }
-            .ltcCardBackground()
-        }
-    }
 
-    @ViewBuilder
-    private var photoSection: some View {
-        VStack(alignment: .leading, spacing: Theme.spacing.small) {
-            Text("Photo Used for Analysis")
-                .ltcSectionHeaderStyle()
-
-            if let previewImage {
-                Image(uiImage: previewImage)
-                    .resizable()
-                    .scaledToFit()
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .shadow(radius: 2)
-            } else {
-                Text("No photo found for this item. You can still run text-only analysis now. Add a photo later for better accuracy.")
-                    .font(Theme.secondaryFont)
-                    .foregroundStyle(Theme.textSecondary)
-                    .ltcCardBackground()
-            }
-        }
-    }
-
-    /// Section where the user can provide extra details that matter for valuation.
-    /// We navigate to a dedicated editor (no nested sheet).
-    private var extraDetailsSection: some View {
-        VStack(alignment: .leading, spacing: Theme.spacing.small) {
-            Text("More Details for AI Expert")
-                .ltcSectionHeaderStyle()
-
-            Text(extraDetailsHelpText)
+            Text(item.primaryImage != nil
+                 ? "The main photo is included automatically."
+                 : "No main photo. The analysis uses the item's details and anything you add below.")
                 .font(Theme.secondaryFont)
                 .foregroundStyle(Theme.textSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .ltcCardBackground()
+    }
+
+    private var notesSection: some View {
+        VStack(alignment: .leading, spacing: Theme.spacing.small) {
+            Text("Details You Know")
+                .ltcSectionHeaderStyle()
+
+            Text(showAllTips ? extraDetailsHelpText : tipsSummary)
+                .font(Theme.secondaryFont)
+                .foregroundStyle(Theme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button(showAllTips ? "Fewer tips" : "More tips") {
+                withAnimation(.easeInOut(duration: 0.2)) { showAllTips.toggle() }
+            }
+            .font(Theme.secondaryFont.weight(.semibold))
+            .foregroundStyle(Theme.accent)
+            .buttonStyle(.plain)
 
             Button {
                 showExtraDetailsEditor = true
@@ -271,206 +241,406 @@ struct ItemAIAnalysisSheet: View {
         }
     }
 
-    private var analyzeButton: some View {
+    /// The category help without its generic first sentence.
+    private var tipsSummary: String {
+        let text = extraDetailsHelpText
+        if let range = text.range(of: "Helpful information includes ") {
+            let rest = text[range.upperBound...]
+            return "Helpful: " + rest
+        }
+        return text
+    }
+
+    // MARK: Photos
+
+    private var photosSection: some View {
+        let others = item.supplementaryImages
+        let selectedCount = model.selectedPhotoIDs.count
+
+        return VStack(alignment: .leading, spacing: Theme.spacing.small) {
+            HStack {
+                Text("Additional Photos")
+                    .ltcSectionHeaderStyle()
+                Spacer()
+                Text("\(selectedCount) of \(model.limits.maxSupplementaryPhotos) selected")
+                    .font(Theme.secondaryFont)
+                    .foregroundStyle(Theme.textSecondary)
+            }
+
+            Text("Optional. Choose photos of maker's marks, labels, stamps, or other details.")
+                .font(Theme.secondaryFont)
+                .foregroundStyle(Theme.textSecondary)
+
+            VStack(alignment: .leading, spacing: Theme.spacing.small) {
+                if others.isEmpty {
+                    Text("No other photos of this item yet.")
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                } else {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 10) {
+                            ForEach(others, id: \.imageId) { image in
+                                photoChoice(image)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+
+                PhotosPicker(
+                    selection: $photoPickerItems,
+                    maxSelectionCount: model.limits.maxSupplementaryPhotos,
+                    matching: .images,
+                    photoLibrary: .shared()
+                ) {
+                    HStack {
+                        if isImportingPhotos { ProgressView() } else { Image(systemName: "plus") }
+                        Text("Add Photo")
+                            .font(Theme.secondaryFont.weight(.semibold))
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .disabled(isImportingPhotos)
+
+                if let noticeMessage {
+                    Text(noticeMessage)
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.destructive)
+                }
+            }
+            .ltcCardBackground()
+        }
+    }
+
+    private func photoChoice(_ image: ItemImage) -> some View {
+        let selected = model.isPhotoSelected(image.imageId)
+        return Button {
+            noticeMessage = model.togglePhoto(image.imageId)
+                ? nil
+                : "You can include up to \(model.limits.maxSupplementaryPhotos) additional photos."
+        } label: {
+            thumbnail(for: image, size: 76)
+                .opacity(selected ? 1 : 0.55)
+                .overlay(alignment: .topTrailing) {
+                    Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                        .font(.title3)
+                        .foregroundStyle(selected ? Theme.accent : Color.white)
+                        .background(Circle().fill(selected ? Color.white : Color.black.opacity(0.25)))
+                        .padding(4)
+                }
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(selected ? Theme.accent : Color.clear, lineWidth: 2)
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(selected ? "Additional photo, selected" : "Additional photo, not selected")
+        .accessibilityHint("Double tap to \(selected ? "remove it from" : "include it in") the analysis.")
+    }
+
+    // MARK: Document
+
+    private var documentChoices: [Document] {
+        item.documents
+            .filter { !$0.isDeleted }
+            .filter { ["PDF", "IMAGE"].contains($0.documentType.uppercased()) }
+            .sorted { $0.createdAt < $1.createdAt }
+    }
+
+    private var documentSection: some View {
+        VStack(alignment: .leading, spacing: Theme.spacing.small) {
+            Text("Document")
+                .ltcSectionHeaderStyle()
+
+            Text("Optional. Choose one PDF or image, such as an appraisal, certificate, or receipt.")
+                .font(Theme.secondaryFont)
+                .foregroundStyle(Theme.textSecondary)
+
+            VStack(alignment: .leading, spacing: 10) {
+                if documentChoices.isEmpty {
+                    Text("No documents attached to this item yet.")
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.textSecondary)
+                }
+
+                ForEach(documentChoices, id: \.documentId) { document in
+                    documentRow(document)
+                }
+
+                Button {
+                    isDocumentImporterPresented = true
+                } label: {
+                    HStack {
+                        Image(systemName: "plus")
+                        Text("Add PDF")
+                            .font(Theme.secondaryFont.weight(.semibold))
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+            }
+            .ltcCardBackground()
+        }
+    }
+
+    private func documentRow(_ document: Document) -> some View {
+        let selected = model.selectedDocumentID == document.documentId
+        let planned = model.plan?.documents.first { $0.documentId == document.documentId }
+
+        return HStack(spacing: 10) {
+            Button {
+                model.toggleDocument(document.documentId)
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                        .font(.title3)
+                        .foregroundStyle(selected ? Theme.accent : Theme.textSecondary)
+                    Image(systemName: document.documentType.uppercased() == "PDF" ? "doc.richtext" : "photo")
+                        .foregroundStyle(Theme.textSecondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(displayName(for: document))
+                            .font(Theme.bodyFont)
+                            .foregroundStyle(Theme.text)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        if let planned {
+                            Text(planned.totalPages == 1 ? "1 page" : "\(planned.totalPages) pages")
+                                .font(Theme.secondaryFont)
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(displayName(for: document)), \(selected ? "selected" : "not selected")")
+
+            if selected {
+                Button("Preview") { previewDocument = document }
+                    .font(Theme.secondaryFont.weight(.semibold))
+                    .buttonStyle(.bordered)
+            }
+        }
+    }
+
+    private func displayName(for document: Document) -> String {
+        if let name = document.originalFilename, !name.isEmpty { return name }
+        return (document.filePath as NSString).lastPathComponent
+    }
+
+    // MARK: Summary of what will be sent
+
+    private var summarySection: some View {
+        VStack(alignment: .leading, spacing: Theme.spacing.small) {
+            Text("What Will Be Sent")
+                .ltcSectionHeaderStyle()
+
+            VStack(alignment: .leading, spacing: 8) {
+                if let error = model.planError {
+                    Label(error.localizedDescription, systemImage: "exclamationmark.triangle")
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.destructive)
+                } else if let plan = model.plan {
+                    ForEach(summaryLines(plan), id: \.self) { line in
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text("•")
+                            Text(line).fixedSize(horizontal: false, vertical: true)
+                        }
+                        .font(Theme.secondaryFont)
+                        .foregroundStyle(Theme.text)
+                    }
+
+                    if let truncated = plan.truncatedDocuments.first {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Label("“\(truncated.displayName)” has \(truncated.totalPages) pages. Only the first \(truncated.pagesToSend) will be analyzed.",
+                                  systemImage: "doc.on.doc")
+                                .font(Theme.secondaryFont.weight(.semibold))
+                                .foregroundStyle(Theme.text)
+                            Toggle("Analyze the first \(truncated.pagesToSend) pages", isOn: $model.acknowledgedTruncation)
+                                .font(Theme.secondaryFont)
+                                .tint(Theme.accent)
+                        }
+                        .padding(10)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(Theme.accent.opacity(0.10)))
+                    }
+
+                    if !plan.documents.isEmpty {
+                        Text("Everything visible on the document's pages, including names, addresses, and report or certificate numbers, is sent to Google Gemini for this analysis. LTC's server does not keep it.")
+                            .font(Theme.secondaryFont)
+                            .foregroundStyle(Theme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    if plan.isTextOnly && !model.hasTextToAnalyze {
+                        Text("Add a name, description, notes, photo, or document before analyzing.")
+                            .font(Theme.secondaryFont)
+                            .foregroundStyle(Theme.destructive)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .ltcCardBackground()
+        }
+    }
+
+    private func summaryLines(_ plan: AIEvidencePlan) -> [String] {
+        var lines: [String] = []
+        if plan.includesPrimaryPhoto { lines.append("The main photo") }
+        let photos = plan.supplementaryPhotoCount
+        if photos > 0 { lines.append(photos == 1 ? "1 additional photo" : "\(photos) additional photos") }
+        for doc in plan.documents {
+            let pages = doc.pagesToSend == 1 ? "1 page" : "\(doc.pagesToSend) pages"
+            lines.append("“\(doc.displayName)” (\(pages), as images)")
+        }
+        if plan.isTextOnly { lines.append("No photos: the analysis uses text only") }
+        lines.append("The item's name, category, quantity, and description, and your notes")
+        return lines
+    }
+
+    // MARK: Analyze
+
+    private var analyzeBar: some View {
         Button {
-            Task { await consentGate.perform { await runAnalysis() } }
+            startAnalysis()
         } label: {
             HStack {
-                if isAnalyzing { ProgressView() }
                 Image(systemName: "sparkles")
-                Text(isAnalyzing ? "Analyzing…" : (hasPhoto ? "Run Analysis" : "Run Text-Only Analysis"))
+                Text("Analyze with AI")
                     .font(Theme.bodyFont.weight(.semibold))
             }
             .frame(maxWidth: .infinity)
             .padding()
-            .background(Theme.accent)
-            .foregroundColor(.white)
-            .cornerRadius(12)
+            .background(RoundedRectangle(cornerRadius: 12).fill(model.canAnalyze ? Theme.accent : Theme.textSecondary.opacity(0.35)))
+            .foregroundStyle(.white)
         }
-        .padding(.top, Theme.spacing.medium)
-        .disabled(isAnalyzing || (!hasPhoto && !hasEnoughTextForTextOnly))
+        .buttonStyle(.plain)
+        .disabled(!model.canAnalyze)
+        .padding(.horizontal, Theme.spacing.large)
+        .padding(.vertical, Theme.spacing.small)
+        .background(.thinMaterial)
     }
 
-    @ViewBuilder
-    private func analysisCard(_ result: ItemAnalysis) -> some View {
-        VStack(alignment: .leading, spacing: Theme.spacing.medium) {
-
-            // 1. Valuation Summary (if available)
-            if let valueHints = result.valueHints {
-                valuationSummarySection(valueHints)
-                Divider()
+    private var analyzingOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.15).ignoresSafeArea()
+            VStack(spacing: 14) {
+                ProgressView()
+                    .controlSize(.large)
+                Text("Analyzing with AI…")
+                    .font(Theme.bodyFont.weight(.semibold))
+                    .foregroundStyle(Theme.text)
+                Text(model.plan?.hasSupplementaryEvidence == true
+                     ? "With additional photos or a document this can take up to a minute."
+                     : "This usually takes a few seconds.")
+                    .font(Theme.secondaryFont)
+                    .foregroundStyle(Theme.textSecondary)
+                    .multilineTextAlignment(.center)
+                Button("Cancel") { model.cancelAnalysis() }
+                    .buttonStyle(.bordered)
             }
-
-            // 2. AI Suggestions (title / summary / category / tags)
-            suggestionsSection(result)
-
-            // 3. Valuation details, missing details, AI notes
-            if let valueHints = result.valueHints {
-                Divider()
-                valuationDetailsSection(valueHints)
-            }
-
-            // 4. Item details (brand, maker, materials, etc.)
-            Divider()
-            itemDetailsSection(result)
-
-            // 5. Extracted text (if present)
-            if let text = result.extractedText,
-               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Divider()
-                extractedTextSection(text)
-            }
+            .padding(24)
+            .background(RoundedRectangle(cornerRadius: 16).fill(Color(.systemBackground)))
+            .padding(40)
         }
-        .ltcCardBackground()
-        .padding(.top, Theme.spacing.large)
     }
 
-    // MARK: - Analysis Sections
+    private func startAnalysis() {
+        // Persist extra details into ItemValuation.userNotes before running AI.
+        saveExtraDetailsToValuation()
+        model.refreshPlan()
+        guard model.canAnalyze else { return }
+        let requiresDisclosure = model.requiresEvidenceDisclosure
+        Task {
+            await consentGate.perform(requiresEvidenceDisclosure: requiresDisclosure) {
+                model.startAnalysis()
+            }
+        }
+    }
 
-    private func valuationSummarySection(_ value: ValueHints) -> some View {
-        VStack(alignment: .leading, spacing: Theme.spacing.small) {
-            Text("Valuation Summary")
-                .ltcSectionHeaderStyle()
+    private func applyAndClose() {
+        guard model.apply() else { return }
+        try? modelContext.save()
+        dismiss()
+    }
 
-            if let low = value.valueLow, let high = value.valueHigh {
-                Text("\(formattedCurrency(low, code: value.currencyCode)) – \(formattedCurrency(high, code: value.currencyCode))")
-                    .font(Theme.bodyFont.weight(.semibold))
-                    .foregroundStyle(Theme.text)
-            } else if let est = value.estimatedValue {
-                Text(formattedCurrency(est, code: value.currencyCode))
-                    .font(Theme.bodyFont.weight(.semibold))
-                    .foregroundStyle(Theme.text)
+    // MARK: - Imports (become normal item attachments)
+
+    private func importPickedPhotos() {
+        guard !photoPickerItems.isEmpty else { return }
+        let picked = photoPickerItems
+        let before = Set(item.images.map(\.imageId))
+        isImportingPhotos = true
+        Task { @MainActor in
+            let ok = await ItemPhotoImporter.importPhotos(picked, into: item, context: modelContext)
+            photoPickerItems = []
+            isImportingPhotos = false
+            let added = item.images
+                .filter { !before.contains($0.imageId) }
+                .sorted(by: ItemImage.isOrderedBefore)
+            let slots = model.limits.maxSupplementaryPhotos - model.selectedPhotoIDs.count
+            model.didImportPhotos(added)
+            if !ok {
+                noticeMessage = ItemPhotoImporter.failureMessage
+            } else if added.count > slots {
+                noticeMessage = "Added \(added.count) photos to the item. Only \(model.limits.maxSupplementaryPhotos) can be included in one analysis."
             } else {
-                Text("No value estimate available")
-                    .font(Theme.secondaryFont)
-                    .foregroundStyle(Theme.textSecondary)
-            }
-
-            if let confidenceLabel = confidenceDescription(for: value.confidenceScore) {
-                Text("Confidence: \(confidenceLabel)")
-                    .font(Theme.secondaryFont)
-                    .foregroundStyle(Theme.textSecondary)
+                noticeMessage = nil
             }
         }
     }
 
-    private func suggestionsSection(_ result: ItemAnalysis) -> some View {
-        VStack(alignment: .leading, spacing: Theme.spacing.small) {
-            Text("AI Suggestions")
-                .ltcSectionHeaderStyle()
-
-            Text(result.title)
-                .font(Theme.bodyFont.weight(.semibold))
-                .foregroundStyle(Theme.text)
-
-            Text(result.summary)
-                .font(Theme.bodyFont)
-                .foregroundStyle(Theme.textSecondary)
-
-            Text("Category: \(result.category)")
-                .font(Theme.secondaryFont)
-                .foregroundStyle(Theme.text)
-
-            let tagsText = (result.tags ?? []).joined(separator: ", ")
-            if !tagsText.isEmpty {
-                Text("Tags: \(tagsText)")
-                    .font(Theme.secondaryFont)
-                    .foregroundStyle(Theme.textSecondary)
+    private func importDocument(_ result: Result<URL, Error>) {
+        switch result {
+        case .success(let url):
+            do {
+                let document = try ItemDocumentImporter.importDocument(from: url, into: item, context: modelContext)
+                model.didImportDocument(document)
+            } catch {
+                noticeMessage = error.localizedDescription
             }
-
-            if let c = result.confidence {
-                Text(String(format: "Overall analysis confidence: %.2f", c))
-                    .font(Theme.secondaryFont)
-                    .foregroundStyle(Theme.textSecondary)
-            }
+        case .failure(let error):
+            noticeMessage = error.localizedDescription
         }
     }
 
-    private func valuationDetailsSection(_ value: ValueHints) -> some View {
-        VStack(alignment: .leading, spacing: Theme.spacing.medium) {
-            if let missing = value.missingDetails, !missing.isEmpty {
-                VStack(alignment: .leading, spacing: Theme.spacing.small) {
-                    Text("Improve This Estimate")
-                        .ltcSectionHeaderStyle()
-
-                    Text("For a more precise value, the AI suggests providing:")
-                        .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.textSecondary)
-
-                    ForEach(missing, id: \.self) { detail in
-                        Text("• \(detail)")
-                            .font(Theme.secondaryFont)
-                            .foregroundStyle(Theme.textSecondary)
-                    }
-                }
-            }
-
-            VStack(alignment: .leading, spacing: Theme.spacing.small) {
-                Text("Why This Estimate")
-                    .ltcSectionHeaderStyle()
-
-                if let notes = value.aiNotes,
-                   !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Text(notes)
-                        .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.textSecondary)
-                } else {
-                    Text("The AI based this estimate on similar items, materials, and visible condition (or your text details if no photo).")
-                        .font(Theme.secondaryFont)
-                        .foregroundStyle(Theme.textSecondary)
-                }
-            }
-        }
-    }
-
-    private func itemDetailsSection(_ result: ItemAnalysis) -> some View {
-        VStack(alignment: .leading, spacing: Theme.spacing.small) {
-            Text("Item Details")
-                .ltcSectionHeaderStyle()
-
-            detailRow(label: "Brand", value: result.brand)
-            detailRow(label: "Model", value: result.modelNumber)
-            detailRow(label: "Maker", value: result.maker)
-
-            let materials = (result.materials ?? []).joined(separator: ", ")
-            if !materials.isEmpty {
-                detailRow(label: "Materials", value: materials)
-            }
-
-            detailRow(label: "Style", value: result.style)
-            detailRow(label: "Origin", value: result.origin)
-            detailRow(label: "Condition", value: result.condition)
-            detailRow(label: "Dimensions", value: result.dimensions)
-            detailRow(label: "Era / Year", value: result.eraOrYear)
-
-            let features = (result.features ?? []).joined(separator: ", ")
-            if !features.isEmpty {
-                detailRow(label: "Features", value: features)
-            }
-        }
-    }
-
-    private func extractedTextSection(_ text: String) -> some View {
-        VStack(alignment: .leading, spacing: Theme.spacing.small) {
-            Text("Extracted Text")
-                .font(Theme.bodyFont.weight(.semibold))
-            Text(text)
-                .font(Theme.secondaryFont)
-                .foregroundStyle(Theme.textSecondary)
-        }
-    }
+    // MARK: - Helpers
 
     @ViewBuilder
-    private func detailRow(label: String, value: String?) -> some View {
-        if let value, !value.isEmpty {
-            HStack(alignment: .top, spacing: Theme.spacing.small) {
-                Text("\(label):")
-                    .font(Theme.secondaryFont.weight(.semibold))
-                Text(value)
-                    .font(Theme.secondaryFont)
+    private func thumbnail(for image: ItemImage?, size: CGFloat) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+        Group {
+            if let image, let uiImage = MediaStorage.loadImage(from: image.filePath) {
+                Image(uiImage: uiImage).resizable().scaledToFill()
+            } else {
+                ZStack {
+                    Theme.textSecondary.opacity(0.12)
+                    Image(systemName: image == nil ? "photo" : "photo.slash")
+                        .foregroundStyle(Theme.textSecondary)
+                }
             }
-            .foregroundStyle(Theme.text)
         }
+        .frame(width: size, height: size)
+        .clipShape(shape)
+    }
+
+    private func messageCard(_ text: String, systemImage: String, tint: Color) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: systemImage)
+            Text(text).fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            Button {
+                model.clearError()
+            } label: {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss message")
+        }
+        .font(Theme.secondaryFont)
+        .foregroundStyle(tint)
+        .ltcCardBackground()
     }
 
     // MARK: - Extra details helper text (category-aware)
@@ -549,43 +719,12 @@ struct ItemAIAnalysisSheet: View {
         }
     }
 
-    // MARK: - Logic
+    // MARK: - Notes persistence
 
-    private func loadPreviewImageIfNeeded() {
-        guard let path = firstImagePath else { return }
-        previewImage = MediaStorage.loadImage(from: path)
-    }
-
-    /// Load any previously-saved extra details from the current valuation.
     private func loadExtraDetailsIfNeeded() {
         if let notes = item.valuation?.userNotes {
             extraDetailsText = notes
         }
-    }
-
-    private func runAnalysis() async {
-        // Persist extra details into ItemValuation.userNotes before running AI.
-        saveExtraDetailsToValuation()
-
-        isAnalyzing = true
-        errorMessage = nil
-        analysisResult = nil
-
-        do {
-            // LTC 1.3 pipeline: the primary photo (downscaled), source-labeled
-            // context and quantity. Additional photos and documents are added
-            // by the Stage 4 selection UI; until then the selection is empty.
-            let selection = AIEvidenceSelection()
-            let prepared = try await AIEvidencePreparer().prepare(for: item, selection: selection)
-            let request = ItemAnalysisRequestBuilder.build(for: item, prepared: prepared)
-            analysisResult = try await AIService.shared.analyzeItem(request)
-        } catch {
-            // Keep full detail for debugging, but avoid surfacing raw 502/body in the UI.
-            print("ItemAIAnalysisSheet runAnalysis error:", error)
-            errorMessage = Self.userMessage(for: error)
-        }
-
-        isAnalyzing = false
     }
 
     /// Nothing is applied on failure; the message says so where relevant.
@@ -640,27 +779,6 @@ struct ItemAIAnalysisSheet: View {
 
         valuation.userNotes = trimmed
         valuation.updatedAt = .now
-    }
-
-    private func formattedCurrency(_ value: Double, code: String) -> String {
-        let intValue = Int(value.rounded())
-        return "\(intValue) \(code)"
-    }
-
-    private func confidenceDescription(for score: Double?) -> String? {
-        guard let score else { return nil }
-        let numeric = String(format: "%.2f", score)
-
-        switch score {
-        case 0.8...1.0:
-            return "High (\(numeric))"
-        case 0.5..<0.8:
-            return "Medium (\(numeric))"
-        case 0..<0.5:
-            return "Low (\(numeric))"
-        default:
-            return numeric
-        }
     }
 }
 

@@ -19,7 +19,7 @@ import Testing
 import UIKit
 @testable import LegacyTreasureChest
 
-private let localGatewayTestsEnabled = ProcessInfo.processInfo.environment["LTC_LOCAL_GATEWAY_TESTS"] == "1"
+private nonisolated let localGatewayTestsEnabled = ProcessInfo.processInfo.environment["LTC_LOCAL_GATEWAY_TESTS"] == "1"
 
 @MainActor
 @Suite(.enabled(if: localGatewayTestsEnabled, "Set LTC_LOCAL_GATEWAY_TESTS=1 with a local stubbed gateway"), .serialized)

@@ -624,7 +624,7 @@ private struct FieldGuidanceDisclosure<Content: View>: View {
 
 // MARK: - Document Preview Screen
 
-private struct DocumentPreviewScreen: View {
+struct DocumentPreviewScreen: View {
     let document: Document
     let url: URL
     let onDone: () -> Void

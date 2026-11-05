@@ -291,6 +291,120 @@ enum ItemAnalysisApplier {
         )
     }
 
+    // MARK: - Selective apply (Stage 4 review)
+
+    /// What to do with the description paragraph.
+    enum ParagraphChoice: Equatable, Sendable {
+        /// Leave the existing prose exactly as it is.
+        case keep
+        /// Use the AI paragraph. By origin: replaces an empty description or
+        /// the earlier AI paragraph (owner additions kept); goes above an
+        /// owner-written description (kept below); replaces a mixed one.
+        case useAI
+    }
+
+    /// Builds the description for the owner's review choices. Nothing is
+    /// changed unless chosen: with `.keep` and no accepted attributes the
+    /// original text is returned unchanged. Owner text is never merged away
+    /// (unlike `composeDescription`, single "Key: value" lines that repeat a
+    /// generated value are kept).
+    static func composeDescription(
+        current: String,
+        llmGeneratedDescription: String?,
+        analysis: ItemAnalysis,
+        paragraph: ParagraphChoice,
+        acceptedAttributeLabels: Set<String>
+    ) -> ComposedDescription {
+        let saved = SavedDescription.classify(
+            description: current,
+            llmGeneratedDescription: llmGeneratedDescription
+        )
+
+        let proposed = GeneratedDetailsLine.attributes(from: analysis)
+        var attributes = saved.generatedAttributes
+        for (label, value) in proposed where acceptedAttributeLabels.contains(label) {
+            attributes[label] = value
+        }
+        let attributesChanged = attributes != saved.generatedAttributes
+
+        let newParagraph = analysis.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        let useAI = paragraph == .useAI && !newParagraph.isEmpty
+
+        if !useAI && !attributesChanged {
+            return ComposedDescription(description: current, appliedAIParagraph: nil)
+        }
+
+        let prose: String
+        if useAI {
+            switch saved.origin {
+            case .empty, .aiGenerated:
+                prose = join([newParagraph, saved.otherText])
+            case .ownerWritten:
+                prose = join([newParagraph, saved.prose])
+            case .mixed:
+                prose = newParagraph
+            }
+        } else {
+            prose = saved.prose
+        }
+
+        return ComposedDescription(
+            description: join([prose, GeneratedDetailsLine.build(attributes)]),
+            appliedAIParagraph: useAI ? newParagraph : nil
+        )
+    }
+
+    /// The owner's choices from the review screen.
+    struct Choices: Equatable, Sendable {
+        var title = false
+        var category = false
+        var paragraph: ParagraphChoice = .keep
+        var attributeLabels: Set<String> = []
+        var valuation = false
+
+        var isEmpty: Bool {
+            !title && !category && paragraph == .keep && attributeLabels.isEmpty && !valuation
+        }
+    }
+
+    /// Applies only what the owner chose. Anything not chosen is left exactly
+    /// as it was: a declined valuation keeps the stored value, range,
+    /// confidence and notes; a kept description is not rewritten. Owner notes
+    /// are never touched.
+    static func apply(_ analysis: ItemAnalysis, to item: LTCItem, choices: Choices) {
+        let title = analysis.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if choices.title, !title.isEmpty {
+            item.name = analysis.title
+            item.llmGeneratedTitle = analysis.title
+        }
+
+        if choices.category {
+            item.category = LTCItem.normalizeCategory(analysis.category)
+        }
+
+        let composed = composeDescription(
+            current: item.itemDescription,
+            llmGeneratedDescription: item.llmGeneratedDescription,
+            analysis: analysis,
+            paragraph: choices.paragraph,
+            acceptedAttributeLabels: choices.attributeLabels
+        )
+        if composed.description != item.itemDescription {
+            item.itemDescription = composed.description
+        }
+        if let paragraph = composed.appliedAIParagraph {
+            item.llmGeneratedDescription = paragraph
+        }
+
+        if choices.valuation, let valueHints = analysis.valueHints {
+            applyValuation(valueHints, to: item)
+        }
+
+        if !choices.isEmpty {
+            item.updatedAt = .now
+        }
+    }
+
     /// Improve with AI "Apply Suggestions": writes the analysis into the item.
     /// Title, category, value and valuation behave as before; the description
     /// follows the preservation rules above. Owner notes are not touched.
@@ -309,39 +423,45 @@ enum ItemAnalysisApplier {
         }
 
         if let valueHints = analysis.valueHints {
-            let mid: Double? = {
-                if let est = valueHints.estimatedValue { return est }
-                if let low = valueHints.valueLow, let high = valueHints.valueHigh { return (low + high) / 2.0 }
-                if let low = valueHints.valueLow { return low }
-                if let high = valueHints.valueHigh { return high }
-                return nil
-            }()
-
-            // A missing estimate leaves the current value untouched; an explicit
-            // AI estimate of $0 is stored (see LTCItem.estimatedUnitValue).
-            if let mid {
-                item.value = max(mid, 0)
-            }
-
-            if let high = valueHints.valueHigh {
-                item.suggestedPriceNew = high
-            } else if let est = valueHints.estimatedValue {
-                item.suggestedPriceNew = est
-            }
-
-            if let low = valueHints.valueLow {
-                item.suggestedPriceUsed = low
-            } else if let est = valueHints.estimatedValue {
-                item.suggestedPriceUsed = est
-            }
-
-            upsertValuation(on: item, from: valueHints)
+            applyValuation(valueHints, to: item)
         }
 
         item.llmGeneratedTitle = analysis.title
     }
 
     // MARK: - Helpers
+
+    /// Writes the AI estimate: per-unit value (midpoint), suggested prices and
+    /// the stored valuation (range, confidence, notes, missing details).
+    private static func applyValuation(_ valueHints: ValueHints, to item: LTCItem) {
+        let mid: Double? = {
+            if let est = valueHints.estimatedValue { return est }
+            if let low = valueHints.valueLow, let high = valueHints.valueHigh { return (low + high) / 2.0 }
+            if let low = valueHints.valueLow { return low }
+            if let high = valueHints.valueHigh { return high }
+            return nil
+        }()
+
+        // A missing estimate leaves the current value untouched; an explicit
+        // AI estimate of $0 is stored (see LTCItem.estimatedUnitValue).
+        if let mid {
+            item.value = max(mid, 0)
+        }
+
+        if let high = valueHints.valueHigh {
+            item.suggestedPriceNew = high
+        } else if let est = valueHints.estimatedValue {
+            item.suggestedPriceNew = est
+        }
+
+        if let low = valueHints.valueLow {
+            item.suggestedPriceUsed = low
+        } else if let est = valueHints.estimatedValue {
+            item.suggestedPriceUsed = est
+        }
+
+        upsertValuation(on: item, from: valueHints)
+    }
 
     private static func upsertValuation(on item: LTCItem, from hints: ValueHints) {
         let valuation: ItemValuation
