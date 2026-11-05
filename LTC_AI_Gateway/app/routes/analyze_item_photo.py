@@ -4,6 +4,7 @@ import base64
 import json
 import logging
 import re
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -14,6 +15,8 @@ from pydantic import ValidationError
 
 from app.core import config as ltc_config
 from app.core.rate_limiter import rate_limiter
+from app.core.safe_logging import log_event
+from app.services.gemini_client import GEMINI_LOG_CONTEXT as gemini_log_context
 from app.models import AnalyzeItemPhotoRequest, CANONICAL_ITEM_CATEGORIES, ItemAIHints, ItemAnalysis, ValueHints
 
 from app.models_liquidation import (
@@ -2839,7 +2842,49 @@ def _trim_summary_to_sentences(text: str, limit: int) -> Optional[str]:
     return text[:ends[-1]].rstrip()
 
 @router.post("/generate-liquidation-brief", response_model=LiquidationBriefDTO)
-async def generate_liquidation_brief(payload: LiquidationBriefRequest) -> LiquidationBriefDTO:
+async def generate_liquidation_brief(payload: LiquidationBriefRequest, request: Request) -> LiquidationBriefDTO:
+    """Brief generation with privacy-safe timing logs.
+
+    Sets the Gemini log context so each Gemini attempt logs one 'gemini.attempt' line (status,
+    finish reason, token counts, latency, JSON validity), and logs one 'liquidation_brief.result'
+    line per request. No prompt, model text or item content is logged. Behavior is unchanged.
+    """
+    ctx: Dict[str, Any] = {
+        "requestId": getattr(request.state, "request_id", None),
+        "operation": "liquidation_brief",
+        "scope": payload.scope,
+        "phase": "initial",
+    }
+    token = gemini_log_context.set(ctx)
+    started = time.perf_counter()
+    outcome = "error"
+    status: Optional[int] = None
+    try:
+        brief = await _generate_liquidation_brief(payload, ctx)
+        outcome, status = "ok", 200
+        return brief
+    except HTTPException as exc:
+        status = exc.status_code
+        raise
+    finally:
+        gemini_log_context.reset(token)
+        log_event(
+            logging.getLogger(__name__),
+            level=logging.INFO,
+            event="liquidation_brief.result",
+            request_id=ctx["requestId"],
+            fields={
+                "scope": payload.scope,
+                "hasPhoto": bool(payload.photoJpegBase64),
+                "outcome": outcome,
+                "httpStatus": status,
+                "repairAttempted": ctx.get("phase") == "repair",
+                "totalMs": int((time.perf_counter() - started) * 1000),
+            },
+        )
+
+
+async def _generate_liquidation_brief(payload: LiquidationBriefRequest, ctx: Dict[str, Any]) -> LiquidationBriefDTO:
     import logging
     logger = logging.getLogger(__name__)
 
@@ -2869,6 +2914,9 @@ async def generate_liquidation_brief(payload: LiquidationBriefRequest) -> Liquid
         brief = LiquidationBriefDTO.model_validate(obj)
     except ValidationError as ve:
         # One repair attempt with explicit error context
+        ctx["phase"] = "repair"
+        log_event(logger, level=logging.INFO, event="liquidation_brief.repair", request_id=ctx.get("requestId"),
+                  fields={"scope": payload.scope, "reason": "schema_validation", "errorCount": ve.error_count()})
         try:
             repair_prompt = _build_liquidation_brief_repair_prompt(
                 original_prompt=prompt,
