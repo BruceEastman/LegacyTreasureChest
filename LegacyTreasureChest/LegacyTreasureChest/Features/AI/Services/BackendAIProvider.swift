@@ -286,6 +286,9 @@ struct BackendAIProvider: AIProvider {
 
         for attempt in 1...maxAttempts {
             do {
+                // Already cancelled: send nothing (URLSession may otherwise
+                // start the request before it observes the cancellation).
+                try Task.checkCancellation()
                 let (data, response) = try await urlSession.data(for: request)
 
                 guard let httpResponse = response as? HTTPURLResponse else {

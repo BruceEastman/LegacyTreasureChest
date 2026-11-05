@@ -309,20 +309,59 @@ struct EvidenceTransportTests {
         #expect(Set(json(sent[0].body).keys) == ["imageJpegBase64", "hints"])
     }
 
+    @Test func primaryPhotoOnlyAnalysisNeedsOnlyVersion1Consent() async throws {
+        let p = provider(consentVersion: 1)                    // 1.2-era consent
+        StubURLProtocol.handler = { _, _ in (200, analysisResponseJSON(summary: summaryJSON(primary: true, photos: 0, pages: 0))) }
+        let request = ItemAnalysisRequest(hints: ItemAIHints(userWrittenTitle: "Lamp"), context: ctx,
+                                          primaryJPEG: jpeg, supplementary: [])
+        #expect(!request.carriesEvidence)
+        _ = try await p.analyzeItem(request)
+        #expect(StubURLProtocol.recorded.count == 1)
+        #expect(StubURLProtocol.recorded.first?.url.path == "/ai/analyze-item-photo")
+        #expect(StubURLProtocol.recorded.first?.timeout == 35)  // standard policy
+    }
+
+    /// Waits (bounded) until the stub has received `count` requests.
+    private func waitForRequests(_ count: Int, timeout: TimeInterval = 10) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while StubURLProtocol.recorded.count < count && Date() < deadline {
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+    }
+
+    private func expectCancelled(_ result: Result<ItemAnalysis, Error>) {
+        if case .failure(let error) = result, let ai = error as? AIError, case .cancelled = ai {
+            return
+        }
+        Issue.record("expected AIError.cancelled, got \(result)")
+    }
+
+    /// Cancelling while the request is in flight stops it and does not retry.
+    /// Deterministic: cancels only after the stub has received the request.
     @Test func cancellingStopsWithoutRetrying() async {
         let p = provider(consentVersion: 2)
-        StubURLProtocol.delay = 3
+        StubURLProtocol.delay = 30                       // never answers within the test
         StubURLProtocol.handler = { _, _ in (200, analysisResponseJSON(summary: summaryJSON(primary: true, photos: 1, pages: 2))) }
         let request = evidenceRequest()
         let task = Task { try await p.analyzeItem(request) }
-        try? await Task.sleep(nanoseconds: 200_000_000)
-        task.cancel()
-        let result = await task.result
-        if case .failure(let error) = result, let ai = error as? AIError, case .cancelled = ai {
-            // expected
-        } else {
-            Issue.record("expected AIError.cancelled, got \(result)")
-        }
+        await waitForRequests(1)
         #expect(StubURLProtocol.recorded.count == 1)
+        task.cancel()
+        expectCancelled(await task.result)
+        try? await Task.sleep(nanoseconds: 300_000_000)  // a retry would show up here
+        #expect(StubURLProtocol.recorded.count == 1)
+    }
+
+    /// Cancelling before the request starts must not send it at all.
+    @Test func cancellingBeforeTheRequestStartsSendsNothing() async {
+        let p = provider(consentVersion: 2)
+        StubURLProtocol.handler = { _, _ in (200, analysisResponseJSON(summary: summaryJSON(primary: true, photos: 1, pages: 2))) }
+        let request = evidenceRequest()
+        let task = Task { () async throws -> ItemAnalysis in
+            withUnsafeCurrentTask { $0?.cancel() }       // cancelled before the provider runs
+            return try await p.analyzeItem(request)
+        }
+        expectCancelled(await task.result)
+        #expect(StubURLProtocol.recorded.isEmpty)
     }
 }
