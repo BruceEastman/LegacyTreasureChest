@@ -15,7 +15,7 @@ from app.core.config import (
     DISABLE_ALL_AI,
     MAX_ANALYZE_REQUEST_BYTES,
 )
-from app.core.errors import make_error_envelope
+from app.core.errors import code_for_status, make_error_envelope
 from app.core.rate_limiter import rate_limiter
 from app.core.request_id import (
     DEVICE_ID_HEADER,
@@ -145,7 +145,30 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
             fields={"method": request.method, "path": path},
         )
 
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
+        except Exception as exc:  # noqa: BLE001
+            # Any unhandled error from any route: log its type only and answer like
+            # main.unhandled_exception_handler. Otherwise Starlette re-raises after the
+            # 500 response and the server logs a traceback whose message could quote
+            # item text, notes or model output.
+            log_event(
+                logger,
+                level=40,
+                event="request.unhandled",
+                request_id=request_id,
+                device_id=device_id,
+                fields={"method": request.method, "path": path, "errorType": type(exc).__name__},
+            )
+            response = JSONResponse(
+                status_code=500,
+                content=make_error_envelope(
+                    code=code_for_status(500),
+                    message="Internal server error.",
+                    request_id=request_id,
+                    status=500,
+                ),
+            )
 
         elapsed_ms = int((time.perf_counter() - start) * 1000)
 

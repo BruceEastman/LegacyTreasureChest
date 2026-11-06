@@ -2731,6 +2731,21 @@ def _log_item_analysis(event: str, *, request: Optional[Request], level: int = l
     )
 
 
+def _log_route_failure(event: str, *, request_id: Optional[str], stage: str, exc: BaseException,
+                       fields: Optional[Dict[str, Any]] = None) -> None:
+    """Metadata-only failure line for the audio and liquidation routes: the stage and the
+    exception TYPE only. Never the exception message or a traceback: Gemini errors carry
+    response excerpts (raw_text_preview, upstream bodies) and validation errors quote the
+    model output or request values."""
+    log_event(
+        logging.getLogger(__name__),
+        level=logging.ERROR,
+        event=event,
+        request_id=request_id,
+        fields={"stage": stage, "errorType": type(exc).__name__, **(fields or {})},
+    )
+
+
 def _item_error_response(request: Optional[Request], *, status: int, code: str, message: str,
                          details: Optional[Dict[str, Any]] = None) -> JSONResponse:
     request_id = getattr(getattr(request, "state", None), "request_id", None) if request else None
@@ -3048,9 +3063,8 @@ async def _analyze_item_text(payload: dict, request: Request):
 
 
 @router.post("/summarize-audio", response_model=SummarizeAudioResponse)
-async def summarize_audio(payload: SummarizeAudioRequest) -> SummarizeAudioResponse:
-    import logging
-    logger = logging.getLogger(__name__)
+async def summarize_audio(payload: SummarizeAudioRequest, request: Request) -> SummarizeAudioResponse:
+    request_id = getattr(request.state, "request_id", None)
 
     # Validate base64
     try:
@@ -3083,8 +3097,8 @@ async def summarize_audio(payload: SummarizeAudioRequest) -> SummarizeAudioRespo
             mime_type=mime,
         )
     except RuntimeError as exc:
-        logger.exception("Gemini call failed in /ai/summarize-audio")
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        _log_route_failure("audio_summary.failed", request_id=request_id, stage="gemini", exc=exc)
+        raise HTTPException(status_code=502, detail=_UPSTREAM_DETAIL) from None
 
     cleaned = " ".join((text or "").split())
     if not cleaned:
@@ -3179,8 +3193,9 @@ async def _generate_liquidation_brief(payload: LiquidationBriefRequest, ctx: Dic
             photo_base64=payload.photoJpegBase64,
         )
     except RuntimeError as exc:
-        logger.exception("Gemini call failed in /generate-liquidation-brief")
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        _log_route_failure("liquidation_brief.failed", request_id=ctx.get("requestId"), stage="gemini", exc=exc,
+                           fields={"scope": payload.scope})
+        raise HTTPException(status_code=502, detail=_UPSTREAM_DETAIL) from None
 
     # First pass normalize + validate
     try:
@@ -3204,17 +3219,13 @@ async def _generate_liquidation_brief(payload: LiquidationBriefRequest, ctx: Dic
             repaired_obj = _normalize_liquidation_brief_obj(raw_json=repaired, request=payload)
             brief = LiquidationBriefDTO.model_validate(repaired_obj)
         except Exception as exc:  # noqa: BLE001
-            logger.exception("Gemini repair attempt failed in /generate-liquidation-brief")
-            raise HTTPException(
-                status_code=502,
-                detail=f"Failed to decode LiquidationBriefDTO JSON from Gemini: {ve}",
-            ) from exc
+            _log_route_failure("liquidation_brief.failed", request_id=ctx.get("requestId"), stage="repair", exc=exc,
+                               fields={"scope": payload.scope, "validationErrors": ve.error_count()})
+            raise HTTPException(status_code=502, detail=_UPSTREAM_DETAIL) from None
     except Exception as exc:  # noqa: BLE001
-        logger.exception("Unexpected JSON validation failure in /generate-liquidation-brief")
-        raise HTTPException(
-            status_code=502,
-            detail=f"Failed to decode LiquidationBriefDTO JSON from Gemini: {exc}",
-        ) from exc
+        _log_route_failure("liquidation_brief.failed", request_id=ctx.get("requestId"), stage="validation", exc=exc,
+                           fields={"scope": payload.scope})
+        raise HTTPException(status_code=502, detail=_UPSTREAM_DETAIL) from None
 
     # Stamp required fields & IDs
     now = datetime.now(timezone.utc)
@@ -3237,7 +3248,7 @@ async def _generate_liquidation_brief(payload: LiquidationBriefRequest, ctx: Dic
     return brief
 
 @router.post("/generate-liquidation-plan", response_model=LiquidationPlanChecklistDTO)
-async def generate_liquidation_plan(payload: LiquidationPlanRequest) -> LiquidationPlanChecklistDTO:
+async def generate_liquidation_plan(payload: LiquidationPlanRequest, request: Request) -> LiquidationPlanChecklistDTO:
     """
     AI-native plan generation.
     Input: LiquidationPlanRequest (chosenPath + brief + optional title/category)
@@ -3248,10 +3259,12 @@ async def generate_liquidation_plan(payload: LiquidationPlanRequest) -> Liquidat
 
     prompt = _build_liquidation_plan_prompt(payload)
 
+    request_id = getattr(request.state, "request_id", None)
     try:
         raw_json = await call_gemini_for_liquidation_plan(prompt=prompt)  # type: ignore[misc]
     except RuntimeError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        _log_route_failure("liquidation_plan.failed", request_id=request_id, stage="gemini", exc=exc)
+        raise HTTPException(status_code=502, detail=_UPSTREAM_DETAIL) from None
 
     # First pass normalize + validate. No usable steps counts as invalid (repair once).
     try:
@@ -3269,15 +3282,11 @@ async def generate_liquidation_plan(payload: LiquidationPlanRequest) -> Liquidat
             repaired_obj = _normalize_liquidation_plan_obj(raw_json=repaired, request=payload)
             plan = LiquidationPlanChecklistDTO.model_validate(repaired_obj)
         except Exception as exc:  # noqa: BLE001
-            raise HTTPException(
-                status_code=502,
-                detail=f"Failed to decode LiquidationPlanChecklistDTO JSON from Gemini: {ve}",
-            ) from exc
+            _log_route_failure("liquidation_plan.failed", request_id=request_id, stage="repair", exc=exc)
+            raise HTTPException(status_code=502, detail=_UPSTREAM_DETAIL) from None
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            status_code=502,
-            detail=f"Failed to decode LiquidationPlanChecklistDTO JSON from Gemini: {exc}",
-        ) from exc
+        _log_route_failure("liquidation_plan.failed", request_id=request_id, stage="validation", exc=exc)
+        raise HTTPException(status_code=502, detail=_UPSTREAM_DETAIL) from None
 
     # Server-side stamps / normalization
     if getattr(plan, "createdAt", None) is None:

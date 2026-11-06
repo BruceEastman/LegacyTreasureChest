@@ -68,8 +68,8 @@ struct AICloudConsentView: View {
         VStack(alignment: .leading, spacing: Theme.spacing.small) {
             Text(
                 "Your estate inventory is stored on this device.\n\n" +
-                "When you choose an AI or Local Help feature, selected information is sent securely for online processing.\n\n" +
-                "AI and Local Help are optional. The rest of the app remains fully usable if you decline."
+                "When you choose an AI or Find Help feature, the information it needs is sent securely for online processing.\n\n" +
+                "AI and Find Help are optional. The rest of the app remains fully usable if you decline."
             )
             .font(Theme.bodyFont)
             .foregroundStyle(Theme.text)
@@ -100,10 +100,11 @@ struct AICloudConsentView: View {
                 .ltcSectionHeaderStyle()
 
             VStack(alignment: .leading, spacing: Theme.spacing.small) {
-                bullet("When you use Improve with AI, the item's main photo and its existing information (name, category, quantity, description, and your notes) are sent automatically")
-                bullet("Additional photos and one document, only when you select them for an analysis. Document pages are sent as images, so anything printed on them, such as names, addresses, or certificate numbers, is included")
+                bullet("Photos you choose to analyze, such as when you add items from photos")
+                bullet("When you use Improve with AI, the item's main photo and its existing information (name, category, quantity, description, and your notes) are included automatically")
+                bullet("Additional photos and one document, only when you select them for an Improve with AI analysis. A PDF's first 10 pages are sent as images, so anything printed on them, such as names, addresses, or certificate numbers, is included")
                 bullet("An audio recording, when you explicitly request an AI summary")
-                bullet("Valuation or liquidation details")
+                bullet("For liquidation guidance: item or set details such as name, description, quantity, value, and notes. Photos and documents are not sent")
                 bullet("For Find Help: the search words you review, the city or state you choose, and your precise location only when you tap Use Current Location")
             }
             .ltcCardBackground()
@@ -135,9 +136,9 @@ struct AICloudConsentView: View {
 
             VStack(alignment: .leading, spacing: Theme.spacing.small) {
                 bullet("Legacy Treasure Chest does not maintain a cloud-hosted copy of your estate inventory")
-                bullet("Our server does not keep submitted photos, documents, audio, or item details in permanent storage")
+                bullet("Our server processes what you send to answer your request and does not store it")
                 bullet("Your other photos and documents are not sent and stay on this device")
-                bullet("Limited request details (like a device ID, timing, and status) may be logged for diagnostics, rate limiting, and abuse protection")
+                bullet("Our server keeps limited request records, such as a random ID created by the app, timing, and status, for up to 30 days for diagnostics, rate limiting, and abuse protection. These records do not include your photos, documents, recordings, or item details")
                 bullet("Google processes information under its own privacy and data-handling terms. See our Privacy Policy for more information.")
             }
             .ltcCardBackground()
