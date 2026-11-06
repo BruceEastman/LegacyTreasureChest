@@ -74,6 +74,8 @@ struct ImproveWithAIReviewView: View {
             return "The suggestion may include a report, certificate, or account number, or personal details such as an address. Read the text before adding it."
         case .documentDerived:
             return "Suggestions may include information read from your document. Nothing is added unless you choose it below."
+        case .singleItemGroupPrice(let unit):
+            return "The AI's estimate is for “\(unit)”, but this item is cataloged as one item. Check that the value fits before you select it."
         case .largeValueChange(let current, let proposed):
             return "The new estimate is very different from the current value (\(CurrencyFormat.dollars(current)) → \(CurrencyFormat.dollars(proposed)) each)."
         }

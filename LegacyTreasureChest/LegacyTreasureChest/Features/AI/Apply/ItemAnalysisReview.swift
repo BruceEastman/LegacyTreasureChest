@@ -124,6 +124,9 @@ struct ItemAnalysisReview: Equatable {
         case documentDerived
         /// The proposed value differs from the current value by 3× or more.
         case largeValueChange(current: Double, proposed: Double)
+        /// Quantity is 1 and nothing in the item says it is a set, but the AI
+        /// priced a group ("set of six chairs"). Shown, and not preselected.
+        case singleItemGroupPrice(unit: String)
 
         var id: String {
             switch self {
@@ -133,6 +136,7 @@ struct ItemAnalysisReview: Equatable {
             case .possibleIdentifier: return "identifier"
             case .documentDerived: return "document"
             case .largeValueChange: return "value"
+            case .singleItemGroupPrice: return "single-group"
             }
         }
     }
@@ -164,13 +168,14 @@ struct ItemAnalysisReview: Equatable {
             quantity: max(item.quantity, 1),
             currentUnitValue: item.estimatedUnitValue,
             analysis: analysis,
-            includedDocument: includedDocument
+            includedDocument: includedDocument,
+            ownerNotes: item.valuation?.userNotes
         )
     }
 
     init(currentTitle: String, currentCategory: String, currentDescription: String,
          llmGeneratedDescription: String?, quantity: Int, currentUnitValue: Double?,
-         analysis: ItemAnalysis, includedDocument: Bool) {
+         analysis: ItemAnalysis, includedDocument: Bool, ownerNotes: String? = nil) {
         let proposedTitle = analysis.title.trimmingCharacters(in: .whitespacesAndNewlines)
         title = TextChange(current: currentTitle, proposed: proposedTitle)
         category = TextChange(current: currentCategory, proposed: LTCItem.normalizeCategory(analysis.category))
@@ -228,6 +233,12 @@ struct ItemAnalysisReview: Equatable {
             case .perUnit: break
             }
         }
+        // Name and owner notes only: narrative descriptions ("passed down through four
+        // generations") are too loose to say whether the entry is a set.
+        let itemText = [currentTitle, ownerNotes ?? ""].joined(separator: " ")
+        let singleItemGroup = valuation.hasEstimate && quantity == 1 && Self.unitNamesGroup(unit)
+            && !Self.itemTextDescribesSet(itemText)
+        if singleItemGroup, let unit { warnings.append(.singleItemGroupPrice(unit: unit)) }
         for conflict in (analysis.conflicts ?? []) {
             let text = conflict.trimmingCharacters(in: .whitespacesAndNewlines)
             if !text.isEmpty { warnings.append(.conflict(text)) }
@@ -266,7 +277,8 @@ struct ItemAnalysisReview: Equatable {
             : []
         // Per-unit estimates are preselected; an allocated group estimate needs a
         // deliberate choice; an ambiguous one cannot be applied.
-        choices.valuation = valuation.canApply && basis == .perUnit
+        // A group price for what the item describes as one object needs a deliberate choice.
+        choices.valuation = valuation.canApply && basis == .perUnit && !singleItemGroup
         defaults = choices
     }
 
@@ -344,6 +356,29 @@ struct ItemAnalysisReview: Equatable {
             return .ambiguous(.unclearGroup)
         }
         return .perUnit
+    }
+
+    /// At quantity 1: the AI's unit names a group of several things ("set of six
+    /// chairs", "pair of lamps", "4 stools", "collection"). The approved rule still
+    /// treats it as the whole catalog entry; this only decides whether to flag it.
+    static func unitNamesGroup(_ unit: String?) -> Bool {
+        guard let unit, !unit.isEmpty else { return false }
+        let text = " " + unit.lowercased().replacingOccurrences(of: "-", with: " - ") + " "
+        if let n = groupCount(in: text) { return n >= 2 }
+        return ["set", "collection", "lot", "group", "pair", "suite"]
+            .contains { text.range(of: "\\b\($0)\\b", options: .regularExpression) != nil }
+    }
+
+    /// The owner's own text (the item name and owner notes) says this entry is several
+    /// things cataloged together: a set word, or a count of 2 or more before a plural noun.
+    static func itemTextDescribesSet(_ text: String) -> Bool {
+        let t = " " + text.lowercased().replacingOccurrences(of: "—", with: " ").replacingOccurrences(of: "-", with: " ") + " "
+        let setWords = ["set", "sets", "pair", "pairs", "service", "collection", "lot", "group", "suite", "settings",
+                        "pieces", "piece", "matching", "both", "dozen", "assortment", "assorted"]
+        if setWords.contains(where: { t.range(of: "\\b\($0)\\b", options: .regularExpression) != nil }) { return true }
+        let numbers = "two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|[2-9]|[1-9][0-9]+"
+        // A count followed by a plural noun ("6 chairs", "ten place settings"); not "Four-poster bed".
+        return t.range(of: "\\b(\(numbers))\\s+(?:[a-z]+\\s+)?[a-z]+s\\b", options: .regularExpression) != nil
     }
 
     /// The number of items a unit description names as priced together, e.g.

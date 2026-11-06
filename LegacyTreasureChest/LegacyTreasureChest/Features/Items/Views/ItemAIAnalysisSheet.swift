@@ -26,6 +26,7 @@ struct ItemAIAnalysisSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var model: ImproveWithAIModel
     @StateObject private var consentGate = AIConsentGate()
@@ -103,10 +104,11 @@ struct ItemAIAnalysisSheet: View {
                     }
                 )
             }
-            .confirmationDialog(
+            // An alert, not a confirmation dialog: on iOS 26 the dialog is a narrow
+            // popover anchored to Back, which hyphenates words at accessibility sizes.
+            .alert(
                 "Go back without applying?",
-                isPresented: $confirmDiscardReview,
-                titleVisibility: .visible
+                isPresented: $confirmDiscardReview
             ) {
                 Button("Discard Suggestions", role: .destructive) { model.discardReview() }
                 Button("Stay", role: .cancel) { }
@@ -170,6 +172,9 @@ struct ItemAIAnalysisSheet: View {
         VStack(alignment: .leading, spacing: Theme.spacing.small) {
             HStack(alignment: .center, spacing: 12) {
                 thumbnail(for: item.primaryImage, size: 56)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(item.primaryImage != nil ? "Main photo, included automatically" : "No main photo")
+                    .accessibilityAddTraits(.isImage)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.name.isEmpty ? "Untitled Item" : item.name)
@@ -279,8 +284,8 @@ struct ItemAIAnalysisSheet: View {
                 } else {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 10) {
-                            ForEach(others, id: \.imageId) { image in
-                                photoChoice(image)
+                            ForEach(Array(others.enumerated()), id: \.element.imageId) { index, image in
+                                photoChoice(image, position: index + 1, of: others.count)
                             }
                         }
                         .padding(.vertical, 4)
@@ -313,7 +318,7 @@ struct ItemAIAnalysisSheet: View {
         }
     }
 
-    private func photoChoice(_ image: ItemImage) -> some View {
+    private func photoChoice(_ image: ItemImage, position: Int, of count: Int) -> some View {
         let selected = model.isPhotoSelected(image.imageId)
         return Button {
             noticeMessage = model.togglePhoto(image.imageId)
@@ -335,7 +340,7 @@ struct ItemAIAnalysisSheet: View {
                 )
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(selected ? "Additional photo, selected" : "Additional photo, not selected")
+        .accessibilityLabel(Self.photoAccessibilityLabel(position: position, of: count, selected: selected))
         .accessibilityHint("Double tap to \(selected ? "remove it from" : "include it in") the analysis.")
     }
 
@@ -388,7 +393,12 @@ struct ItemAIAnalysisSheet: View {
         let selected = model.selectedDocumentID == document.documentId
         let planned = model.plan?.documents.first { $0.documentId == document.documentId }
 
-        return HStack(spacing: 10) {
+        // At accessibility sizes the Preview button goes below the name, so the
+        // filename keeps the full row width instead of a one-letter column.
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+            : AnyLayout(HStackLayout(spacing: 10))
+        return layout {
             Button {
                 model.toggleDocument(document.documentId)
             } label: {
@@ -402,7 +412,8 @@ struct ItemAIAnalysisSheet: View {
                         Text(displayName(for: document))
                             .font(Theme.bodyFont)
                             .foregroundStyle(Theme.text)
-                            .lineLimit(1)
+                            // Full name at accessibility sizes (wraps); one line otherwise.
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 4 : 1)
                             .truncationMode(.middle)
                         if let planned {
                             Text(planned.totalPages == 1 ? "1 page" : "\(planned.totalPages) pages")
@@ -415,14 +426,29 @@ struct ItemAIAnalysisSheet: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("\(displayName(for: document)), \(selected ? "selected" : "not selected")")
+            .accessibilityLabel(Self.documentAccessibilityLabel(
+                name: displayName(for: document), type: document.documentType,
+                pages: planned?.totalPages, selected: selected))
+            .accessibilityHint("Double tap to \(selected ? "remove it from" : "include it in") the analysis.")
 
             if selected {
                 Button("Preview") { previewDocument = document }
                     .font(Theme.secondaryFont.weight(.semibold))
                     .buttonStyle(.bordered)
+                    .accessibilityLabel("Preview \(displayName(for: document))")
             }
         }
+    }
+
+    static func photoAccessibilityLabel(position: Int, of count: Int, selected: Bool) -> String {
+        "Additional photo \(position) of \(count), \(selected ? "selected" : "not selected")"
+    }
+
+    static func documentAccessibilityLabel(name: String, type: String, pages: Int?, selected: Bool) -> String {
+        var parts = [name, type.uppercased() == "PDF" ? "PDF" : "Image"]
+        if let pages { parts.append(pages == 1 ? "1 page" : "\(pages) pages") }
+        parts.append(selected ? "selected" : "not selected")
+        return parts.joined(separator: ", ")
     }
 
     private func displayName(for document: Document) -> String {
@@ -502,6 +528,27 @@ struct ItemAIAnalysisSheet: View {
     // MARK: Analyze
 
     private var analyzeBar: some View {
+        VStack(spacing: 6) {
+            if let reason = model.analyzeUnavailableReason {
+                // Capped so the pinned bar stays compact on small phones; the same
+                // notice sits next to the switch, and VoiceOver reads it as the hint.
+                Text(reason)
+                    .font(Theme.secondaryFont)
+                    .foregroundStyle(Theme.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                    .accessibilityHidden(true)      // read as the button's hint instead
+            }
+            analyzeButton
+        }
+        .padding(.horizontal, Theme.spacing.large)
+        .padding(.vertical, Theme.spacing.small)
+        .background(.thinMaterial)
+    }
+
+    private var analyzeButton: some View {
         Button {
             startAnalysis()
         } label: {
@@ -517,9 +564,7 @@ struct ItemAIAnalysisSheet: View {
         }
         .buttonStyle(.plain)
         .disabled(!model.canAnalyze)
-        .padding(.horizontal, Theme.spacing.large)
-        .padding(.vertical, Theme.spacing.small)
-        .background(.thinMaterial)
+        .accessibilityHint(model.analyzeUnavailableReason ?? "")
     }
 
     private var analyzingOverlay: some View {

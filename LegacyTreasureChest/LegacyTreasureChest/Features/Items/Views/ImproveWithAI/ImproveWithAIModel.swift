@@ -154,6 +154,22 @@ final class ImproveWithAIModel {
         return !plan.isTextOnly || hasTextToAnalyze
     }
 
+    /// Why Analyze is unavailable, in words the owner can act on; nil when it is
+    /// available (and while an analysis runs or a review is shown).
+    var analyzeUnavailableReason: String? {
+        guard case .compose = phase else { return nil }
+        if let planError { return planError.localizedDescription }
+        guard let plan else { return "Checking the selected photos and document…" }
+        if needsTruncationAcknowledgement && !acknowledgedTruncation {
+            let pages = plan.truncatedDocuments.first?.pagesToSend ?? 0
+            return "Turn on “Analyze the first \(pages) pages” to continue."
+        }
+        if plan.isTextOnly && !hasTextToAnalyze {
+            return "Add a name, description, notes, photo, or document first."
+        }
+        return nil
+    }
+
     /// Starts one analysis. Ignored while one is running (no duplicate
     /// submissions). On failure or cancellation the item is unchanged.
     func startAnalysis() {

@@ -300,4 +300,50 @@ struct ImproveWithAIModelTests {
         #expect(f.item.documents.count == 1)
         #expect(m.selectedDocumentID == doc.documentId)           // selection kept for another try
     }
+
+    // MARK: Stage 5C: why Analyze is unavailable
+
+    @Test func unavailableReasonExplainsTheTenPageAcknowledgement() throws {
+        let f = try fixture(); defer { f.media.remove() }
+        let long = try addDocument(f, pages: 12, name: "long.pdf")
+        let m = model(f)
+        #expect(m.canAnalyze && m.analyzeUnavailableReason == nil)
+        m.selectDocument(long.documentId)
+        #expect(!m.canAnalyze)
+        #expect(m.analyzeUnavailableReason == "Turn on “Analyze the first 10 pages” to continue.")
+        m.acknowledgedTruncation = true
+        #expect(m.canAnalyze && m.analyzeUnavailableReason == nil)
+    }
+
+    @Test func unavailableReasonForLockedPdfAndMissingText() throws {
+        let f = try fixture(); defer { f.media.remove() }
+        let locked = try addDocument(f, pages: 2, locked: true, name: "locked.pdf")
+        let m = model(f)
+        m.selectDocument(locked.documentId)
+        #expect(m.analyzeUnavailableReason == AIEvidenceError.documentLocked.localizedDescription)
+
+        let g = try fixture(photos: 0, primary: false, description: ""); defer { g.media.remove() }
+        g.item.name = ""
+        let n = model(g)
+        #expect(n.analyzeUnavailableReason == "Add a name, description, notes, photo, or document first.")
+        g.item.valuation = ItemValuation(userNotes: "Owner notes")
+        n.refreshPlan()
+        #expect(n.analyzeUnavailableReason == nil && n.canAnalyze)
+    }
+
+    @Test func unavailableReasonAlwaysMatchesCanAnalyzeInCompose() throws {
+        let f = try fixture(); defer { f.media.remove() }
+        let long = try addDocument(f, pages: 12, name: "long.pdf")
+        let locked = try addDocument(f, pages: 1, locked: true, name: "locked.pdf")
+        let m = model(f)
+        for step in 0..<4 {
+            switch step {
+            case 1: m.selectDocument(long.documentId)
+            case 2: m.acknowledgedTruncation = true
+            case 3: m.selectDocument(locked.documentId)
+            default: break
+            }
+            #expect(m.canAnalyze == (m.analyzeUnavailableReason == nil), "step \(step)")
+        }
+    }
 }
