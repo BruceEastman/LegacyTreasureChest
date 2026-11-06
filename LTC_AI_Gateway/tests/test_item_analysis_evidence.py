@@ -442,8 +442,54 @@ class PromptV2Tests(unittest.TestCase):
     def test_v1_prompts_are_unchanged_by_v2(self):
         # The v1 builder does not contain any 1.3-only wording.
         p = prompts.build_item_analysis_prompt(ItemAIHints(userWrittenTitle="x"))
-        for marker in ("QUANTITY =", "OWNER-PROVIDED NOTES", "PRIVACY RULES", "valuationUnit"):
+        for marker in ("QUANTITY =", "OWNER-PROVIDED NOTES", "PRIVACY RULES", "valuationUnit",
+                       "DATE RULES", "CONFIDENCE RULES"):
             self.assertNotIn(marker, p)
+        t = prompts.build_item_analysis_text_prompt("x", "y", "Furniture")
+        for marker in ("DATE RULES", "CONFIDENCE RULES"):
+            self.assertNotIn(marker, t)
+
+    # Stage 5B: dates and confidence.
+
+    def test_owner_stated_year_is_a_claim_not_era(self):
+        p = self._prompt(ownerNotes="Made in 1890.")
+        self.assertIn("DATE RULES", p)
+        self.assertIn("eraOrYear is when THIS item was made", p)
+        self.assertIn("A date stated only by the owner is the owner's claim", p)
+        self.assertIn("do not put that year in eraOrYear unless the evidence independently confirms it", p)
+        # The owner's words still reach the model, labeled as the owner's.
+        self.assertIn("OWNER-PROVIDED NOTES", p)
+        self.assertIn("Made in 1890.", p)
+
+    def test_anniversary_marks_and_purchase_dates_are_not_manufacturing_years(self):
+        p = self._prompt()
+        self.assertIn("Anniversary, founding, \"since\", patent and copyright dates", p)
+        self.assertIn("do not use such a date alone as eraOrYear", p)
+        self.assertIn("A purchase, receipt or invoice date is when the item was bought", p)
+        self.assertIn("do not use it as the manufacturing year", p)
+
+    def test_confidence_fields_are_defined_separately(self):
+        p = self._prompt()
+        self.assertIn("confidence (number 0-1 or null): how sure you are of WHAT the item is", p)
+        self.assertIn("confidenceScore is how reliable the resale VALUE range is", p)
+        self.assertIn("CONFIDENCE RULES", p)
+        self.assertIn("does not by itself make the value range reliable", p)
+        self.assertIn("only when the identification, the condition and typical resale prices", p)
+        # The existing low-confidence instruction for uncertain estimates is kept.
+        self.assertIn("set confidenceScore low (e.g., 0.15–0.35)", p)
+
+    def test_date_and_confidence_rules_in_every_v2_prompt(self):
+        from app.models import ItemAnalysisContext
+        ctx = ItemAnalysisContext(quantity=1)
+        variants = [
+            prompts.build_item_analysis_text_prompt_v2(ItemAIHints(userWrittenTitle="Lamp"), ctx),
+            prompts.build_item_analysis_prompt_v2(ItemAIHints(), ctx, has_primary=True, has_evidence=True),
+            prompts.build_item_analysis_prompt_v2(ItemAIHints(), ctx, has_primary=False, has_evidence=True,
+                                                  has_document=True),
+        ]
+        for v in variants:
+            self.assertIn("DATE RULES", v)
+            self.assertIn("CONFIDENCE RULES", v)
 
 
 # ---------------------------------------------------------------------------

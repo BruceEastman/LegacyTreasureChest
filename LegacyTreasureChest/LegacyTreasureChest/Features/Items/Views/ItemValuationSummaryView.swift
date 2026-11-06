@@ -121,6 +121,12 @@ struct ItemValuationPresentation: Equatable {
         }
     }
 
+    /// The AI's confidence rates its resale value range only, not how certain the
+    /// identification is; the caption says so.
+    static func confidenceCaption(for label: String) -> String {
+        "Value confidence: \(label)"
+    }
+
     static func confidenceLabel(for score: Double?) -> String? {
         guard let score else { return nil }
         switch score {
@@ -187,7 +193,7 @@ struct ItemValuationSummaryView: View {
             parts.append("Your value is used for totals")
         }
         if let confidence = p.confidenceLabel {
-            parts.append("\(confidence) confidence")
+            parts.append(ItemValuationPresentation.confidenceCaption(for: confidence))
         }
         if let date = p.estimatedOn {
             parts.append(date.formatted(date: .abbreviated, time: .omitted))

@@ -15,11 +15,11 @@ private func proposal(
     summary: String = "Counter stool with a cutout back.",
     category: String = "Furniture",
     hints: ValueHints? = ValueHints(valueLow: 200, estimatedValue: 300, valueHigh: 400, confidenceScore: 0.7, aiNotes: "AI notes."),
-    brand: String? = nil, materials: [String]? = nil, dimensions: String? = nil,
+    brand: String? = nil, materials: [String]? = nil, dimensions: String? = nil, era: String? = nil,
     unit: String? = "one stool", conflicts: [String]? = nil
 ) -> ItemAnalysis {
     ItemAnalysis(title: title, summary: summary, category: category, valueHints: hints,
-                 brand: brand, materials: materials, dimensions: dimensions,
+                 brand: brand, materials: materials, dimensions: dimensions, eraOrYear: era,
                  valuationUnit: unit, conflicts: conflicts)
 }
 
@@ -255,5 +255,141 @@ struct SelectiveApplyTests {
             ItemAnalysisApplier.apply(analysis, to: item, choices: review.defaults)
         }
         #expect(item.itemDescription == "Counter stool with a cutout back.\n\nBrand: Sample Maker Co. • Materials: cherry")
+    }
+}
+
+
+// MARK: - Stage 5B: dates, identifiers, confidence
+
+@MainActor
+struct Stage5BReviewTests {
+
+    private func eraRow(_ review: ItemAnalysisReview) -> ItemAnalysisReview.AttributeRow? {
+        review.attributes.first { $0.label == "Era" }
+    }
+
+    @Test func ownerClaimedYearIsProposedButNotPreselected() throws {
+        // E12: the owner wrote "Made in 1890."; the model put 1890 in eraOrYear.
+        let (item, _) = try makeItem(name: "Four-poster bed")
+        let analysis = proposal(summary: "Owner notes state it was made in 1890.", materials: ["Wood"], era: "1890")
+        let review = ItemAnalysisReview(item: item, analysis: analysis, includedDocument: false)
+        #expect(eraRow(review)?.proposed == "1890")
+        #expect(!review.defaults.attributeLabels.contains("Era"))
+        #expect(review.defaults.attributeLabels.contains("Materials"))     // other new details still preselected
+
+        ItemAnalysisApplier.apply(analysis, to: item, choices: review.defaults)
+        #expect(!item.itemDescription.contains("Era:"))
+    }
+
+    @Test func anniversaryYearFromAMakersStampIsNotPreselected() throws {
+        // A1: "150th Anniversary 1857-2007" stamp; the model put 2007 in eraOrYear.
+        let (item, _) = try makeItem(quantity: 4)
+        let analysis = proposal(brand: "Sample Maker Co.", era: "2007")
+        let review = ItemAnalysisReview(item: item, analysis: analysis, includedDocument: false)
+        #expect(!review.defaults.attributeLabels.contains("Era"))
+        #expect(review.defaults.attributeLabels.contains("Brand"))
+    }
+
+    @Test func purchaseYearFromAReceiptIsNotPreselected() throws {
+        // E13: a 2008 receipt; document analyses preselect no text at all.
+        let (item, _) = try makeItem(quantity: 4)
+        let review = ItemAnalysisReview(item: item, analysis: proposal(era: "2008"), includedDocument: true)
+        #expect(eraRow(review)?.proposed == "2008")
+        #expect(review.defaults.attributeLabels.isEmpty)
+        // Without a document the same year is still not preselected.
+        let (other, _) = try makeItem(quantity: 4)
+        #expect(!ItemAnalysisReview(item: other, analysis: proposal(era: "Purchased 2008"),
+                                    includedDocument: false).defaults.attributeLabels.contains("Era"))
+    }
+
+    @Test func broadErasAreStillPreselected() throws {
+        for era in ["Late 20th century", "21st Century", "1890s", "Mid-century modern"] {
+            let (item, _) = try makeItem()
+            let review = ItemAnalysisReview(item: item, analysis: proposal(era: era), includedDocument: false)
+            #expect(review.defaults.attributeLabels.contains("Era"), "\(era)")
+        }
+    }
+
+    @Test func specificYearDetection() {
+        for era in ["1890", "circa 1925", "2007", "Made 1857-2007", "c. 1960"] {
+            #expect(ItemAnalysisReview.namesSpecificYear(era), "\(era)")
+        }
+        for era in [nil, "", "1890s", "Victorian", "20th century", "Late 1900s"] as [String?] {
+            #expect(!ItemAnalysisReview.namesSpecificYear(era), "\(String(describing: era))")
+        }
+    }
+
+    @Test func ownerCanStillExplicitlyAcceptTheYear() throws {
+        let (item, _) = try makeItem(name: "Four-poster bed")
+        let analysis = proposal(era: "1890")
+        var choices = ItemAnalysisReview(item: item, analysis: analysis, includedDocument: false).defaults
+        choices.attributeLabels.insert("Era")
+        ItemAnalysisApplier.apply(analysis, to: item, choices: choices)
+        #expect(item.itemDescription.contains("Era: 1890"))
+    }
+
+    @Test func ownerEnteredTextAndValueSurviveDefaults() throws {
+        let (item, _) = try makeItem(description: "Grandpa's bed, bought at auction.", value: 900)
+        item.valuation = ItemValuation(valueLow: 800, estimatedValue: 900, valueHigh: 1000, userNotes: "Made in 1890.")
+        let analysis = proposal(era: "1890")
+        var choices = ItemAnalysisReview(item: item, analysis: analysis, includedDocument: false).defaults
+        choices.valuation = false
+        ItemAnalysisApplier.apply(analysis, to: item, choices: choices)
+        #expect(item.itemDescription.hasPrefix("Grandpa's bed, bought at auction."))
+        #expect(!item.itemDescription.contains("Era:"))
+        #expect(item.value == 900)
+        #expect(item.valuation?.userNotes == "Made in 1890.")
+    }
+
+    @Test func historicalYearRangeIsNotAnIdentifier() {
+        #expect(!ItemAnalysisReview.containsPossibleIdentifier(
+            "Underside bears the brand's 150th Anniversary stamp (1857-2007)."))
+        #expect(!ItemAnalysisReview.containsPossibleIdentifier("Produced 1920-1935, then 1950-1960"))
+        #expect(!ItemAnalysisReview.containsPossibleIdentifier("Era: 1857-2007"))
+    }
+
+    @Test func genuineIdentifiersAreStillFlagged() {
+        let flagged = [
+            "According to lab report No. 2141438167",
+            "Ref 21414381",
+            "Number 1234-5678",                 // second half is not a year
+            "Range 2007-1857",                  // descending: not a year range
+            "Card 4242-4242-4242",
+            "Ticket 1857-2007-1234",            // three groups
+            "1857-2007 and account 12345678",   // a year range does not hide another number
+            "Call (555) 010-4477",
+            "Contact jane.example@example.com",
+            "Appraised for owner at 123 Main Street",
+            "Certificate No. AB-9921",
+        ]
+        for text in flagged {
+            #expect(ItemAnalysisReview.containsPossibleIdentifier(text), "\(text)")
+        }
+    }
+
+    @Test func anniversaryStampReviewHasNoIdentifierWarning() throws {
+        let (item, _) = try makeItem(quantity: 4)
+        let analysis = proposal(summary: "Underside bears the brand's 150th Anniversary stamp (1857-2007).",
+                                brand: "Sample Maker Co.", era: "2007")
+        let review = ItemAnalysisReview(item: item, analysis: analysis, includedDocument: false)
+        #expect(!review.warnings.contains(.possibleIdentifier))
+    }
+
+    @Test func confidenceIsPresentedAsValueConfidence() {
+        #expect(ItemValuationPresentation.confidenceLabel(for: 0.8) == "High")
+        #expect(ItemValuationPresentation.confidenceLabel(for: 0.6) == "Medium")
+        #expect(ItemValuationPresentation.confidenceLabel(for: 0.35) == "Low")
+        #expect(ItemValuationPresentation.confidenceLabel(for: nil) == nil)
+        #expect(ItemValuationPresentation.confidenceCaption(for: "High") == "Value confidence: High")
+    }
+
+    @Test func reviewValuationKeepsLowEstimateHighAndUnit() throws {
+        let (item, _) = try makeItem(quantity: 4)
+        let hints = ValueHints(valueLow: 50, estimatedValue: 85, valueHigh: 125, confidenceScore: 0.8, aiNotes: "n")
+        let v = ItemAnalysisReview(item: item, analysis: proposal(hints: hints, unit: "one bar stool"),
+                                   includedDocument: false).valuation
+        #expect(v.proposedLow == 50 && v.proposedEstimate == 85 && v.proposedHigh == 125)
+        #expect(v.proposedTotal == 340 && v.unit == "one bar stool")
+        #expect(v.confidenceLabel == "High")
     }
 }

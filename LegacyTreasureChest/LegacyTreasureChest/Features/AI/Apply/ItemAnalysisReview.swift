@@ -258,8 +258,11 @@ struct ItemAnalysisReview: Equatable {
             case .ownerWritten, .mixed: choices.paragraph = .keep
             }
         }
+        // A specific year in Era is often an owner claim, a maker's anniversary date or a
+        // purchase date rather than a verified manufacturing year: shown, never preselected.
         choices.attributeLabels = textPreselected
-            ? Set(attributes.filter { $0.kind == .new }.map(\.label))
+            ? Set(attributes.filter { $0.kind == .new && !($0.label == "Era" && Self.namesSpecificYear($0.proposed)) }
+                .map(\.label))
             : []
         // Per-unit estimates are preselected; an allocated group estimate needs a
         // deliberate choice; an ambiguous one cannot be applied.
@@ -396,14 +399,37 @@ struct ItemAnalysisReview: Equatable {
     /// certificate numbers, email addresses, phone numbers or street
     /// addresses. Heuristic only; the owner reviews the text either way.
     static func containsPossibleIdentifier(_ text: String) -> Bool {
+        if containsLongDigitRun(text) { return true }
         let patterns = [
-            "\\b\\d[\\d-]{6,}\\d\\b",                                              // 8+ digits
             "(?i)\\b(report|certificate|cert|appraisal|policy|account|serial)\\s*(no\\.?|number|#)\\s*[:#]?\\s*[A-Z0-9-]{4,}",
             "[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}",
             "\\(?\\b\\d{3}\\)?[ .-]\\d{3}[ .-]\\d{4}\\b",
             "(?i)\\b\\d{1,5}\\s+[A-Za-z]+(\\s[A-Za-z]+)?\\s+(street|st|avenue|ave|road|rd|lane|ln|drive|dr|blvd|court|ct)\\b",
         ]
         return patterns.contains { text.range(of: $0, options: [.regularExpression, .caseInsensitive]) != nil }
+    }
+
+    /// A run of 8+ digits (dashes allowed inside), except a historical year range such as
+    /// "1857-2007": two 4-digit years from 1000 to 2099, the second not earlier than the first.
+    static func containsLongDigitRun(_ text: String) -> Bool {
+        guard let regex = try? NSRegularExpression(pattern: "\\b\\d[\\d-]{6,}\\d\\b") else { return false }
+        let ns = text as NSString
+        return regex.matches(in: text, range: NSRange(location: 0, length: ns.length)).contains { match in
+            !isYearRange(ns.substring(with: match.range))
+        }
+    }
+
+    static func isYearRange(_ token: String) -> Bool {
+        let parts = token.split(separator: "-", omittingEmptySubsequences: false)
+        guard parts.count == 2, parts.allSatisfy({ $0.count == 4 }),
+              let from = Int(parts[0]), let to = Int(parts[1]) else { return false }
+        return (1000...2099).contains(from) && (1000...2099).contains(to) && to >= from
+    }
+
+    /// True when an Era value names a specific year ("1890", "circa 1925", "2007"), not a broad era.
+    static func namesSpecificYear(_ era: String?) -> Bool {
+        guard let era else { return false }
+        return era.range(of: "\\b(1[0-9]|20)[0-9]{2}\\b(?!s)", options: .regularExpression) != nil
     }
 }
 

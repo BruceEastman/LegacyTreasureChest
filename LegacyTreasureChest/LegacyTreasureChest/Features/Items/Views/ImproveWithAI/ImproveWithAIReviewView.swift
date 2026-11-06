@@ -286,7 +286,8 @@ struct ImproveWithAIReviewView: View {
         }
 
         if let confidence = v.confidenceLabel {
-            caption("\(confidence) confidence")
+            caption("\(ItemValuationPresentation.confidenceCaption(for: confidence)). "
+                    + "A preliminary resale estimate, not an appraisal.")
         }
         explanationText(v.explanation)
 

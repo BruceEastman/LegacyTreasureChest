@@ -213,9 +213,13 @@ DOCUMENT_PAGE_LABEL = "Supporting document {doc}, page {page} of {pages}:"
 _OUTPUT_FIELDS_BLOCK = (
     "OUTPUT FIELDS (use exactly these keys):\n"
     "- title (string), description (string), category (string)\n"
-    "- tags ([string] or null), confidence (number 0-1 or null)\n"
-    "- valueHints: {valueLow, estimatedValue, valueHigh, currencyCode, confidenceScore, aiNotes, missingDetails}\n"
-    "- brand, modelNumber, style, origin, condition, dimensions, eraOrYear (string or null)\n"
+    "- tags ([string] or null)\n"
+    "- confidence (number 0-1 or null): how sure you are of WHAT the item is (identification only)\n"
+    "- valueHints: {valueLow, estimatedValue, valueHigh, currencyCode, confidenceScore, aiNotes, missingDetails}; "
+    "confidenceScore is how reliable the resale VALUE range is (see CONFIDENCE RULES)\n"
+    "- brand, modelNumber, style, origin, condition, dimensions (string or null)\n"
+    "- eraOrYear (string or null): when the item was MADE, only as far as the evidence supports it "
+    "(see DATE RULES)\n"
     "- materials, features ([string] or null)\n"
     "- valuationUnit (string): what ONE unit is, e.g. \"one stool\" or \"complete 10-place-setting service\"\n"
     "- conflicts ([string] or null): short notes where the evidence contradicts the owner's notes or the "
@@ -230,6 +234,38 @@ _EVIDENCE_USE_RULES = (
     "- Do not invent components or set contents that are not shown or stated.\n"
     "- Read printed or stamped text exactly. Keep manufacturer model, reference and pattern numbers "
     "(they identify the item).\n"
+)
+
+# Stage 5B: dates and confidence (from the LTC 1.3 live evaluation: an owner's "Made in 1890",
+# a maker's "150th Anniversary 1857-2007" stamp and a 2008 receipt each became eraOrYear;
+# identifying a maker raised the value confidence to 0.80 with no resale evidence).
+_DATE_RULES = (
+    "DATE RULES (eraOrYear and descriptions):\n"
+    "- eraOrYear is when THIS item was made. Give a specific year only when the evidence itself dates "
+    "the item's manufacture (for example a dated maker's label, a date code or a dated certificate for "
+    "this item). Otherwise give the broadest era the evidence supports (for example \"late 20th century\" "
+    "or \"circa 2000s\"), or null.\n"
+    "- A date stated only by the owner is the owner's claim: mention it in the description as the "
+    "owner's statement (for example \"the owner reports it was made in 1890\"), but do not put that "
+    "year in eraOrYear unless the evidence independently confirms it.\n"
+    "- Anniversary, founding, \"since\", patent and copyright dates on a mark or label describe the "
+    "maker or the design, not the year this item was made (for example \"150th Anniversary 1857-2007\"). "
+    "You may describe the mark and what it suggests (\"likely made around 2007\") but do not use such "
+    "a date alone as eraOrYear.\n"
+    "- A purchase, receipt or invoice date is when the item was bought. It shows only that the item "
+    "existed by then; do not use it as the manufacturing year.\n"
+)
+
+_CONFIDENCE_RULES = (
+    "CONFIDENCE RULES:\n"
+    "- confidenceScore rates the resale VALUE range only: how well the evidence supports what this "
+    "specific item would sell for today.\n"
+    "- Identifying the maker, model or pattern makes the identification more certain; it does not by "
+    "itself make the value range reliable. If resale prices for this specific identified item, in "
+    "this condition, are not well established, keep confidenceScore moderate or low and say what "
+    "would make the estimate more reliable.\n"
+    "- Use a high confidenceScore (0.8 or above) only when the identification, the condition and "
+    "typical resale prices for this specific item are all well established.\n"
 )
 
 _PRIVACY_RULES = (
@@ -352,6 +388,8 @@ def build_item_analysis_prompt_v2(
         "- Never substitute a generic or typical range for the category. Do NOT omit valueHints.\n",
         _quantity_block(getattr(context, "quantity", None)),
         _EVIDENCE_USE_RULES,
+        _DATE_RULES,
+        _CONFIDENCE_RULES,
         _PRIVACY_RULES,
         _context_block(hints, context),
     ]
