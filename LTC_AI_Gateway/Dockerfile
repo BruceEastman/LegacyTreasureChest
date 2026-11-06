@@ -17,7 +17,8 @@ RUN apt-get update \
 
 # Install Python deps first for better Docker layer caching
 COPY requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
+# requirements.txt pins the complete runtime closure; pip check fails the build if it is inconsistent.
+RUN pip install --no-cache-dir -r /app/requirements.txt && pip check
 
 # Copy application code
 COPY . /app

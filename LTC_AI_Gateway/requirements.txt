@@ -1,5 +1,28 @@
-fastapi
-uvicorn
-httpx
-python-dotenv
-pydantic
+# LTC AI Gateway runtime dependencies, pinned for reproducible Cloud Run builds.
+# Exact versions validated for LTC 1.3: the full gateway test suite (python:3.11-slim,
+# linux/amd64) and every LTC 1.3 live Gemini evaluation ran on this set.
+# Complete runtime closure for Python 3.11 on Linux; no development-only packages.
+# The Dockerfile runs `pip check` after installing, so an inconsistent set fails the build.
+# To upgrade: change versions here, rebuild, and rerun the gateway tests.
+
+# Direct dependencies
+fastapi==0.122.0
+uvicorn==0.38.0
+httpx==0.28.1
+python-dotenv==1.2.1
+pydantic==2.12.5
+
+# Transitive dependencies
+annotated-doc==0.0.4
+annotated-types==0.7.0
+anyio==4.11.0
+certifi==2025.11.12
+click==8.3.1
+h11==0.16.0
+httpcore==1.0.9
+idna==3.11
+pydantic_core==2.41.5
+sniffio==1.3.1
+starlette==0.50.0
+typing-inspection==0.4.2
+typing_extensions==4.15.0
